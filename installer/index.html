@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AdBlock Installer</title>
+<script type="module" src="https://unpkg.com/esp-web-tools@10.4.0/dist/web/install-button.js?module"></script>
+<style>
+:root{--bg:#0d1117;--card:#161b22;--line:#30363d;--fg:#c9d1d9;--dim:#8b949e;--ok:#3fb950}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.5 system-ui,sans-serif}
+main{max-width:640px;margin:40px auto;padding:0 16px}h1{font-size:24px}h1 b{color:var(--ok)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin:18px 0}
+ol{padding-left:20px}code{background:#21262d;padding:1px 5px;border-radius:4px}.dim{color:var(--dim)}
+a{color:#58a6ff}
+</style>
+</head>
+<body>
+<main>
+<h1>&#128737; <b>AdBlock</b> web installer</h1>
+<p>Flash the DNS ad blocker onto an <b>ESP32-S3</b> (DevKitC-1 N16R8 recommended), ESP32-C3 or ESP32 straight
+from the browser. Works in Chrome or Edge on a desktop (Web Serial).</p>
+<div class="card">
+<ol>
+<li>Connect the board with a data USB cable (on the DevKitC-1, use the port marked <code>UART</code>).</li>
+<li>Click the button and pick the serial port. Erasing the device is recommended for a first install.</li>
+<li>When it finishes, join the <code>S3-AdBlock-XXXX</code> Wi-Fi from a phone and pick your network.</li>
+<li>Open the serial console (the installer can show logs) to read the one-time dashboard setup code.</li>
+</ol>
+<esp-web-install-button manifest="manifest.json"></esp-web-install-button>
+</div>
+<p class="dim">Then point your router's DNS at the device. See the
+<a href="https://github.com/denzilrdz/esp32-s3-adblock#readme">README</a> and the
+<a href="https://github.com/denzilrdz/esp32-s3-adblock/blob/main/docs/ROUTER_SETUP.md">router setup guide</a>
+(including the IPv6 caveat).</p>
+</main>
+</body>
+</html>

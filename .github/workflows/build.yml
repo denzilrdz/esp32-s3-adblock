@@ -1,44 +1,74 @@
 name: build
 
+# Every push to main and every pull request: format check, clang-tidy, unit tests
+# (with coverage), the blocklist tool tests, and firmware builds for all boards.
 on:
   push:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  quality:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          enable-cache: true
+      - name: Install pinned tools (uv.lock)
+        run: uv sync --locked
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.platformio
+          key: pio-native-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
+      - name: Format check (clang-format + black)
+        run: tools/format.sh --check
+      - name: clang-tidy (lib/core)
+        run: tools/lint.sh
+      - name: Blocklist tool tests
+        run: .venv/bin/python -m unittest discover -s tools -p 'test_*.py' -v
+      - name: Native unit tests (AddressSanitizer + UBSan)
+        run: .venv/bin/pio test -e native
+      - name: Coverage
+        run: tools/coverage.sh
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage
+          path: coverage/
+
   firmware:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
         env: [esp32s3, c3, esp32dev]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
-          python-version: "3.12"
-      - uses: actions/cache@v4
+          enable-cache: true
+      - run: uv sync --locked
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.platformio
-          key: pio-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
-      - run: pip install -U platformio
-      - name: Placeholder secrets (real ones are gitignored; the firmware falls back to the setup portal)
+          key: pio-${{ matrix.env }}-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
+      - name: Placeholder secrets (real ones are gitignored; first boot uses the setup code)
         run: cp src/secrets.example.h src/secrets.h
-      - run: pio run -e ${{ matrix.env }}
-
-  blocklist-tool:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Build
+        run: .venv/bin/pio run -e ${{ matrix.env }}
+      - name: Factory image
+        run: tools/make_factory.sh ${{ matrix.env }}
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          python-version: "3.12"
-      - name: Parse hosts, plain and AdGuard-style input
-        run: |
-          printf '||ads.example.com^\n@@||ok.example.org^\n||ok.example.org^\n0.0.0.0 hosts.example.com\nplain.example.com\n/^regex$/\n' > t.txt
-          python3 tools/build_blocklist.py t.bin t.txt
-          test "$(stat -c%s t.bin)" -eq $((32 + 4 * 65537 + 4 * 3))   # v2: header + buckets + 3 entries
-          python3 tools/build_blocklist.py --format legacy t-legacy.bin t.txt
-          test "$(stat -c%s t-legacy.bin)" -eq 15                       # legacy: 3 entries x 5 bytes
-      - name: Unit tests
-        run: python3 -m unittest discover -s tools -p 'test_*.py' -v
+          name: firmware-${{ matrix.env }}
+          path: |
+            .pio/build/${{ matrix.env }}/firmware.bin
+            .pio/build/${{ matrix.env }}/factory.bin
+            .pio/build/${{ matrix.env }}/firmware.elf

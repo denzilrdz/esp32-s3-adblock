@@ -14,12 +14,10 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # The builder only needs the Python standard library (runner's python3).
       - name: Build default blocklist (fails if any source is unreachable)
         run: python3 tools/build_blocklist.py blocklist.bin 2>&1 | tee build.log
       - name: Build legacy-format list for upstream C3 firmware
@@ -37,9 +35,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           entries=$(( ($(stat -c%s blocklist.bin) - 32 - 4 * 65537) / 4 ))
-          notes="Auto-built $(date -u +%F) — ${entries} entries (StevenBlack base + Hagezi Light).
+          notes="Auto-built $(date -u +%F): ${entries} entries (StevenBlack base + Hagezi Light).
 
-          Set this as the device's Remote auto-update URL:
+          Device setting (Blocklist URL):
           https://github.com/${{ github.repository }}/releases/download/blocklist/blocklist.bin"
           if gh release view blocklist >/dev/null 2>&1; then
             gh release edit blocklist --notes "$notes"
