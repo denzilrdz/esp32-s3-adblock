@@ -1,0 +1,100 @@
+# Router setup, IPv6 and DNS bypasses
+
+The blocker only sees queries that are sent to it. This page covers how to make
+every device on your network use it, why **IPv6 can silently bypass it**, and how to
+check the result. Examples mention Airtel Xstream Fiber routers because that is the
+reference setup, but the same ideas apply to any router.
+
+> Router menus differ between models and firmware versions (Airtel supplies routers
+> from several makers). The names below are the usual ones; look for the closest
+> match on your router's admin page (often `http://192.168.1.1`).
+
+## 1. Give the blocker a fixed address
+
+The device's IP must not change, or clients will lose DNS.
+
+- In the router: **LAN → DHCP → Static lease / Address reservation**, reserve an IP
+  for the device's MAC (shown on the serial log and the dashboard).
+
+## 2. Hand the blocker out as DNS (IPv4)
+
+Best: tell the router's DHCP server to give clients the blocker as their DNS server.
+
+- **LAN → DHCP server → Primary DNS** = the blocker's IP. Leave secondary DNS
+  **empty** (a public secondary such as 8.8.8.8 lets clients skip the blocker
+  whenever they like).
+- Some ISP routers lock these fields. Options if yours does:
+  1. Set DNS per device (Wi-Fi settings → IP/DNS → manual) on the devices you care
+     about.
+  2. Turn off the router's DHCP server and run DHCP elsewhere (another router in
+     access-point mode, or a small server). *(The device does not run a DHCP server
+     yet; see the roadmap.)*
+  3. Point only the router's **WAN/Internet DNS** at the blocker. Clients then still
+     ask the router, which forwards to the blocker. This works, but every query
+     appears to come from the router, so per-client stats and bans show one client.
+
+## 3. IPv6: the most common bypass
+
+Most Airtel fibre connections are dual-stack. The router announces **its own (or
+Airtel's) IPv6 DNS servers** to clients through router advertisements (RDNSS) and
+DHCPv6. Phones and laptops happily use those for some or all lookups, so ads load
+even though IPv4 DNS points at the blocker.
+
+The blocker answers DNS over IPv4 only (it blocks AAAA lookups that reach it, but it
+cannot stop clients from asking a different IPv6 server). Pick one of these:
+
+| Option | How | Trade-off |
+|---|---|---|
+| **A. Stop advertising IPv6 DNS** (preferred if available) | In the router's IPv6/LAN settings, disable "DNS server" / "RDNSS" / "DHCPv6 DNS", or set the IPv6 DNS to none. | Keeps IPv6 connectivity; not every router offers it. |
+| **B. Disable IPv6 on the LAN** | **IPv6 → LAN** (or **Network → IPv6**) → disable, or set the WAN connection to IPv4 only. | Simple and reliable; loses IPv6 (most sites work fine over IPv4). |
+| **C. Per device** | Turn off IPv6 on the device, or set its IPv6 DNS manually to nothing / a blocked address. | Only covers the devices you change. |
+
+Airtel's installer sometimes re-applies settings after a firmware update or reset:
+re-check after any router change.
+
+## 4. Browser and OS "secure DNS"
+
+Encrypted DNS built into browsers and phones talks to a public resolver directly,
+skipping your network's DNS.
+
+- **Firefox:** the blocker answers Firefox's canary domain
+  (`use-application-dns.net`) with NXDOMAIN, which tells Firefox not to enable its
+  automatic DoH. If a user turned DoH on manually (Settings → Privacy → DNS over
+  HTTPS → "Max protection"), Firefox bypasses the blocker by design.
+- **Chrome / Edge:** "Use secure DNS" set to "With your current service provider"
+  only upgrades when the system resolver is a known DoH provider (the blocker is
+  not), so it keeps using the blocker. A custom provider chosen there bypasses it.
+- **Android:** Settings → Network → **Private DNS** must be **Off** or **Automatic**.
+  A hostname there (e.g. `dns.google`) bypasses the blocker.
+- **Apple devices:** iCloud Private Relay bypasses local DNS for Safari. The
+  dashboard option *Disable iCloud Private Relay on this network* answers Apple's
+  opt-out domains so devices fall back to normal DNS (off by default).
+
+## 5. Devices with hard-coded DNS
+
+Some smart TVs, streaming sticks and apps ignore DHCP and use fixed resolvers such as
+8.8.8.8, or DNS-over-HTTPS. Only a router firewall rule can stop that (block or
+redirect outbound port 53/853 except from the blocker). Many ISP routers don't
+support such rules.
+
+## 6. Check that it works
+
+From a client on the network:
+
+```bash
+# Which DNS servers is this machine using?
+scutil --dns | grep nameserver          # macOS
+ipconfig /all                           # Windows (look for "DNS Servers", IPv4 and IPv6)
+resolvectl status                       # Linux (systemd-resolved)
+
+# Blocked names come back as 0.0.0.0 / :: from the blocker
+nslookup doubleclick.net                # should show the blocker's IP as Server, 0.0.0.0 as Address
+dig doubleclick.net AAAA                # ::  (with the blocker as server)
+dig @<blocker-ip> example.com +short    # a real answer
+
+# Is anything reaching another resolver over IPv6?
+dig -6 doubleclick.net                  # if this returns a real ad-server address, IPv6 DNS bypasses the blocker
+```
+
+The dashboard's client table also helps: a device that never appears there (or
+shows almost no queries) is using some other DNS server.

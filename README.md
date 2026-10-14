@@ -188,6 +188,19 @@ is still open (unencrypted) by design — it needs to be joinable without knowin
 a password first. The real WiFi password you type into the portal is only as
 safe as that local radio link during the brief setup window.
 
+## IPv6 and other DNS bypasses (read this)
+
+**If your router uses IPv6 (most Airtel fibre connections do), it may advertise its
+own IPv6 DNS servers, and phones and laptops will use them instead of the blocker.**
+The blocker answers DNS over IPv4 only, so it cannot see those queries. Fix it in the
+router by turning off IPv6 DNS advertisement (RDNSS / DHCPv6 DNS), or by disabling
+IPv6 on the LAN, or set DNS per device. Browser/OS "secure DNS" settings (Firefox
+DoH, Chrome custom secure DNS, Android Private DNS, iCloud Private Relay) can bypass
+it too.
+
+Step-by-step router setup, the trade-offs of each option, and how to check that every
+device really uses the blocker: **[docs/ROUTER_SETUP.md](docs/ROUTER_SETUP.md)**.
+
 ## Use it
 
 Point a device's DNS at the C3's IP, or add it as a **secondary resolver** behind
