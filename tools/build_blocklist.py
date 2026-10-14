@@ -36,11 +36,10 @@ V2_PREFIX_BITS = 16
 V2_MASK = (1 << V2_HASH_BITS) - 1
 V2_BUCKETS = 1 << V2_PREFIX_BITS
 
-# Daily driver that FITS alongside dual-OTA firmware slots (~250k domain budget):
-# ads + trackers + malware, WhatsApp/social keep working. ~100k entries / 0.5 MB
-# (Hagezi's wildcard lists drop subdomains the firmware's parent-matching already covers).
-# Want more? swap light-onlydomains.txt -> pro-onlydomains.txt is 370k and ONLY fits the
-# single-app (no-OTA) partition table.
+# Default daily-driver list: ads + trackers + malware, WhatsApp/social keep working.
+# ~100k entries (~0.65 MB in format v2). Hagezi's wildcard lists drop subdomains the
+# firmware's parent matching already covers. Want more? pro-onlydomains.txt (~370k)
+# fits easily on the ESP32-S3 (limit 1M); 4 MB lite boards are limited to ~150k.
 DEFAULT_SOURCES = [
     "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts",  # base: ads + malware
     "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/wildcard/light-onlydomains.txt",  # Hagezi Light (wildcard = domain + subdomains)
