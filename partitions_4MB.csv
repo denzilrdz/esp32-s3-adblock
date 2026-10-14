@@ -1,5 +1,5 @@
-# Dual-OTA layout for 4MB flash: two app slots (firmware OTA) + LittleFS (blocklist).
-# Firmware ~1.24MB (TLS+HTTP+OTA), so slots are 1.3125MB (~134KB headroom each).
+# C3 / classic ESP32 (lite profile): dual-OTA layout for 4MB flash: two app slots (firmware OTA) + LittleFS (blocklist).
+# Firmware ~1.2MB (TLS + HTTP + OTA): slots are 1.3125MB. Tight: watch the size report.
 # That leaves 1.3125MB for the blocklist (~250k domains @ 5 bytes).
 # Name,     Type, SubType, Offset,   Size
 nvs,        data, nvs,     0x9000,   0x5000
