@@ -21,3 +21,7 @@ src/secrets.h
 # Claude Code: personal/local files (CLAUDE.md and .claude/skills/ ARE committed)
 CLAUDE.local.md
 .claude/settings.local.json
+
+# Developer tooling (tools/setup-dev.sh) and reports
+.venv/
+coverage/

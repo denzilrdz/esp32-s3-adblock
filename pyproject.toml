@@ -1,0 +1,4 @@
+# Python tooling config for tools/*.py (black is what CI and pre-commit run).
+[tool.black]
+line-length = 88
+target-version = ["py310"]

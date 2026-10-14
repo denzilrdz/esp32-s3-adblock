@@ -1,0 +1,14 @@
+# C/C++ style for lib/core, src and test (clang-format 23; run tools/format.sh).
+BasedOnStyle: Google
+ColumnLimit: 110
+IndentWidth: 2
+AccessModifierOffset: -1
+DerivePointerAlignment: false
+PointerAlignment: Left
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortIfStatementsOnASingleLine: WithoutElse
+AllowShortLoopsOnASingleLine: true
+AllowShortCaseLabelsOnASingleLine: true
+# Keep include groups as written: Arduino/ESP-IDF headers can be order-sensitive.
+IncludeBlocks: Preserve
+SortIncludes: CaseSensitive
