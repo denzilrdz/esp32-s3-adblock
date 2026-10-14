@@ -1,7 +1,7 @@
 # 16 MB layout for the ESP32-S3 N16R8: two 4 MB OTA app slots, ~7.9 MB LittleFS for
 # blocklists (live + download temp file side by side), and a core-dump partition.
-# App partitions must be 64 KB aligned. The filesystem keeps label/subtype "spiffs":
-# IDF 4.4 has no littlefs subtype, and LittleFS.begin() looks for the "spiffs" label.
+# App partitions must be 64 KB aligned. The filesystem keeps label/subtype spiffs:
+# IDF 4.4 has no littlefs subtype, and LittleFS.begin() looks for the spiffs label.
 # Changing offsets wipes data and requires a USB flash.
 # Name,    Type, SubType,  Offset,   Size
 nvs,       data, nvs,      0x9000,   0x5000
