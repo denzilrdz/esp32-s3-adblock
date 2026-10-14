@@ -3,6 +3,9 @@
 
 #include <unity.h>
 
+#include <cstring>
+#include <string>
+
 #include "auth/auth.h"
 #include "fakes/fake_clock.h"
 #include "fakes/fake_random.h"
@@ -19,16 +22,37 @@ void setUp() {
 }
 void tearDown() {}
 
-static void test_placeholder_password_forces_a_change() {
+static void test_placeholder_password_never_authenticates() {
+  // The placeholder is public (it's in secrets.example.h): anyone on the LAN could use
+  // it to claim the device. Only the serial-console setup code may set the password.
   auth::PasswordStore s(kv, fakeRandom, "admin", auth::kPlaceholderPassword);
   TEST_ASSERT_TRUE(s.mustChange());
-  TEST_ASSERT_TRUE(s.verify("admin", auth::kPlaceholderPassword));  // can log in to change it
+  TEST_ASSERT_EQUAL(12, strlen(s.setupCode()));
+  TEST_ASSERT_FALSE(s.verify("admin", auth::kPlaceholderPassword));
+  TEST_ASSERT_FALSE(s.verify("admin", ""));
   const char* why = nullptr;
-  TEST_ASSERT_FALSE(s.change(auth::kPlaceholderPassword, "short", &why));
+  TEST_ASSERT_FALSE(s.change(auth::kPlaceholderPassword, "correct horse battery", &why));
+  TEST_ASSERT_EQUAL_STRING("current password is wrong", why);
+  const std::string code = s.setupCode();
+  TEST_ASSERT_TRUE(s.verify("admin", code.c_str()));
+  TEST_ASSERT_FALSE(s.change(code.c_str(), "short", &why));
   TEST_ASSERT_EQUAL_STRING("new password must be at least 10 characters", why);
-  TEST_ASSERT_FALSE(s.change(auth::kPlaceholderPassword, auth::kPlaceholderPassword, &why));
-  TEST_ASSERT_TRUE(s.change(auth::kPlaceholderPassword, "correct horse battery", &why));
+  TEST_ASSERT_TRUE(s.change(code.c_str(), "correct horse battery", &why));
   TEST_ASSERT_FALSE(s.mustChange());
+  TEST_ASSERT_EQUAL_STRING("", s.setupCode());
+  TEST_ASSERT_FALSE(s.verify("admin", code.c_str()));  // the code is single-use
+}
+
+static void test_missing_or_weak_default_also_needs_setup_code() {
+  auth::PasswordStore none(kv, fakeRandom, "admin", "");
+  TEST_ASSERT_TRUE(none.mustChange());
+  TEST_ASSERT_FALSE(none.verify("admin", ""));
+  auth::PasswordStore weak(kv, fakeRandom, "admin", "admin123");
+  TEST_ASSERT_TRUE(weak.mustChange());
+  TEST_ASSERT_FALSE(weak.verify("admin", "admin123"));
+  auth::PasswordStore null(kv, fakeRandom, nullptr, nullptr);
+  TEST_ASSERT_TRUE(null.mustChange());
+  TEST_ASSERT_EQUAL_STRING("admin", null.user());
 }
 
 static void test_changed_password_is_hashed_and_survives_reboot() {
@@ -102,6 +126,43 @@ static void test_login_guard_locks_out_with_backoff() {
   TEST_ASSERT_TRUE(g.allowed(ip));  // counter reset by the success
 }
 
+static void test_locked_clients_cannot_be_evicted_by_others() {
+  auth::LoginGuard g(fakeClock);
+  const uint32_t attacker = 0x0A000063;
+  for (int i = 0; i < 5; i++) g.onFailure(attacker);  // locked 30 s
+  fakeClock.advanceSeconds(30);
+  g.onFailure(attacker);  // locked again, now 60 s (until t = 90 s)
+  fakeClock.advanceSeconds(31);  // new global window: the brake below can't interfere
+  // 16 other addresses fail once each: the table (16 entries) must evict one of
+  // them, never the locked attacker.
+  for (uint32_t k = 1; k <= 16; k++) g.onFailure(0x0A000100 + k);
+  TEST_ASSERT_TRUE(g.allowed(0x0A000101 + 15));  // newcomers still get in (not saturated)
+  TEST_ASSERT_FALSE(g.allowed(attacker));
+  TEST_ASSERT_TRUE(g.retryAfterSeconds(attacker) > 20);
+}
+
+static void test_saturated_table_refuses_newcomers() {
+  auth::LoginGuard g(fakeClock);
+  for (uint32_t k = 0; k < 16; k++)
+    for (int i = 0; i < 5; i++) {
+      g.onFailure(0x0A000200 + k);
+      fakeClock.advanceMs(700);  // 80 failures over ~56 s: also trips the global brake
+    }
+  fakeClock.advanceMs(31000);  // global brake over, per-client locks (30 s+) partly active
+  for (uint32_t k = 0; k < 16; k++) g.onFailure(0x0A000200 + k);  // relock everyone
+  TEST_ASSERT_FALSE(g.allowed(0x0A000300));  // unknown client: table is all locks
+  TEST_ASSERT_TRUE(g.retryAfterSeconds(0x0A000300) > 0);
+}
+
+static void test_global_brake_against_distributed_guessing() {
+  auth::LoginGuard g(fakeClock);
+  for (uint32_t k = 0; k < 20; k++) g.onFailure(0x0A000400 + k);  // 1 failure each, 20 clients
+  TEST_ASSERT_FALSE(g.allowed(0x0A000500));  // even a fresh client waits
+  TEST_ASSERT_EQUAL_UINT32(30, g.retryAfterSeconds(0x0A000500));
+  fakeClock.advanceSeconds(30);
+  TEST_ASSERT_TRUE(g.allowed(0x0A000500));
+}
+
 static void test_host_header_checks_block_dns_rebinding() {
   TEST_ASSERT_TRUE(auth::hostAllowed("192.168.1.50", "192.168.1.50", "s3adblock"));
   TEST_ASSERT_TRUE(auth::hostAllowed("192.168.1.50:80", "192.168.1.50", "s3adblock"));
@@ -110,6 +171,10 @@ static void test_host_header_checks_block_dns_rebinding() {
   TEST_ASSERT_FALSE(auth::hostAllowed("evil.example", "192.168.1.50", "s3adblock"));
   TEST_ASSERT_FALSE(auth::hostAllowed("s3adblock.local.evil.example", "192.168.1.50", "s3adblock"));
   TEST_ASSERT_FALSE(auth::hostAllowed("192.168.1.500", "192.168.1.50", "s3adblock"));
+  TEST_ASSERT_FALSE(auth::hostAllowed("192.168.1.50:evil.example", "192.168.1.50", "s3adblock"));
+  TEST_ASSERT_FALSE(auth::hostAllowed("192.168.1.50:", "192.168.1.50", "s3adblock"));
+  TEST_ASSERT_FALSE(auth::hostAllowed("192.168.1.50:80:80", "192.168.1.50", "s3adblock"));
+  TEST_ASSERT_FALSE(auth::hostAllowed("[::1]:80", "192.168.1.50", "s3adblock"));
   TEST_ASSERT_FALSE(auth::hostAllowed("", "192.168.1.50", "s3adblock"));
   TEST_ASSERT_FALSE(auth::hostAllowed(nullptr, "192.168.1.50", "s3adblock"));
 }
@@ -129,11 +194,15 @@ static void test_origin_checks_block_cross_site_requests() {
 
 int main(int, char**) {
   UNITY_BEGIN();
-  RUN_TEST(test_placeholder_password_forces_a_change);
+  RUN_TEST(test_placeholder_password_never_authenticates);
+  RUN_TEST(test_missing_or_weak_default_also_needs_setup_code);
   RUN_TEST(test_changed_password_is_hashed_and_survives_reboot);
   RUN_TEST(test_old_password_stops_working_after_change_even_if_cached);
   RUN_TEST(test_salts_differ_between_changes);
   RUN_TEST(test_login_guard_locks_out_with_backoff);
+  RUN_TEST(test_locked_clients_cannot_be_evicted_by_others);
+  RUN_TEST(test_saturated_table_refuses_newcomers);
+  RUN_TEST(test_global_brake_against_distributed_guessing);
   RUN_TEST(test_host_header_checks_block_dns_rebinding);
   RUN_TEST(test_origin_checks_block_cross_site_requests);
   return UNITY_END();

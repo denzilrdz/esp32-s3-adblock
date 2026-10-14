@@ -24,7 +24,7 @@ bool equalsCi(const char* a, size_t aLen, const char* b) {
 
 PasswordStore::PasswordStore(hal::IKeyValueStore& kv, hal::IRandom& random, const char* defaultUser,
                              const char* defaultPassword)
-    : kv_(kv), random_(random), user_(defaultUser), defaultPassword_(defaultPassword) {
+    : kv_(kv), random_(random), user_(defaultUser ? defaultUser : "admin"), defaultPassword_(defaultPassword) {
   uint8_t rec[kRecordSize];
   size_t len = 0;
   if (kv_.getBlob(kKey, rec, sizeof(rec), len) && len == kRecordSize &&
@@ -32,6 +32,12 @@ PasswordStore::PasswordStore(hal::IKeyValueStore& kv, hal::IRandom& random, cons
     memcpy(salt_, rec, 16);
     memcpy(hash_, rec + 16, util::kSha256Size);
     stored_ = true;
+  }
+  if (mustChange()) {
+    // 12 characters from an unambiguous alphabet (no 0/O/1/l): ~60 bits.
+    static const char kAlphabet[] = "23456789abcdefghjkmnpqrstuvwxyz";
+    for (int i = 0; i < 12; i++) setupCode_[i] = kAlphabet[random_.next32() % (sizeof(kAlphabet) - 1)];
+    setupCode_[12] = 0;
   }
 }
 
@@ -74,11 +80,13 @@ bool PasswordStore::verify(const char* user, const char* password) {
     deriveKey(password, salt_, h);
     ok = util::constantTimeEqual(h, hash_, sizeof(h));
   } else {
-    // First boot: the secrets.h password (compared as hashes: constant length).
-    uint8_t a[util::kSha256Size], b[util::kSha256Size];
+    // First boot. A strong secrets.h password works; a missing/weak/placeholder one
+    // never does (it may be public) - only the serial-console setup code.
+    const char* expected = mustChange() ? setupCode_ : defaultPassword_;
+    uint8_t a[util::kSha256Size], b[util::kSha256Size];  // compare hashes: constant length
     util::sha256(reinterpret_cast<const uint8_t*>(password), strlen(password), a);
-    util::sha256(reinterpret_cast<const uint8_t*>(defaultPassword_), strlen(defaultPassword_), b);
-    ok = util::constantTimeEqual(a, b, sizeof(a));
+    util::sha256(reinterpret_cast<const uint8_t*>(expected), strlen(expected), b);
+    ok = *expected && util::constantTimeEqual(a, b, sizeof(a));
   }
   if (ok) cacheCredentials(user, password);
   return ok;
@@ -112,35 +120,52 @@ bool PasswordStore::change(const char* current, const char* next, const char** w
   memcpy(hash_, h, sizeof(h));
   stored_ = true;
   haveCache_ = false;  // old credentials must not keep working through the cache
+  memset(setupCode_, 0, sizeof(setupCode_));
   return true;
 }
 
 LoginGuard::Entry* LoginGuard::find(uint32_t ip, bool create) {
-  Entry* oldest = &entries_[0];
+  const uint64_t now = clock_.monotonicMs();
+  Entry* victim = nullptr;
   for (Entry& e : entries_) {
     if (e.ip == ip && (e.failures || e.lockedUntil)) return &e;
-    if (e.lastSeen < oldest->lastSeen) oldest = &e;
+    // Never evict a locked entry: otherwise failures from other addresses could
+    // flush an attacker's lockout.
+    if (!locked(e, now) && (!victim || e.lastSeen < victim->lastSeen)) victim = &e;
   }
-  if (!create) return nullptr;
-  *oldest = Entry{};
-  oldest->ip = ip;
-  return oldest;
+  tableSaturated_ = victim == nullptr;
+  if (!create || !victim) return nullptr;
+  *victim = Entry{};
+  victim->ip = ip;
+  return victim;
 }
 
 bool LoginGuard::allowed(uint32_t ip) {
+  const uint64_t now = clock_.monotonicMs();
+  if (now < globalLockedUntil_) return false;
   Entry* e = find(ip, false);
-  return !e || clock_.monotonicMs() >= e->lockedUntil;
+  if (e) return !locked(*e, now);
+  return !tableSaturated_;
 }
 
 uint32_t LoginGuard::retryAfterSeconds(uint32_t ip) {
-  Entry* e = find(ip, false);
   const uint64_t now = clock_.monotonicMs();
-  return (!e || now >= e->lockedUntil) ? 0 : static_cast<uint32_t>((e->lockedUntil - now + 999) / 1000);
+  uint64_t until = globalLockedUntil_;
+  Entry* e = find(ip, false);
+  if (e && e->lockedUntil > until) until = e->lockedUntil;
+  if (!e && tableSaturated_ && until <= now) return kBaseLockMs / 1000;
+  return now >= until ? 0 : static_cast<uint32_t>((until - now + 999) / 1000);
 }
 
 void LoginGuard::onFailure(uint32_t ip) {
-  Entry* e = find(ip, true);
   const uint64_t now = clock_.monotonicMs();
+  if (now - windowStart_ >= kGlobalWindowMs) {
+    windowStart_ = now;
+    windowFailures_ = 0;
+  }
+  if (++windowFailures_ >= kGlobalMaxFailures) globalLockedUntil_ = now + kGlobalLockMs;
+  Entry* e = find(ip, true);
+  if (!e) return;  // table full of locked clients: allowed() already refuses newcomers
   e->lastSeen = now;
   if (++e->failures < kFreeAttempts) return;
   e->lockMs = e->lockMs ? (e->lockMs * 2 > kMaxLockMs ? kMaxLockMs : e->lockMs * 2) : kBaseLockMs;
@@ -156,8 +181,14 @@ void LoginGuard::onSuccess(uint32_t ip) {
 bool hostAllowed(const char* host, const char* deviceIp, const char* hostname) {
   if (!host || !*host) return false;
   size_t len = strlen(host);
-  const char* colon = strrchr(host, ':');
-  if (colon && host[0] != '[') len = static_cast<size_t>(colon - host);  // strip :port (IPv4/name)
+  const char* colon = strchr(host, ':');
+  if (colon) {  // strip ":port"; the port must be 1-5 digits and nothing else
+    const char* p = colon + 1;
+    size_t digits = 0;
+    while (p[digits] >= '0' && p[digits] <= '9') digits++;
+    if (digits == 0 || digits > 5 || p[digits] != 0) return false;
+    len = static_cast<size_t>(colon - host);
+  }
   if (deviceIp && equalsCi(host, len, deviceIp)) return true;
   if (!hostname || !*hostname) return false;
   if (equalsCi(host, len, hostname)) return true;

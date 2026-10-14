@@ -1,8 +1,10 @@
 #pragma once
 // Dashboard authentication (ARCHITECTURE.md §9):
 //  - PasswordStore: PBKDF2-HMAC-SHA256 hash + random salt in NVS; the compile-time
-//    password from secrets.h is only a first-boot default. The public placeholder
-//    password forces a change before anything else can be modified.
+//    password from secrets.h is only a first-boot default. A missing, weak or
+//    placeholder default never authenticates: instead a random one-time setup code
+//    (printed on the serial console, i.e. physical access) is required to set the
+//    first password, so nobody else on the LAN can claim the device first.
 //  - LoginGuard: per-client lockout with exponential backoff after repeated failures.
 //  - hostAllowed/originAllowed: reject requests through foreign hostnames (DNS
 //    rebinding) and cross-site requests (CSRF).
@@ -31,10 +33,13 @@ class PasswordStore {
                 const char* defaultPassword);
 
   const char* user() const { return user_; }
-  // True while no password was set and the default is the public placeholder:
-  // the dashboard then allows only setting a password.
+  // True while no password was set and the default is missing/weak/placeholder:
+  // the dashboard then allows only setting a password, using setupCode().
   bool mustChange() const;
   bool hasStoredPassword() const { return stored_; }
+  // One-time code accepted as the "current password" while mustChange(). Changes on
+  // every boot; empty when not needed. Print it to the serial console only.
+  const char* setupCode() const { return setupCode_; }
 
   bool verify(const char* user, const char* password);
   // Returns false and a reason if the current password is wrong or the new one is
@@ -57,6 +62,7 @@ class PasswordStore {
   // PBKDF2 every time. Cleared when the password changes.
   bool haveCache_ = false;
   uint8_t cache_[util::kSha256Size] = {0};
+  char setupCode_[16] = {0};
 };
 
 class LoginGuard {
@@ -64,6 +70,10 @@ class LoginGuard {
   static constexpr int kFreeAttempts = 5;
   static constexpr uint32_t kBaseLockMs = 30000;
   static constexpr uint32_t kMaxLockMs = 300000;
+  // Global brake against guessing from many addresses at once.
+  static constexpr uint32_t kGlobalWindowMs = 60000;
+  static constexpr uint32_t kGlobalMaxFailures = 20;
+  static constexpr uint32_t kGlobalLockMs = 30000;
 
   explicit LoginGuard(const hal::IClock& clock) : clock_(clock) {}
 
@@ -81,9 +91,14 @@ class LoginGuard {
     uint64_t lastSeen = 0;
   };
   Entry* find(uint32_t ip, bool create);
+  bool locked(const Entry& e, uint64_t now) const { return now < e.lockedUntil; }
 
   const hal::IClock& clock_;
   Entry entries_[16];
+  uint64_t windowStart_ = 0;
+  uint32_t windowFailures_ = 0;
+  uint64_t globalLockedUntil_ = 0;
+  bool tableSaturated_ = false;  // every entry locked: refuse unknown clients too
 };
 
 // `host` is the Host header (may carry ":port"). Allowed: the device IP, or
