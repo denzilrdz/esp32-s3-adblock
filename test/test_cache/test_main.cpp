@@ -173,6 +173,15 @@ static void test_refuses_answers_still_carrying_opt() {
   TEST_ASSERT_FALSE(put(q, r));
 }
 
+static void test_refuses_answer_for_a_different_question() {
+  // An answer for evil.example must never be filed under a query for bank.example.
+  dns::Query bank = query("bank.example");
+  TEST_ASSERT_FALSE(put(bank, answerA("evil.example", 300)));
+  TEST_ASSERT_FALSE(put(bank, ResponseBuilder(1, "bank.example", dns::kTypeAaaa).build()));
+  TEST_ASSERT_EQUAL(0, c->stats().entries);
+  TEST_ASSERT_EQUAL(0, c->lookup(bank, out, sizeof(out)));
+}
+
 static void test_keys_separate_type_and_do_bit_but_ignore_case() {
   dns::Query a = query("Example.COM");
   put(a, answerA("example.com", 300));
@@ -223,6 +232,7 @@ int main(int, char**) {
   RUN_TEST(test_negative_answers_use_soa_and_caps);
   RUN_TEST(test_never_caches_servfail_truncated_or_zero_ttl);
   RUN_TEST(test_refuses_answers_still_carrying_opt);
+  RUN_TEST(test_refuses_answer_for_a_different_question);
   RUN_TEST(test_keys_separate_type_and_do_bit_but_ignore_case);
   RUN_TEST(test_reinsert_replaces_existing_entry);
   RUN_TEST(test_clear_empties_and_restores_memory);
