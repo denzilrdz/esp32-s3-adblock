@@ -25,12 +25,12 @@ pio device monitor -e esp32s3        # 115200 baud, filters: esp32_exception_dec
   from the build you flashed.
 - Manual decode:
   ```bash
-  ~/.platformio/packages/toolchain-xtensa-esp32s3/bin/xtensa-esp32s3-elf-addr2line \
+  ~/.platformio/packages/toolchain-xtensa-esp-elf/bin/xtensa-esp32s3-elf-addr2line \
     -pfiaC -e .pio/build/esp32s3/firmware.elf 0x4200abcd 0x4200ef01
   ```
 - **Core dump:** written to the `coredump` partition on panic. Read it out:
   ```bash
-  pio pkg exec -p tool-esptoolpy -- esptool.py --chip esp32s3 read_flash 0xFF0000 0x10000 coredump.bin
+  ~/.platformio/penv/bin/esptool --chip esp32s3 read-flash 0xFF0000 0x10000 coredump.bin
   uvx esp-coredump info_corefile -t raw -c coredump.bin .pio/build/esp32s3/firmware.elf
   ```
   Release builds attach `firmware-<env>-vX.Y.Z.elf` for decoding field crashes.

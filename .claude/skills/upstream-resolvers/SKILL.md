@@ -36,12 +36,13 @@ Quad9 by default):
 Changing upstream settings on the dashboard restarts the device (transports are
 created at boot in `startDnsService()`).
 
-## Platform facts (Arduino 2.0.17 / IDF 4.4, verified)
+## Platform facts (Arduino 3.3.12 / IDF 5.5 / mbedTLS 3.6, verified in the SDK headers)
 
 - **TLS:** `platform::TlsStream` drives mbedTLS directly on an lwIP socket:
   `mbedtls_ssl_set_hostname(<verify name>)` while connecting to the IP literal
-  (mbedTLS 2.28 doesn't match IP SANs), CA bundle via `esp_crt_bundle_attach`
-  (declared in `platform/crt_bundle.h`), TLS 1.2+, hardware RNG.
+  (we verify the name, never the IP), CA bundle via `esp_crt_bundle_attach` from
+  `<esp_crt_bundle.h>`, `mbedtls_ssl_conf_min_tls_version(TLS1_2)`, hardware RNG.
+  TLS 1.3 is off in the prebuilt libs, so resumption uses TLS 1.2 tickets.
 - **Session resumption:** `esp_tls` has no client-session API in this SDK, which is
   why `TlsStream` exists; it keeps the ticket with `mbedtls_ssl_get_session` /
   `mbedtls_ssl_set_session`.

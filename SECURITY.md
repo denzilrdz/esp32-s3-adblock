@@ -39,9 +39,9 @@ Known, documented limits (see [docs/ARCHITECTURE.md §9](docs/ARCHITECTURE.md)):
   and the server name, but not their validity dates: the prebuilt mbedTLS is built
   without `MBEDTLS_HAVE_TIME_DATE`. An expired or not-yet-valid certificate from a
   trusted CA would be accepted.
-- The firmware is built on Arduino-ESP32 2.0.17 / ESP-IDF 4.4, which Espressif no
-  longer maintains (ESP-IDF 4.4 reached end of life in July 2024). Moving to
-  Arduino-ESP32 3.x / ESP-IDF 5 is the main planned platform change.
+- The firmware is built with the community pioarduino PlatformIO platform
+  (Arduino-ESP32 3.3.12 / ESP-IDF 5.5.5), pinned to one release. Security fixes in
+  ESP-IDF reach the device only when that pin is bumped.
 
-Signed firmware, certificate date checks and the platform upgrade are planned
+Signed firmware and certificate date checks are planned
 ([docs/ARCHITECTURE.md §15](docs/ARCHITECTURE.md#15-platform-notes-and-roadmap)).

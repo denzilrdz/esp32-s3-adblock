@@ -249,9 +249,8 @@ Contributions are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md) and the
 
 ## Roadmap
 
-Planned (details in [ARCHITECTURE.md §15](docs/ARCHITECTURE.md#15-platform-notes-and-roadmap)): move to
-Arduino-ESP32 3.x / ESP-IDF 5, signed firmware images, DNS over IPv6, an optional
-DHCP server, and certificate date checks.
+Planned (details in [ARCHITECTURE.md §15](docs/ARCHITECTURE.md#15-platform-notes-and-roadmap)): signed
+firmware images, DNS over IPv6, an optional DHCP server, and certificate date checks.
 
 ## Support
 

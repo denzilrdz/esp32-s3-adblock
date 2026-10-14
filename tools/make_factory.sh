@@ -1,17 +1,19 @@
 #!/usr/bin/env bash
-# Merges bootloader + partition table + OTA data + app into one ESP32-S3 image that can
-# be flashed at offset 0 (first install, web installer). Run after `pio run -e esp32s3`.
-#   tools/make_factory.sh [out.bin]
+# Copies the merged ESP32-S3 image (bootloader 0x0 + partition table 0x8000 + OTA data
+# 0xe000 + app 0x10000) that can be flashed at offset 0 (first install, web installer).
+# The pioarduino platform writes it as firmware.factory.bin after every build, but a
+# failed merge only prints a message, so check that it is there and up to date.
+#   tools/make_factory.sh [out.bin]     (run after `pio run -e esp32s3`)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 OUT="${1:-.pio/build/esp32s3/factory.bin}"
-PIO=".venv/bin/pio"; [ -x "$PIO" ] || PIO="pio"
 B=".pio/build/esp32s3"
-BOOT_APP0="${PLATFORMIO_CORE_DIR:-$HOME/.platformio}/packages/framework-arduinoespressif32/tools/partitions/boot_app0.bin"
-for f in "$B/bootloader.bin" "$B/partitions.bin" "$B/firmware.bin" "$BOOT_APP0"; do
-  [ -f "$f" ] || { echo "missing $f (run: pio run -e esp32s3)" >&2; exit 1; }
-done
-# Flash mode/frequency/size are kept from the bootloader image header ("keep" defaults).
-"$PIO" pkg exec -p tool-esptoolpy -- esptool.py --chip esp32s3 merge_bin -o "$OUT" \
-  0x0 "$B/bootloader.bin" 0x8000 "$B/partitions.bin" 0xe000 "$BOOT_APP0" 0x10000 "$B/firmware.bin"
+[ -f "$B/firmware.bin" ] || { echo "missing $B/firmware.bin (run: pio run -e esp32s3)" >&2; exit 1; }
+[ -f "$B/firmware.factory.bin" ] || { echo "missing $B/firmware.factory.bin (merge failed? see the build log)" >&2; exit 1; }
+[ ! "$B/firmware.bin" -nt "$B/firmware.factory.bin" ] ||
+  { echo "$B/firmware.factory.bin is older than firmware.bin (merge failed?)" >&2; exit 1; }
+# The app must sit at 0x10000 inside the merged image.
+cmp -s <(tail -c +$((0x10000 + 1)) "$B/firmware.factory.bin" | head -c "$(wc -c <"$B/firmware.bin")") "$B/firmware.bin" ||
+  { echo "firmware.factory.bin does not contain firmware.bin at 0x10000" >&2; exit 1; }
+cp "$B/firmware.factory.bin" "$OUT"
 echo "factory image: $OUT"

@@ -15,9 +15,10 @@ before changing core logic or tasks.** User docs: README.md, docs/ROUTER_SETUP.m
 | `native` | host (macOS/Linux) | Unity tests for `lib/core`, ASan + UBSan |
 | `coverage` | host | like `native` with `--coverage` (used by `tools/coverage.sh`) |
 
-Framework: Arduino-ESP32 **2.0.17** on **ESP-IDF 4.4** (platform `espressif32@7.1.3`,
-pinned). Check APIs against those versions, not IDF 5 / core 3.x docs (the planned
-move to pioarduino/core 3.x is in ARCHITECTURE.md §15).
+Framework: Arduino-ESP32 **3.3.12** on **ESP-IDF 5.5.5** with mbedTLS 3.6, from the
+community [pioarduino](https://github.com/pioarduino/platform-espressif32) platform
+(release `55.03.312-1`, pinned by URL in `platformio.ini`). Check APIs against those
+versions, not Arduino 2.x / IDF 4.4 docs.
 
 ## Commands
 
@@ -105,8 +106,9 @@ native tests; pre-push = clang-tidy + esp32s3 firmware build.
 - **ESP32-S3 only** (needs PSRAM + 16 MB flash). Don't add other chips or a no-PSRAM
   path back.
 - **Partition table:** `partitions_16MB.csv`. The
-  LittleFS partition must stay labelled and typed `spiffs` (IDF 4.4 has no littlefs
-  subtype). Changing offsets wipes data and needs a USB flash.
+  LittleFS partition stays labelled and typed `spiffs` (`LittleFS.begin()` looks for
+  that label; changing it wipes the list). Changing offsets wipes data and needs a
+  USB flash.
 - **mbedTLS buffers are internal RAM only** (prebuilt libs): about 45 KB per TLS
   session, so at most 2 at once.
 - **UDP socket buffers only 6 datagrams** (`LWIP_UDP_RECVMBOX_SIZE`), so the DNS
@@ -114,7 +116,13 @@ native tests; pre-push = clang-tidy + esp32s3 firmware build.
 - **Only 16 lwIP sockets in total**: budget in ARCHITECTURE.md §11 before adding one.
 - **ARP/lwIP core calls** (e.g. `etharp_find_addr`) only via `tcpip_callback`.
 - **C hooks from Arduino** (`verifyRollbackLater`, …) need `extern "C"` to override.
-- `<esp_crt_bundle.h>` resolves to the Arduino copy; use `platform/crt_bundle.h`.
+- **CA bundle:** `#include <esp_crt_bundle.h>` (ESP-IDF's; core 3 has no Arduino copy).
+- **lwIP core locking is on** (`CONFIG_LWIP_TCPIP_CORE_LOCKING`): socket calls are fine
+  from any task, raw lwIP core calls still go through `tcpip_callback`.
+- **Platform tools:** pioarduino keeps esptool 5 (`esptool`, dashed subcommands like
+  `read-flash`) in `~/.platformio/penv/bin`, and writes `firmware.factory.bin` after
+  each build (`tools/make_factory.sh` checks and copies it). First build downloads
+  ~4 GB of packages.
 - mDNS name: `s3adblock.local`; setup AP `S3-AdBlock-XXXX`.
 - **First boot:** a placeholder/weak `WEB_PASS` never works; the serial console prints
   a one-time setup code. ArduinoOTA stays off until `OTA_PASS` is real (10+ chars).

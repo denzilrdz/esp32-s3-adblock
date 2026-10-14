@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+- Firmware now builds on Arduino-ESP32 3.3.12 / ESP-IDF 5.5.5 (mbedTLS 3.6) through
+  the pioarduino PlatformIO platform, pinned to release 55.03.312-1. ESP-IDF 4.4 no
+  longer gets security fixes. Partition layout, settings and blocklist format are
+  unchanged.
+
 ### Fixed
 - CI: native tests failed on Linux GCC, which predefines `unix` as a macro; coverage
   failed because `pio` was only installed in `.venv`.

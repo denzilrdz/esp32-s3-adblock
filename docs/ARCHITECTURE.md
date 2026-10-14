@@ -105,13 +105,12 @@ lib/core/                     portable C++17, unit-tested natively (pio test -e 
               logger.h            hardware-abstraction interfaces
   util/       crc32, sha256 (+HMAC, PBKDF2), civil_time, bytes
 
-src/                          ESP32 only (Arduino core 2.0.17 / ESP-IDF 4.4)
+src/                          ESP32 only (Arduino core 3.3.12 / ESP-IDF 5.5)
   main.cpp                    composition root: builds objects, injects
                               dependencies, starts tasks
   platform/   esp_clock.h, esp_random.h, serial_logger.h, rtos.h (Mutex),
               psram.h, littlefs_fs.h, nvs_kv_store.h, esp_http.* (HTTPS client),
-              tls_stream.* (mbedTLS + lwIP), transports.* (DoT, DoH, UDP),
-              crt_bundle.h
+              tls_stream.* (mbedTLS + lwIP), transports.* (DoT, DoH, UDP)
   tasks/      dns_service.*       dns_io, dns_tcp and dns_up tasks
   app/        blocklist_manager.* list install/update, rules, status
               clients.*           client table, bans, pause, MAC lookups
@@ -218,7 +217,7 @@ thread (`tcpip_callback`), never from the DNS task.
 The IDF already starts the task watchdog (TWDT) with `CONFIG_ESP_TASK_WDT_TIMEOUT_S = 5`,
 panic on, watching IDLE0. We do **not** call `esp_task_wdt_init()` again. Each of
 our tasks calls `esp_task_wdt_add(NULL)` and `esp_task_wdt_reset()` once per loop
-iteration (IDF 4.4 signatures; IDF 5 changed them). Every blocking call in a
+iteration (`esp_task_wdt_add(NULL)` keeps the same signature in IDF 5). Every blocking call in a
 watched task has a timeout below 5 s; the updater resets the watchdog after each
 downloaded chunk, and long blocklist validations feed it through a progress callback.
 The 5 s timeout is kept as is.
@@ -441,13 +440,14 @@ timeout)`, `close()`, plus `pipelined()`. Implementations:
 - **Quad9 is not offered over DoH.** Live testing showed that Quad9's DoH
   endpoint answers HTTP/1.1 with `505 HTTP Version Not Supported` (it requires
   HTTP/2), and this platform has no HTTP/2 client.
-- **TLS via `esp_tls`**, not `WiFiClientSecure`:
-  - We connect to the IP and set `common_name` to the provider hostname, which
-    `esp_tls` uses for both SNI and certificate verification.
+- **TLS on raw mbedTLS 3.6** (`platform::TlsStream`), not `WiFiClientSecure`; the
+  blocklist download uses `esp_http_client`:
+  - We connect to the IP and call `mbedtls_ssl_set_hostname()` with the provider
+    hostname, used for both SNI and certificate verification. We verify the name,
+    never the IP.
   - Certificates are checked against the ESP-IDF CA bundle already linked into the
-    prebuilt mbedTLS (`crt_bundle_attach = esp_crt_bundle_attach`), with no extra
-    files.
-  - mbedTLS 2.28 does not match IP SANs, so the hostname is mandatory.
+    prebuilt mbedTLS (`esp_crt_bundle_attach`), with no extra files. TLS 1.2 minimum;
+    the prebuilt libraries have TLS 1.3 off, so sessions are TLS 1.2.
   - `CONFIG_MBEDTLS_HAVE_TIME_DATE` is not set in the prebuilt libraries, so
     certificate validity dates are not checked. This is why DoT works before NTP
     has synced. We accept this; see §10.
@@ -686,11 +686,11 @@ spiffs,    data, spiffs,   0x810000,  0x7E0000  ~7.9 MB  LittleFS: blocklists, c
 coredump,  data, coredump, 0xFF0000,  0x10000    64 KB   crash dumps
 ```
 
-- **App slots:** the current firmware is about 1.1 MB, so a 4 MB slot is
+- **App slots:** the current firmware is about 1.35 MB, so a 4 MB slot is
   comfortable.
 - **Filesystem partition:** it keeps the label `spiffs` and subtype `spiffs`.
-  IDF 4.4 has no `littlefs` subtype, and Arduino's `LittleFS.begin()` looks for the
-  `spiffs` label by default.
+  Arduino's `LittleFS.begin()` looks for the `spiffs` label by default, and changing
+  label or subtype would wipe the stored list.
 - **Build flags:** the S3 env uses `board_build.arduino.memory_type = qio_opi`
   (quad flash, octal PSRAM); `opi_opi` would boot-loop an N16R8. GPIO 35–37 are
   used by the octal PSRAM and must not be used.
@@ -779,13 +779,19 @@ Hello, which is up to websites and browsers, or a VPN closes that gap.
 
 ## 15. Platform notes and roadmap
 
-**Why Arduino-ESP32 2.0.17 (ESP-IDF 4.4).** It is the last core supported by the
-official PlatformIO `espressif32` platform, which keeps builds reproducible with stock
-tooling. Arduino-ESP32 3.x (ESP-IDF 5) is current upstream but on PlatformIO needs the
-community [pioarduino](https://github.com/pioarduino/platform-espressif32) platform.
-Moving there would bring a newer mbedTLS/CA bundle and IDF 5 APIs (watchdog config,
-`esp_tls` session tickets) and is the main planned platform change. Every place that
-depends on IDF 4.4 specifics is marked in the code and in the skills.
+**Why pioarduino (Arduino-ESP32 3.3.12, ESP-IDF 5.5.5).** The official PlatformIO
+`espressif32` platform stops at Arduino-ESP32 2.0.17 on ESP-IDF 4.4, and Espressif
+ended ESP-IDF 4.4 support in July 2024 (no more security fixes for mbedTLS or lwIP).
+The community [pioarduino](https://github.com/pioarduino/platform-espressif32)
+platform tracks current Arduino-ESP32 releases. It is pinned to one release zip by
+URL (SHA-256 in `platformio.ini`), so builds stay reproducible; Dependabot can't
+update it, so bump it by hand: pick a release at least two weeks old, check the
+zip's SHA-256 against the release page, rebuild, and run the hardware checks.
+
+Settings that did not change with the move (checked in the prebuilt `sdkconfig.h`
+for `qio_opi`): 16 lwIP sockets, 6-datagram UDP receive mailbox, mbedTLS buffers in
+internal RAM, no `MBEDTLS_HAVE_TIME_DATE`, TLS 1.3 off, task watchdog at 5 s on
+IDLE0, app rollback enabled. New: lwIP core locking is on.
 
 **Planned (not in v0.1.0):**
 

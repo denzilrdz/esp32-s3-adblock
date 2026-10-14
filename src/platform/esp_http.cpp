@@ -7,7 +7,7 @@
 #include <cstdio>
 #include <cstring>
 
-#include "platform/crt_bundle.h"
+#include <esp_crt_bundle.h>
 
 namespace platform {
 

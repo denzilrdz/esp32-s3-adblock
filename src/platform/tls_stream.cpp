@@ -1,6 +1,6 @@
 #include "platform/tls_stream.h"
 
-#include "platform/crt_bundle.h"
+#include <esp_crt_bundle.h>
 
 #include <esp_err.h>
 #include <esp_system.h>
@@ -76,7 +76,7 @@ bool TlsStream::setupConfig() {
     return false;
   }
   mbedtls_ssl_conf_authmode(&conf_, MBEDTLS_SSL_VERIFY_REQUIRED);
-  mbedtls_ssl_conf_min_version(&conf_, MBEDTLS_SSL_MAJOR_VERSION_3, MBEDTLS_SSL_MINOR_VERSION_3);
+  mbedtls_ssl_conf_min_tls_version(&conf_, MBEDTLS_SSL_VERSION_TLS1_2);
   mbedtls_ssl_conf_rng(&conf_, hardwareRng, nullptr);
   mbedtls_ssl_conf_session_tickets(&conf_, MBEDTLS_SSL_SESSION_TICKETS_ENABLED);
   if (esp_crt_bundle_attach(&conf_) != ESP_OK) {
