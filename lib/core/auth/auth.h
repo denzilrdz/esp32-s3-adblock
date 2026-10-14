@@ -6,6 +6,7 @@
 //    (printed on the serial console, i.e. physical access) is required to set the
 //    first password, so nobody else on the LAN can claim the device first.
 //  - LoginGuard: per-client lockout with exponential backoff after repeated failures.
+//    Deliberately no global lockout: that would let any LAN client lock the owner out.
 //  - hostAllowed/originAllowed: reject requests through foreign hostnames (DNS
 //    rebinding) and cross-site requests (CSRF).
 
@@ -70,10 +71,6 @@ class LoginGuard {
   static constexpr int kFreeAttempts = 5;
   static constexpr uint32_t kBaseLockMs = 30000;
   static constexpr uint32_t kMaxLockMs = 300000;
-  // Global brake against guessing from many addresses at once.
-  static constexpr uint32_t kGlobalWindowMs = 60000;
-  static constexpr uint32_t kGlobalMaxFailures = 20;
-  static constexpr uint32_t kGlobalLockMs = 30000;
 
   explicit LoginGuard(const hal::IClock& clock) : clock_(clock) {}
 
@@ -90,15 +87,15 @@ class LoginGuard {
     uint64_t lockedUntil = 0;
     uint64_t lastSeen = 0;
   };
+  // Returns the client's entry, or the shared overflow entry when every slot holds a
+  // locked client (locked entries are never evicted, so a flood of new addresses can
+  // neither flush an attacker's lock nor lock out clients already in the table).
   Entry* find(uint32_t ip, bool create);
   bool locked(const Entry& e, uint64_t now) const { return now < e.lockedUntil; }
 
   const hal::IClock& clock_;
-  Entry entries_[16];
-  uint64_t windowStart_ = 0;
-  uint32_t windowFailures_ = 0;
-  uint64_t globalLockedUntil_ = 0;
-  bool tableSaturated_ = false;  // every entry locked: refuse unknown clients too
+  Entry entries_[32];
+  Entry overflow_;
 };
 
 // `host` is the Host header (may carry ":port"). Allowed: the device IP, or

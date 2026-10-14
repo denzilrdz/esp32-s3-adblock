@@ -130,37 +130,26 @@ static void test_locked_clients_cannot_be_evicted_by_others() {
   auth::LoginGuard g(fakeClock);
   const uint32_t attacker = 0x0A000063;
   for (int i = 0; i < 5; i++) g.onFailure(attacker);  // locked 30 s
-  fakeClock.advanceSeconds(30);
-  g.onFailure(attacker);  // locked again, now 60 s (until t = 90 s)
-  fakeClock.advanceSeconds(31);  // new global window: the brake below can't interfere
-  // 16 other addresses fail once each: the table (16 entries) must evict one of
-  // them, never the locked attacker.
-  for (uint32_t k = 1; k <= 16; k++) g.onFailure(0x0A000100 + k);
-  TEST_ASSERT_TRUE(g.allowed(0x0A000101 + 15));  // newcomers still get in (not saturated)
+  // 40 other addresses fail once each: more than the table holds, so entries are
+  // evicted - but never the locked attacker.
+  for (uint32_t k = 1; k <= 40; k++) g.onFailure(0x0A000100 + k);
   TEST_ASSERT_FALSE(g.allowed(attacker));
-  TEST_ASSERT_TRUE(g.retryAfterSeconds(attacker) > 20);
+  TEST_ASSERT_TRUE(g.retryAfterSeconds(attacker) > 0);
 }
 
-static void test_saturated_table_refuses_newcomers() {
+static void test_one_client_cannot_lock_out_another() {
   auth::LoginGuard g(fakeClock);
-  for (uint32_t k = 0; k < 16; k++)
-    for (int i = 0; i < 5; i++) {
-      g.onFailure(0x0A000200 + k);
-      fakeClock.advanceMs(700);  // 80 failures over ~56 s: also trips the global brake
-    }
-  fakeClock.advanceMs(31000);  // global brake over, per-client locks (30 s+) partly active
-  for (uint32_t k = 0; k < 16; k++) g.onFailure(0x0A000200 + k);  // relock everyone
-  TEST_ASSERT_FALSE(g.allowed(0x0A000300));  // unknown client: table is all locks
-  TEST_ASSERT_TRUE(g.retryAfterSeconds(0x0A000300) > 0);
-}
-
-static void test_global_brake_against_distributed_guessing() {
-  auth::LoginGuard g(fakeClock);
-  for (uint32_t k = 0; k < 20; k++) g.onFailure(0x0A000400 + k);  // 1 failure each, 20 clients
-  TEST_ASSERT_FALSE(g.allowed(0x0A000500));  // even a fresh client waits
-  TEST_ASSERT_EQUAL_UINT32(30, g.retryAfterSeconds(0x0A000500));
-  fakeClock.advanceSeconds(30);
-  TEST_ASSERT_TRUE(g.allowed(0x0A000500));
+  const uint32_t owner = 0x0A000002;
+  for (int i = 0; i < 200; i++) g.onFailure(0x0A000063);  // attacker hammers from its address
+  TEST_ASSERT_TRUE(g.allowed(owner));
+  // An attacker controlling 33+ addresses can fill the table with locks; newcomers
+  // then share one overflow entry, which the attacker can lock too (residual risk,
+  // documented in ARCHITECTURE.md §9). A success never unlocks that shared entry.
+  for (uint32_t k = 0; k < 40; k++)
+    for (int i = 0; i < 5; i++) g.onFailure(0x0A000200 + k);
+  TEST_ASSERT_FALSE(g.allowed(0x0A000300));  // newcomer: overflow entry is locked
+  g.onSuccess(0x0A000300);
+  TEST_ASSERT_FALSE(g.allowed(0x0A000300));
 }
 
 static void test_host_header_checks_block_dns_rebinding() {
@@ -201,8 +190,7 @@ int main(int, char**) {
   RUN_TEST(test_salts_differ_between_changes);
   RUN_TEST(test_login_guard_locks_out_with_backoff);
   RUN_TEST(test_locked_clients_cannot_be_evicted_by_others);
-  RUN_TEST(test_saturated_table_refuses_newcomers);
-  RUN_TEST(test_global_brake_against_distributed_guessing);
+  RUN_TEST(test_one_client_cannot_lock_out_another);
   RUN_TEST(test_host_header_checks_block_dns_rebinding);
   RUN_TEST(test_origin_checks_block_cross_site_requests);
   return UNITY_END();

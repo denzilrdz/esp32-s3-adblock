@@ -129,43 +129,29 @@ LoginGuard::Entry* LoginGuard::find(uint32_t ip, bool create) {
   Entry* victim = nullptr;
   for (Entry& e : entries_) {
     if (e.ip == ip && (e.failures || e.lockedUntil)) return &e;
-    // Never evict a locked entry: otherwise failures from other addresses could
-    // flush an attacker's lockout.
     if (!locked(e, now) && (!victim || e.lastSeen < victim->lastSeen)) victim = &e;
   }
-  tableSaturated_ = victim == nullptr;
-  if (!create || !victim) return nullptr;
+  if (!victim) return &overflow_;  // all slots locked: newcomers share one entry
+  if (!create) return nullptr;
   *victim = Entry{};
   victim->ip = ip;
   return victim;
 }
 
 bool LoginGuard::allowed(uint32_t ip) {
-  const uint64_t now = clock_.monotonicMs();
-  if (now < globalLockedUntil_) return false;
   Entry* e = find(ip, false);
-  if (e) return !locked(*e, now);
-  return !tableSaturated_;
+  return !e || !locked(*e, clock_.monotonicMs());
 }
 
 uint32_t LoginGuard::retryAfterSeconds(uint32_t ip) {
   const uint64_t now = clock_.monotonicMs();
-  uint64_t until = globalLockedUntil_;
   Entry* e = find(ip, false);
-  if (e && e->lockedUntil > until) until = e->lockedUntil;
-  if (!e && tableSaturated_ && until <= now) return kBaseLockMs / 1000;
-  return now >= until ? 0 : static_cast<uint32_t>((until - now + 999) / 1000);
+  return (!e || now >= e->lockedUntil) ? 0 : static_cast<uint32_t>((e->lockedUntil - now + 999) / 1000);
 }
 
 void LoginGuard::onFailure(uint32_t ip) {
   const uint64_t now = clock_.monotonicMs();
-  if (now - windowStart_ >= kGlobalWindowMs) {
-    windowStart_ = now;
-    windowFailures_ = 0;
-  }
-  if (++windowFailures_ >= kGlobalMaxFailures) globalLockedUntil_ = now + kGlobalLockMs;
   Entry* e = find(ip, true);
-  if (!e) return;  // table full of locked clients: allowed() already refuses newcomers
   e->lastSeen = now;
   if (++e->failures < kFreeAttempts) return;
   e->lockMs = e->lockMs ? (e->lockMs * 2 > kMaxLockMs ? kMaxLockMs : e->lockMs * 2) : kBaseLockMs;
@@ -175,7 +161,7 @@ void LoginGuard::onFailure(uint32_t ip) {
 
 void LoginGuard::onSuccess(uint32_t ip) {
   Entry* e = find(ip, false);
-  if (e) *e = Entry{};
+  if (e && e != &overflow_) *e = Entry{};
 }
 
 bool hostAllowed(const char* host, const char* deviceIp, const char* hostname) {

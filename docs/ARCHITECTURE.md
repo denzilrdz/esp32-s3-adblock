@@ -561,7 +561,13 @@ automatically. This is a circuit-breaker with exponential backoff.
     (`mbedtls_pkcs5_pbkdf2_hmac`). It is never stored or logged in plain text.
   - While the default password is in use, the dashboard is read-only, apart from
     the password-change form.
-  - After 5 failed logins, the client IP is locked out with backoff (up to 5 min).
+  - After 5 failed logins, the client IP is locked out with backoff (30 s doubling to
+    5 min). There is deliberately no global lockout (any LAN client could use it to
+    lock the owner out). Locked entries are never evicted from the 32-entry table;
+    when all are locked, newcomers share one overflow entry. Residual risk: an
+    attacker controlling 33+ LAN addresses can lock out clients new to the table.
+  - Until a real password is set, a random one-time setup code printed on the
+    serial console is required; a placeholder/weak `secrets.h` password never works.
 - **CSRF:**
   - We keep upstream's custom `X-Requested-With` header check, which a plain
     `<img>` or `<form>` cannot set.
