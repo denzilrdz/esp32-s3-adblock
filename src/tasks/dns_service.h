@@ -102,7 +102,9 @@ class DnsService : private upstream::IForwarderSink {
   struct TcpConn {
     int fd = -1;
     uint32_t gen = 0;
-    uint64_t lastMs = 0;
+    uint64_t lastMs = 0;       // last complete query or reply
+    uint64_t partialSince = 0; // when an incomplete frame started arriving (0 = none)
+    uint8_t inFlight = 0;      // forwarded queries awaiting a reply
     struct sockaddr_in peer;
     size_t rxLen = 0;
     uint8_t rx[2 + 512];  // one length-prefixed query (queries over 512 bytes are refused)
@@ -118,10 +120,12 @@ class DnsService : private upstream::IForwarderSink {
   // Shared pipeline. Returns the length of an immediate reply written to `out`, or
   // 0 if the query was dropped or handed to the upstream task.
   size_t processQuery(const uint8_t* pkt, size_t len, const ClientRef& client, uint8_t* scratch,
-                      size_t scratchCap, uint8_t* out, size_t outCap);
+                      size_t scratchCap, uint8_t* out, size_t outCap, bool* forwarded = nullptr);
+  uint8_t tcpInFlightTotal() const;
   bool createWakePair(int& rxFd, struct sockaddr_in& addr);
   void tcpAccept();
   void tcpRead(uint8_t i);
+  void tcpProcessBuffered(uint8_t i);
   void tcpClose(uint8_t i);
   bool tcpWrite(uint8_t i, const uint8_t* msg, size_t len);
   void completeSlot(uint16_t idx);  // upstream task: route reply + wake the owner

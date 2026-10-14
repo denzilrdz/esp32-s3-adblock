@@ -23,7 +23,11 @@ constexpr uint32_t kUpstreamStack = 12288;  // TLS handshake needs headroom
 constexpr int kDnsCore = 1;
 constexpr int kTcpCore = 0;
 constexpr int kMaxDatagramsPerWake = 16;
-constexpr uint32_t kTcpWriteTimeoutMs = 2000;
+// TCP abuse limits (one LAN client must not be able to starve everyone else):
+constexpr uint32_t kTcpWriteTimeoutMs = 500;    // a client that doesn't read is dropped
+constexpr uint32_t kTcpPartialFrameMs = 2000;   // slow-loris: a frame must arrive quickly
+constexpr uint8_t kTcpMaxInFlightPerConn = 4;   // pipelined queries awaiting upstream
+constexpr uint8_t kTcpMaxInFlightTotal = 8;     // share of the pending pool for all TCP
 
 // Only answer the LAN: RFC 1918, loopback and link-local sources. Prevents the
 // device from becoming an open resolver if port 53 is ever exposed.
@@ -147,7 +151,8 @@ void DnsService::upstreamTaskEntry(void* self) { static_cast<DnsService*>(self)-
 // Shared pipeline (dns_io and dns_tcp)
 
 size_t DnsService::processQuery(const uint8_t* pkt, size_t len, const ClientRef& client, uint8_t* scratch,
-                                size_t scratchCap, uint8_t* out, size_t outCap) {
+                                size_t scratchCap, uint8_t* out, size_t outCap, bool* forwarded) {
+  if (forwarded) *forwarded = false;
   stats_.queries++;
   if (client.origin == Origin::kTcp) stats_.tcpQueries++;
   if (!isPrivateSource(client.addr)) {
@@ -225,7 +230,15 @@ size_t DnsService::processQuery(const uint8_t* pkt, size_t len, const ClientRef&
     return dns::buildErrorReply(q, dns::Rcode::kServFail, out, outCap);
   }
   stats_.forwarded++;
+  if (forwarded) *forwarded = true;
   return 0;
+}
+
+uint8_t DnsService::tcpInFlightTotal() const {
+  uint8_t n = 0;
+  for (uint8_t i = 0; i < cfg_.tcpMaxConns; i++)
+    if (tcp_[i].fd >= 0) n += tcp_[i].inFlight;
+  return n;
 }
 
 // --------------------------------------------------------------------------------
@@ -275,6 +288,8 @@ void DnsService::tcpClose(uint8_t i) {
   if (tcp_[i].fd >= 0) close(tcp_[i].fd);
   tcp_[i].fd = -1;
   tcp_[i].rxLen = 0;
+  tcp_[i].partialSince = 0;
+  tcp_[i].inFlight = 0;
   tcp_[i].gen++;  // late replies for this connection are discarded
 }
 
@@ -316,6 +331,8 @@ void DnsService::tcpAccept() {
   tcp_[slot].fd = fd;
   tcp_[slot].peer = peer;
   tcp_[slot].rxLen = 0;
+  tcp_[slot].partialSince = 0;
+  tcp_[slot].inFlight = 0;
   tcp_[slot].lastMs = clock_.monotonicMs();
 }
 
@@ -327,26 +344,36 @@ void DnsService::tcpRead(uint8_t i) {
     return;
   }
   c.rxLen += static_cast<size_t>(n);
-  c.lastMs = clock_.monotonicMs();
+  tcpProcessBuffered(i);
+}
+
+void DnsService::tcpProcessBuffered(uint8_t i) {
+  TcpConn& c = tcp_[i];
   while (c.fd >= 0 && c.rxLen >= 2) {
+    if (c.inFlight >= kTcpMaxInFlightPerConn || tcpInFlightTotal() >= kTcpMaxInFlightTotal)
+      break;  // stop until replies drain (the connection is not selected meanwhile)
     const size_t msgLen = util::readU16Be(c.rx);
     if (msgLen < dns::kHeaderSize || msgLen + 2 > sizeof(c.rx)) {
       stats_.dropped++;
       tcpClose(i);  // malformed or oversized query: drop the connection
       return;
     }
-    if (c.rxLen < msgLen + 2) return;
+    if (c.rxLen < msgLen + 2) break;
     ClientRef ref;
     ref.origin = Origin::kTcp;
     ref.addr = c.peer;
     ref.conn = i;
     ref.connGen = c.gen;
+    bool forwarded = false;
     const size_t r = processQuery(c.rx + 2, msgLen, ref, tcpScratch_, sizeof(tcpScratch_), tcpOut_ + 2,
-                                  sizeof(tcpOut_) - 2);
+                                  sizeof(tcpOut_) - 2, &forwarded);
     memmove(c.rx, c.rx + 2 + msgLen, c.rxLen - 2 - msgLen);
     c.rxLen -= 2 + msgLen;
+    c.lastMs = clock_.monotonicMs();  // only complete queries count as activity
+    if (forwarded) c.inFlight++;
     if (r) tcpWrite(i, tcpOut_ + 2, r);
   }
+  if (c.fd >= 0) c.partialSince = c.rxLen ? (c.partialSince ? c.partialSince : clock_.monotonicMs()) : 0;
 }
 
 void DnsService::tcpLoop() {
@@ -357,8 +384,9 @@ void DnsService::tcpLoop() {
     FD_SET(tcpListenFd_, &rfds);
     FD_SET(tcpWakeRxFd_, &rfds);
     int maxFd = tcpListenFd_ > tcpWakeRxFd_ ? tcpListenFd_ : tcpWakeRxFd_;
+    const bool poolFull = tcpInFlightTotal() >= kTcpMaxInFlightTotal;
     for (uint8_t i = 0; i < cfg_.tcpMaxConns; i++)
-      if (tcp_[i].fd >= 0) {
+      if (tcp_[i].fd >= 0 && !poolFull && tcp_[i].inFlight < kTcpMaxInFlightPerConn) {
         FD_SET(tcp_[i].fd, &rfds);
         if (tcp_[i].fd > maxFd) maxFd = tcp_[i].fd;
       }
@@ -372,16 +400,26 @@ void DnsService::tcpLoop() {
     while (xQueueReceive(tcpReplyQ_, &idx, 0) == pdTRUE) {
       Pending& p = pool_[idx];
       const uint8_t i = p.client.conn;
-      if (p.replyLen && tcp_[i].fd >= 0 && tcp_[i].gen == p.client.connGen) tcpWrite(i, p.reply, p.replyLen);
+      if (tcp_[i].fd >= 0 && tcp_[i].gen == p.client.connGen) {
+        if (tcp_[i].inFlight) tcp_[i].inFlight--;
+        if (p.replyLen) tcpWrite(i, p.reply, p.replyLen);
+      }
       xQueueSend(freeQ_, &idx, 0);
     }
+    // Queries left buffered while a connection was at its in-flight limit.
+    for (uint8_t i = 0; i < cfg_.tcpMaxConns; i++)
+      if (tcp_[i].fd >= 0 && tcp_[i].rxLen >= 2 && tcp_[i].inFlight < kTcpMaxInFlightPerConn) tcpProcessBuffered(i);
     if (FD_ISSET(tcpListenFd_, &rfds)) tcpAccept();
     for (uint8_t i = 0; i < cfg_.tcpMaxConns; i++)
       if (tcp_[i].fd >= 0 && FD_ISSET(tcp_[i].fd, &rfds)) tcpRead(i);
 
     const uint64_t now = clock_.monotonicMs();
-    for (uint8_t i = 0; i < cfg_.tcpMaxConns; i++)
-      if (tcp_[i].fd >= 0 && now - tcp_[i].lastMs >= cfg_.tcpIdleMs) tcpClose(i);
+    for (uint8_t i = 0; i < cfg_.tcpMaxConns; i++) {
+      if (tcp_[i].fd < 0 || tcp_[i].inFlight) continue;  // waiting on upstream is not idle
+      if (now - tcp_[i].lastMs >= cfg_.tcpIdleMs ||
+          (tcp_[i].partialSince && now - tcp_[i].partialSince >= kTcpPartialFrameMs))
+        tcpClose(i);
+    }
   }
 }
 
