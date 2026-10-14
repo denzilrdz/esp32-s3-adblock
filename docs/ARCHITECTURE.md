@@ -566,6 +566,10 @@ automatically. This is a circuit-breaker with exponential backoff.
     lock the owner out). Locked entries are never evicted from the 32-entry table;
     when all are locked, newcomers share one overflow entry. Residual risk: an
     attacker controlling 33+ LAN addresses can lock out clients new to the table.
+  - Distributed guessing is throttled without a lockout: every failed login costs a
+    fixed 1 s in the single web task (plus PBKDF2), so the total guess rate is about
+    1/s regardless of how many addresses are used. Against a 10+ character password
+    or the 60-bit setup code that is infeasible; the worst case is a slower dashboard.
   - Until a real password is set, a random one-time setup code printed on the
     serial console is required; a placeholder/weak `secrets.h` password never works.
 - **CSRF:**

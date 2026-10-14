@@ -40,6 +40,7 @@ struct DnsServiceConfig {
   dns::LocalZoneOptions local;
   uint32_t blockedTtl = 10;
   uint32_t localTtl = 60;
+  bool passAd = true;  // pass the DNSSEC AD bit from authenticated upstreams
   uint16_t pendingSlots = 32;  // <= Forwarder::kMaxInFlight
   uint16_t port = 53;
   bool tcpEnabled = true;

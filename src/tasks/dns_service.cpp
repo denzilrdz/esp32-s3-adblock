@@ -208,7 +208,7 @@ size_t DnsService::processQuery(const uint8_t* pkt, size_t len, const ClientRef&
   }
   if (n) {
     dns::ClientReplyOptions co;
-    co.authenticatedUpstream = true;
+    co.authenticatedUpstream = cfg_.passAd;  // only authenticated answers are cached
     co.sizeLimit = sizeLimit;
     stats_.cacheHits++;
     return dns::finalizeForClient(scratch, n, q, co, out, outCap);
@@ -451,7 +451,7 @@ void DnsService::onAnswer(uint32_t token, const dns::Query& q, const uint8_t* an
   }
   Pending& p = pool_[token];
   dns::ClientReplyOptions co;
-  co.authenticatedUpstream = authenticated;
+  co.authenticatedUpstream = authenticated && cfg_.passAd;
   co.sizeLimit = p.client.origin == Origin::kTcp ? cfg_.replyCap : q.udpReplyLimit();
   p.replyLen = static_cast<uint16_t>(dns::finalizeForClient(answer, len, q, co, p.reply, cfg_.replyCap));
   if (p.replyLen == 0) {

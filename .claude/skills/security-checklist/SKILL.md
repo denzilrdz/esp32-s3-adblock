@@ -24,16 +24,21 @@ network as hostile.
 
 ## 2. Web dashboard / API
 
-- [ ] Every state-changing route is **POST** and calls `requireAuth()` (Basic Auth +
-      `X-Requested-With` header + Origin/Referer host check).
-- [ ] The `Host` header is checked (device IP or `*.local`): DNS-rebinding defence.
+- [ ] Every state-changing route is **POST** and starts with
+      `guard(Access::kAuth)` in `src/web/dashboard.cpp` (Host check, POST,
+      `X-Requested-With: adblock`, Origin/Referer, Basic Auth vs the PBKDF2 hash,
+      per-client lockout, setup-code gate). Uploads use `check()` at
+      `UPLOAD_FILE_START`.
+- [ ] Read-only GET routes still call `guard(Access::kPublic)` (Host check: DNS
+      rebinding defence).
 - [ ] All values rendered into HTML are escaped (`htmlEscape`); JSON strings are
       escaped (`jsonEscape`); no `innerHTML` with server data in `page.h`, use
       `textContent`.
 - [ ] Inputs are validated (domain syntax, IPs, URL must be `https://`, numeric
       ranges).
-- [ ] Failed-login backoff still applies; no endpoint leaks passwords, the password
-      hash, `OTA_PASS` or Wi-Fi credentials.
+- [ ] Failed-login backoff still applies (per client + fixed 1 s delay); no endpoint
+      leaks passwords, the password hash, the setup code, `OTA_PASS` or Wi-Fi
+      credentials. The setup code is only ever printed to the serial console.
 - [ ] Responses to unauthenticated users don't reveal more than `/api/stats`
       already does.
 
@@ -44,8 +49,7 @@ network as hostile.
 - [ ] With a signing key configured, the image hash is verified **before**
       `Update.end(true)`; on failure, `Update.abort()`.
 - [ ] The rollback health check still gates `esp_ota_mark_app_valid_cancel_rollback()`.
-- [ ] ArduinoOTA has a password set; it refuses to start with the placeholder
-      password.
+- [ ] ArduinoOTA stays disabled unless `OTA_PASS` is a real 10+ char password.
 
 ## 4. TLS / upstream
 
@@ -73,7 +77,7 @@ network as hostile.
 
 ```bash
 git grep -nE 'setInsecure|strcpy|sprintf\(|VERIFY_NONE|skip_common_name'
-git grep -nE 'innerHTML' src/web
+git grep -nE 'innerHTML *=' src/web  # must print nothing
 pio check -e native
 ```
 

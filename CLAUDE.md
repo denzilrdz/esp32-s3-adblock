@@ -45,7 +45,9 @@ lib/core/      portable C++17 logic, NO Arduino/IDF headers (tested natively)
   dns/ blocklist/ cache/ upstream/ sched/ update/ config/ hal/ util/
 src/           ESP32-only: main.cpp (composition root), platform/ (HAL impls:
                TLS, transports, LittleFS, NVS, HTTP), tasks/ (DNS service tasks),
-               app/ (blocklist manager), page.h (dashboard)
+               app/ (blocklist manager, client table, DNS policy),
+               web/ (dashboard REST API, page.h, Wi-Fi setup portal)
+lib/core/auth, config  password hashing/lockout/Host+Origin checks, settings
 test/          Unity tests: test/test_<area>/test_main.cpp, fakes in test/fakes/
 tools/         blocklist builder, signing, coverage/format scripts
 docs/          ARCHITECTURE.md (+ GitHub Pages web installer files)
