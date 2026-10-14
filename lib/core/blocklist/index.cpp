@@ -55,25 +55,30 @@ bool FileIndex::contains(uint64_t hash48) const {
   return false;
 }
 
+// Memory ordering: acquire() does "increment readers_[i], then re-read current_" and
+// publish() does "store current_, then read readers_[old]". That is a store->load
+// (Dekker) handshake: with only acquire/release, both loads may observe stale values,
+// letting a reader keep the old index while the writer frees it. These four
+// operations therefore use the default sequentially consistent ordering.
 IndexHolder::ReadGuard IndexHolder::acquire() const {
   while (true) {
-    const int i = current_.load(std::memory_order_acquire);
-    readers_[i].fetch_add(1, std::memory_order_acq_rel);
-    if (current_.load(std::memory_order_acquire) == i) return ReadGuard(this, i);
-    readers_[i].fetch_sub(1, std::memory_order_release);  // raced with publish: retry
+    const int i = current_.load();
+    readers_[i].fetch_add(1);
+    if (current_.load() == i) return ReadGuard(this, i);
+    readers_[i].fetch_sub(1);  // raced with publish: retry
   }
 }
 
 void IndexHolder::publish(std::unique_ptr<IIndex> next) {
   std::lock_guard<std::mutex> lock(writer_);
-  const int old = current_.load(std::memory_order_acquire);
+  const int old = current_.load();
   const int fresh = 1 - old;
   // The spare slot was emptied by the previous publish; wait out any reader that
   // briefly touched it while retrying acquire().
-  while (readers_[fresh].load(std::memory_order_acquire) != 0) wait_ ? wait_() : std::this_thread::yield();
+  while (readers_[fresh].load() != 0) wait_ ? wait_() : std::this_thread::yield();
   slots_[fresh] = std::move(next);
-  current_.store(fresh, std::memory_order_release);
-  while (readers_[old].load(std::memory_order_acquire) != 0) wait_ ? wait_() : std::this_thread::yield();
+  current_.store(fresh);
+  while (readers_[old].load() != 0) wait_ ? wait_() : std::this_thread::yield();
   slots_[old].reset();
 }
 

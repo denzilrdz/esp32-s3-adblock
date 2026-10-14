@@ -66,7 +66,7 @@ class IndexHolder {
     ReadGuard(const ReadGuard&) = delete;
     ReadGuard& operator=(const ReadGuard&) = delete;
     ~ReadGuard() {
-      if (h_) h_->readers_[slot_].fetch_sub(1, std::memory_order_release);
+      if (h_) h_->readers_[slot_].fetch_sub(1);  // seq_cst: see index.cpp
     }
     const IIndex* get() const { return h_ ? h_->slots_[slot_].get() : nullptr; }
 
