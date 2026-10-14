@@ -11,7 +11,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        env: [c3, esp32dev]
+        env: [esp32s3, c3, esp32dev]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
