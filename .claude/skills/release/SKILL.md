@@ -1,47 +1,40 @@
 ---
 name: release
-description: Cut a release. Use when bumping the firmware version, updating CHANGELOG.md, creating a signed version tag, or checking what the release GitHub Actions workflow builds and publishes.
+description: Cut a release. Use when bumping the firmware version, updating CHANGELOG.md, creating a signed version tag, or checking what the release GitHub Actions workflow builds and publishes (binaries, SHA256SUMS, web installer).
 disable-model-invocation: true
 ---
 
 # Release
 
-Semantic versioning: MAJOR (breaking config/format/partition change), MINOR
-(features), PATCH (fixes).
+Semantic versioning: MAJOR (breaking: partition table, blocklist format, settings
+schema), MINOR (features), PATCH (fixes).
 
 ## Steps
 
-1. Make sure `main` is green: `pio test -e native` and `pio run -e esp32s3 -e c3 -e esp32dev`.
-2. Bump the version in **one place**: `FW_VERSION` in `platformio.ini`
-   (`-DFW_VERSION=\"X.Y.Z\"` in `[env]` build_flags). It shows on the dashboard,
-   in `/api/stats` and in the boot log.
-3. `CHANGELOG.md` (Keep a Changelog):
-   - move `## [Unreleased]` items under `## [X.Y.Z] - YYYY-MM-DD`;
-   - add an empty Unreleased section;
-   - update the compare links at the bottom.
-4. If the partition table or blocklist format changed: say so under **Changed**
-   with "requires USB flash" / "requires new blocklist", and bump MAJOR.
+1. `main` is green locally: `pio test -e native`, `tools/lint.sh`,
+   `tools/format.sh --check`, and `pio run -e esp32s3 -e c3 -e esp32dev`.
+2. Bump `FW_VERSION` in `platformio.ini` (`[esp32_base]` build_flags,
+   `-DFW_VERSION=\"X.Y.Z\"`). It shows in the boot log, `/api/stats` and the dashboard.
+   The release workflow fails if the tag and `FW_VERSION` differ.
+3. `CHANGELOG.md` (Keep a Changelog): move `[Unreleased]` items under
+   `## [X.Y.Z] - YYYY-MM-DD`, leave an empty `[Unreleased]`, update the compare links
+   at the bottom. The workflow uses this section as the release notes (it fails if
+   the section is missing).
+4. Partition table / blocklist format / settings schema changed? Say so under
+   **Changed** ("requires USB flash", "requires a new blocklist") and bump MAJOR.
 5. Commit: `chore(release): vX.Y.Z` (signed).
-6. Tag (signed, annotated): `git tag -s vX.Y.Z -m "vX.Y.Z"`, then verify with
+6. Tag (signed, annotated): `git tag -s vX.Y.Z -m "vX.Y.Z"`; check with
    `git tag -v vX.Y.Z`.
-7. **Ask the user before pushing**: `git push origin main` and
-   `git push origin vX.Y.Z`.
+7. **Ask the user before pushing**: `git push origin main` then `git push origin vX.Y.Z`.
 
-## What CI does on a `v*` tag (`.github/workflows/release.yml`)
+## What `.github/workflows/release.yml` does on a `v*` tag
 
-- Builds `esp32s3`, `c3` and `esp32dev` with the placeholder `secrets.h`.
-- Attaches to a GitHub Release: `firmware-<env>-vX.Y.Z.bin`, `bootloader.bin`,
-  `partitions.bin`, a merged `factory-esp32s3-vX.Y.Z.bin` (for a first flash at
-  0x0), `SHA256SUMS`, and `.sig` files if the signing secret is configured.
-- Release notes are taken from the matching CHANGELOG section.
+- Builds `esp32s3`, `c3`, `esp32dev` (tools from `uv.lock`, placeholder `secrets.h`).
+- Attaches `firmware-<env>-vX.Y.Z.bin`, `factory-<env>-vX.Y.Z.bin` (flash at 0x0),
+  `firmware-<env>-vX.Y.Z.elf` (for crash decoding) and `SHA256SUMS` to the release.
+- Deploys the browser installer to GitHub Pages: `installer/index.html` +
+  `manifest.json` (all three chips) + esp-web-tools vendored from the npm tarball
+  pinned in `installer/esp-web-tools.lock` (SHA-512 checked). Needs Pages set to
+  "GitHub Actions" in the repo settings.
 
-## Signed firmware (optional)
-
-```bash
-python3 tools/sign_firmware.py --key ~/keys/adblock-fw.pem \
-  .pio/build/esp32s3/firmware.bin firmware.signed.bin
-```
-
-The private key never goes in the repo. In CI it comes from the `FW_SIGNING_KEY`
-secret. The device only enforces signatures if `FW_PUBKEY_PEM` is set in
-`secrets.h`.
+Firmware images are not signed yet (ARCHITECTURE.md §15).

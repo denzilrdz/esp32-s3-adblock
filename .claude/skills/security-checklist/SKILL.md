@@ -73,6 +73,26 @@ network as hostile.
       and client table; when full, degrade (SERVFAIL / 503) rather than allocate.
 - [ ] No unbounded `String` concatenation driven by client input.
 
+## 7. Lessons from past findings (check these patterns explicitly)
+
+- **Bounded work:** loops over network input (replies per poll, frames per read)
+  have a hard cap; blocking connects fit a time budget under the 5 s watchdog.
+- **Per-client fairness:** one client (e.g. TCP pipelining, reconnect loops) must
+  not drain shared pools; count resources until they are actually released.
+- **Timeouts can't be skipped:** idle/partial-frame deadlines apply even while work
+  is in flight.
+- **Lock-free code:** store-then-load handshakes between threads need seq_cst
+  atomics, not acquire/release.
+- **Fail closed after partial steps:** if a step released a resource (e.g.
+  `prepareSwap()`), every later failure path must restore it.
+- **Lockouts:** never add a global lockout any client can trigger (DoS on the
+  owner); throttle with fixed per-failure cost instead.
+- **Defaults:** public placeholder passwords must never authenticate.
+- **Transport security:** HTTPS only, including every redirect hop; no runtime
+  scripts from CDNs on pages that flash firmware (vendor + pin by hash).
+- **Untracked files:** never overwrite `src/secrets.h` (or other gitignored user files)
+  without looking at it first.
+
 ## Quick scans
 
 ```bash

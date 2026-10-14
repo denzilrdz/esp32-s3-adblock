@@ -39,7 +39,7 @@ Design: [ARCHITECTURE.md §6](../../../docs/ARCHITECTURE.md).
 ## Build a list
 
 ```bash
-python3 tools/build_blocklist.py data/blocklist.bin                 # default sources
+python3 tools/build_blocklist.py out.bin                             # default sources
 python3 tools/build_blocklist.py out.bin hosts.txt https://...      # custom sources
 python3 tools/build_blocklist.py --format legacy out.bin            # upstream C3 devices
 python3 -m unittest discover -s tools -p 'test_*.py'
@@ -66,11 +66,16 @@ Code: `lib/core/sched/daily_scheduler.*`, `lib/core/update/updater.*`, wired up 
    first.
 5. Validate: magic/version/bits, size formula, N ≤ max, N ≥ min (1000), CRC, bucket
    monotonicity, suffix order. Any failure → delete tmp, keep the old list.
-6. Swap: live → `.old`, tmp → live, delete `.old`. Load into a new PSRAM buffer,
-   `store(release)`, wait for the readers' quiescent generation, free the old one.
-   If PSRAM can't hold both, bridge via the file-backed index.
+6. Swap: `prepareSwap()` (lite boards release the open file), live → `.old`,
+   tmp → live, delete `.old`; any rename failure reinstalls the live list. Then
+   `BlocklistManager::install()` loads the file into a new PSRAM buffer and
+   `IndexHolder::publish()` swaps it in (readers never lock; the old index is freed
+   once its reader count is zero). If PSRAM can't hold both, it bridges through a
+   file-backed index.
 7. Failure → retry hourly, max 6 times, then wait for the next 02:00.
-8. Record time, result, count, ETag and build date in NVS; shown on the dashboard.
+8. ETag in NVS (`bl_etag`), last result/time in NVS (`bl_res`, `bl_at`); entry
+   count and build date come from the loaded list. All shown on the dashboard.
+   Only `https://` URLs are accepted, for the request and every redirect.
 
 Boot recovery: valid live → use it; else valid `.old` → restore it; else empty
 list + immediate download.
@@ -88,9 +93,10 @@ list + immediate download.
 
 ## Troubleshooting
 
-- Dashboard says `validation failed: crc` → the download was truncated or the CDN
-  changed it; check `Content-Length` in the serial log.
-- `entries 0` after boot → no valid list and no `.old` file; trigger "Update now" or
-  run `uploadfs`.
-- The list is too big → raise `max_entries` only if the PSRAM budget allows it (see
-  ARCHITECTURE §11).
+- Dashboard says `invalid list: crc mismatch` / `download truncated` → network
+  problem or a wrong file at the URL; the old list stays. `bad magic` → not a v2
+  file (e.g. an HTML error page or a legacy list).
+- `0 domains` after boot → no valid list and no `.old` file; it downloads as soon as
+  the clock syncs. Or *Update now* / upload a file on the dashboard.
+- `too many entries` → limits are 1M (PSRAM) / 150k (lite), set in
+  `BlocklistManager`'s constructor; raise only if the budget (ARCHITECTURE §11) allows.

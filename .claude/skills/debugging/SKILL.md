@@ -11,12 +11,12 @@ description: Diagnose problems on the device. Use when reading serial logs, deco
 pio device monitor -e esp32s3        # 115200 baud, filters: esp32_exception_decoder, time
 ```
 
-- Log tags: `[dns]`, `[up]` (upstream), `[cache]`, `[bl]` (blocklist), `[sched]`,
-  `[wifi]`, `[web]`, `[ota]`.
-- The level is set by `-DLOG_LEVEL=` in platformio.ini (default INFO). Use DEBUG
-  only temporarily: per-query logging slows the hot path.
-- Boot banner: firmware version, reset reason, PSRAM size, partition in use, free
-  heap.
+- Lines look like `[I][up] cloudflare-dot: unknown -> up (180 ms)`. Tags: `dns`, `up`
+  (upstream), `bl` (blocklist), `time`, `wifi`, `web`, `ota`, `boot`.
+- Log level: dashboard *Settings → Log* (error/warn/info/debug), stored in NVS and
+  applied live. Use debug only temporarily.
+- Boot banner: `[adblock] v<version> booting (<hostname>, PSRAM <n> KB)`, then the
+  setup code (if no password is set), list size and `ready`.
 
 ## Crash / backtrace
 
@@ -30,23 +30,24 @@ pio device monitor -e esp32s3        # 115200 baud, filters: esp32_exception_dec
   ```
 - **Core dump:** written to the `coredump` partition on panic. Read it out:
   ```bash
-  python3 -m esptool --chip esp32s3 read_flash 0xFF0000 0x10000 coredump.bin
-  espcoredump.py info_corefile -t raw -c coredump.bin .pio/build/esp32s3/firmware.elf
+  pio pkg exec -p tool-esptoolpy -- esptool.py --chip esp32s3 read_flash 0xFF0000 0x10000 coredump.bin
+  uvx esp-coredump info_corefile -t raw -c coredump.bin .pio/build/esp32s3/firmware.elf
   ```
-  (`espcoredump.py` comes from ESP-IDF's `components/espcoredump`; install with
-  `pip install esp-coredump`.)
+  Release builds attach `firmware-<env>-vX.Y.Z.elf` for decoding field crashes.
 
 ## Memory
 
-- `/api/stats` and the boot log report `heap_free`, `heap_min`,
-  `heap_largest_block`, `psram_free`, plus per-task stack high-water marks
-  (`uxTaskGetStackHighWaterMark`).
+- `/api/stats` (and the dashboard *Device* card) reports `heap` (internal free),
+  `heapMin` (lowest since boot) and `psram` (free PSRAM).
 - Warning signs:
-  - **internal heap_min < 40 KB**: TLS handshakes will fail (each needs about
-    45 KB internal);
-  - `heap_largest_block` shrinking over days: fragmentation (someone is allocating
-    in a loop);
-  - a stack high-water mark < 512 B: increase that task's stack.
+  - **heapMin < 40 KB**: TLS handshakes will fail (each session needs ~45 KB of
+    internal RAM; mbedTLS buffers can't go to PSRAM with the prebuilt libs);
+  - `heap` drifting down over days: a leak or fragmentation (nothing in the DNS path
+    should allocate);
+  - stack overflow panics name the task: raise its stack (sizes in
+    `src/tasks/dns_service.cpp` and `src/main.cpp`).
+- Temporary deep dive: log `uxTaskGetStackHighWaterMark(nullptr)` from a task, or
+  `heap_caps_print_heap_info(MALLOC_CAP_INTERNAL)`.
 
 ## Watchdog resets
 
@@ -63,10 +64,10 @@ pio device monitor -e esp32s3        # 115200 baud, filters: esp32_exception_dec
 
 ## Wi-Fi drops
 
-- The log shows a `[wifi]` disconnect with a reason code. Common ones:
-  - `201 NO_AP_FOUND`
-  - `15 4WAY_HANDSHAKE_TIMEOUT` (wrong password or weak signal)
-  - `8 ASSOC_LEAVE`
+- Our log shows `[W][wifi] disconnected` / `reconnected after N s`; after 10 minutes
+  down the device reboots. For the driver's reason codes, build with
+  `-DCORE_DEBUG_LEVEL=3` (Arduino core log). Common ones: `201 NO_AP_FOUND`,
+  `15 4WAY_HANDSHAKE_TIMEOUT` (wrong password or weak signal), `8 ASSOC_LEAVE`.
 - RSSI below about −75 dBm causes instability: move the board, or keep the antenna
   end clear of metal.
 - `WiFi.setSleep(false)` is set; power save adds DNS latency.
@@ -80,8 +81,11 @@ dig @<ip> example.com +tcp         # TCP path
 for i in $(seq 50); do dig @<ip> +short r$i.example.com & done; wait   # burst
 ```
 
-- Slow first lookups but fast repeats → cold TLS handshake. Check `[up]` handshake
-  time and resumption hits.
-- Dashboard "plain fallback" banner → ports 853 and 443 to 1.1.1.1/9.9.9.9 are
-  blocked or failing. Test from the Mac: `kdig @1.1.1.1 +tls example.com`.
-- Clients bypassing the blocker → IPv6 RDNSS or browser DoH (see README).
+- Slow first lookups but fast repeats → cold TLS handshake (connections idle-close
+  after 9 s; resumption should make reconnects cheap). The dashboard's upstream table
+  shows each upstream's state, OK/fail counts and last latency; `[up]` log lines show
+  state changes.
+- Dashboard **PLAIN DNS** banner → ports 853 and 443 to 1.1.1.1/9.9.9.9 are blocked
+  or failing. Test from the Mac: `kdig @1.1.1.1 +tls example.com` (knot) or
+  `openssl s_client -connect 1.1.1.1:853 -servername cloudflare-dns.com`.
+- Clients bypassing the blocker → IPv6 RDNSS or browser DoH (docs/ROUTER_SETUP.md).

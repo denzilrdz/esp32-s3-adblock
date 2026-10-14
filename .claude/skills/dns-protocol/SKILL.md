@@ -5,8 +5,11 @@ description: Rules and checklist for DNS packet handling. Use before changing an
 
 # DNS protocol rules
 
-Code: `lib/core/dns/message.{h,cpp}`, `lib/core/dns/name.{h,cpp}`,
-`lib/core/blocklist/policy.{h,cpp}`. Design: [ARCHITECTURE.md §5](../../../docs/ARCHITECTURE.md).
+Code: `lib/core/dns/message.{h,cpp}` (parse/build), `name.{h,cpp}`,
+`local_zones.{h,cpp}`, `query_policy.h`; the pipeline that applies them is
+`DnsService::processQuery()` in `src/tasks/dns_service.cpp`; the policy is
+`src/app/app_policy.h`. Tests: `test/test_dns`, `test/test_local_zones`.
+Design: [ARCHITECTURE.md §5](../../../docs/ARCHITECTURE.md).
 
 ## Incoming query validation (in order)
 
@@ -14,13 +17,13 @@ Code: `lib/core/dns/message.{h,cpp}`, `lib/core/dns/name.{h,cpp}`,
 |---|---|
 | len < 12, or QR = 1 | drop silently |
 | OPCODE ≠ 0 | NOTIMP |
-| QDCOUNT ≠ 1 | FORMERR |
-| bad name (label > 63, name > 255, compression in question, overruns packet) | FORMERR |
+| QDCOUNT ≠ 1, or ANCOUNT/NSCOUNT ≠ 0 | FORMERR |
+| bad name (label > 63, name > 255, compression in question, overruns packet, label byte not printable ASCII or a `.`) | FORMERR |
 | QCLASS ≠ IN | REFUSED |
 | > 1 OPT, or malformed OPT | FORMERR |
 | OPT version > 0 | BADVERS (extended RCODE 16) |
-| QTYPE = ANY (255) | NOTIMP |
-| source IP not private/link-local/loopback | drop (not an open resolver) |
+| QTYPE = ANY (255) | NOTIMP (in `processQuery`) |
+| source IP not private/link-local/loopback | drop (in `processQuery`; not an open resolver) |
 
 ## Replies we synthesize
 

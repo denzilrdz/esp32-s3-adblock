@@ -16,25 +16,35 @@ Design: [ARCHITECTURE.md §7](../../../docs/ARCHITECTURE.md).
 | Health state machine | `lib/core/upstream/health.{h,cpp}` |
 | Forwarder: chain, in-flight table, hedging, deadlines | `lib/core/upstream/forwarder.{h,cpp}` |
 | Response cache | `lib/core/cache/response_cache.{h,cpp}` |
-| ESP32 transports | `src/platform/dot_transport.cpp`, `doh_transport.cpp`, `udp_transport.cpp` |
-| Task | `src/tasks/upstream_task.cpp` |
+| Provider table + chain order from settings | `lib/core/config/config.cpp` (`buildChain`) |
+| ESP32 transports (DoT, DoH, UDP) | `src/platform/transports.{h,cpp}` on `src/platform/tls_stream.{h,cpp}` |
+| Task (`dns_up`) and cache wiring | `src/tasks/dns_service.{h,cpp}` |
+| Tests | `test/test_upstream`, `test/test_cache`, `test/test_config` |
 
 ## Defaults
 
+Built by `config::buildChain()` from the settings (primary = Cloudflare, secondary =
+Quad9 by default):
+
 | Order | Transport | IP:port | Verify name |
 |---|---|---|---|
-| 1 | DoT | 1.1.1.1:853, alt 1.0.0.1 | `cloudflare-dns.com` |
-| 2 | DoT | 9.9.9.9:853, alt 149.112.112.112 | `dns.quad9.net` |
-| 3 | DoH (POST, HTTP/1.1) | 1.1.1.1:443, alt 1.0.0.1 | `cloudflare-dns.com` |
-| 4 | plain UDP (if `allow_plain_fallback`) | 9.9.9.9:53, 1.1.1.1:53 | — |
+| 1–2 | DoT (primary) | 1.1.1.1:853, 1.0.0.1:853 | `cloudflare-dns.com` |
+| 3–4 | DoT (secondary) | 9.9.9.9:853, 149.112.112.112:853 | `dns.quad9.net` |
+| 5–6 | DoH (POST, HTTP/1.1), if `up_doh` | 1.1.1.1:443, 1.0.0.1:443 | `cloudflare-dns.com` |
+| 7–8 | plain UDP, if `up_plain` | 1.1.1.1:53, 9.9.9.9:53 | — |
+
+Changing upstream settings on the dashboard restarts the device (transports are
+created at boot in `startDnsService()`).
 
 ## Platform facts (Arduino 2.0.17 / IDF 4.4, verified)
 
-- **TLS API:** use `esp_tls` with `cfg.common_name = "<verify name>"` and
-  `cfg.crt_bundle_attach = esp_crt_bundle_attach`. Connect to the IP literal.
-  mbedTLS 2.28 doesn't match IP SANs, so the verify name is mandatory.
-- **Session resumption:** `esp_tls_get_client_session` is **not** in the prebuilt
-  lib. Use `mbedtls_ssl_get_session` / `mbedtls_ssl_set_session` on the context.
+- **TLS:** `platform::TlsStream` drives mbedTLS directly on an lwIP socket:
+  `mbedtls_ssl_set_hostname(<verify name>)` while connecting to the IP literal
+  (mbedTLS 2.28 doesn't match IP SANs), CA bundle via `esp_crt_bundle_attach`
+  (declared in `platform/crt_bundle.h`), TLS 1.2+, hardware RNG.
+- **Session resumption:** `esp_tls` has no client-session API in this SDK, which is
+  why `TlsStream` exists; it keeps the ticket with `mbedtls_ssl_get_session` /
+  `mbedtls_ssl_set_session`.
 - **Memory:** mbedTLS buffers are internal RAM only, about 45 KB per session. At
   most 2 sessions (one DNS + one transient for failover or the blocklist download).
 - **Certificate dates aren't checked** (`MBEDTLS_HAVE_TIME_DATE` off), so DoT
@@ -88,13 +98,16 @@ dashboard shows a red banner. Clear AD on these answers. Strict mode
 1. Confirm it supports DoT on 853 (or DoH over **HTTP/1.1** with POST
    `application/dns-message`). Test from the Mac:
    ```bash
-   kdig -d @<ip> +tls-ca +tls-hostname=<name> example.com     # knot-dnsutils
+   kdig -d @<ip> +tls-ca +tls-hostname=<name> example.com     # brew install knot
    curl -sv --http1.1 -H 'content-type: application/dns-message' \
      --data-binary @q.bin https://<ip>/dns-query -o /dev/null   # must be 200
    ```
 2. Check its certificate chains to a root in the IDF bundle (`openssl s_client
    -connect <ip>:853 -servername <name> -showcerts`).
-3. Add an entry to the provider table in `lib/core/config/config.cpp` (IP(s), port,
-   transport, verify name), not in the transports.
-4. Add a native test: chain ordering, plus config validation of the new entry.
-5. Document it in the README's upstream table.
+3. Users can already use any DoT provider via the **custom** upstream setting
+   (IP, second IP, TLS name, optional DoH). To make it a built-in choice: add a
+   `Provider` value + `ProviderInfo` in `lib/core/config/config.{h,cpp}`
+   (`providerName`, `parseProvider`, `info`), and an `<option>` in the dashboard
+   settings form (`src/web/page.h`).
+4. Native tests in `test/test_config`: chain order and names for the new provider.
+5. Document it in the README configuration table.

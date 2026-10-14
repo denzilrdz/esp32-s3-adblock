@@ -19,6 +19,7 @@ description: Write and run host-side unit tests. Use when adding or fixing any f
 test/
   fakes/                 header-only fakes (FakeClock, FakeRandom, FakeTransport,
                          FakeHttpClient, MemFileSystem, MemKvStore, CapturingLogger)
+                         and builders (dns_builder.h packets, blocklist_builder.h v2 files)
   test_dns/test_main.cpp         parser/builder, EDNS0, malformed, blocked replies
   test_blocklist/test_main.cpp   hash, index, parent matching, collisions, format
   test_cache/test_main.cpp       TTL decrement/expiry, LRU eviction, negative caching
@@ -52,7 +53,7 @@ run `tools/setup-dev.sh` once). Only `lib/core` is measured: `src/` needs hardwa
 ```cpp
 #include <unity.h>
 #include "sched/daily_scheduler.h"
-#include "../fakes/fake_clock.h"
+#include "fakes/fake_clock.h"  // test/ is on the include path (-Itest)
 
 static FakeClock fakeClock;
 
@@ -83,6 +84,13 @@ int main(int, char**) {
 2. Add `test/fakes/fake_<thing>.h`: header-only, records calls, returns scripted
    results (queue of responses, injectable errors).
 3. Keep fakes dumb. Logic under test belongs in `lib/core`.
+
+## Make sure a test can fail
+
+For bug fixes and security fixes, break the fixed line on purpose (keep it
+compiling: `-Werror` turns an unused variable into a build error that looks like
+`ERRORED`), confirm the new test fails, then restore. Several tests in this repo were
+strengthened this way.
 
 ## Pitfalls
 

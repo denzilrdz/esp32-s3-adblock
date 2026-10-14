@@ -1,74 +1,82 @@
 ---
 name: build-flash
-description: Build, flash and monitor the firmware. Use when compiling any PlatformIO env (esp32s3, c3, esp32dev), uploading firmware or the LittleFS image over USB, doing an OTA upload over Wi-Fi, finding the board's serial port on macOS, or fixing upload/boot errors.
+description: Build, flash and monitor the firmware. Use when compiling any PlatformIO env (esp32s3, c3, esp32dev), uploading firmware over USB or OTA, building a factory image, finding the board's serial port on macOS, first-boot setup (setup code), or fixing upload/boot errors.
 ---
 
 # Build and flash
 
-Main target is `esp32s3` (ESP32-S3-DevKitC-1, WROOM-1-N16R8). Config lives in
-[platformio.ini](../../../platformio.ini); partition table in
-[partitions_16MB.csv](../../../partitions_16MB.csv).
+Main target is `esp32s3` (ESP32-S3-DevKitC-1, WROOM-1-N16R8). Config:
+[platformio.ini](../../../platformio.ini); partitions:
+[partitions_16MB.csv](../../../partitions_16MB.csv) (S3),
+[partitions_4MB.csv](../../../partitions_4MB.csv) (c3/esp32dev).
 
 ## First-time setup
 
 ```bash
-cp src/secrets.example.h src/secrets.h      # gitignored; set WEB_PASS / OTA_PASS
-python3 tools/build_blocklist.py data/blocklist.bin
+tools/setup-dev.sh                          # pinned tools in .venv (uv) + git hooks
+cp src/secrets.example.h src/secrets.h      # gitignored; first-boot defaults only
 ```
+
+`secrets.h`: optional Wi-Fi; `WEB_PASS` only works if it is a real 10+ char password
+(otherwise a setup code is printed on serial); `OTA_PASS` enables ArduinoOTA.
 
 ## Build
 
 ```bash
-pio run -e esp32s3            # main target
-pio run -e c3                 # lite profile, compile check
+pio run -e esp32s3            # main target (also the default env)
+pio run -e c3                 # lite profile, compile check (watch Flash %: ~87%)
 pio run -e esp32dev           # lite profile, compile check
-pio run                       # every env in default_envs
-pio run -e esp32s3 -v         # verbose: shows flags, sdkconfig dir (qio_opi)
+pio run -e esp32s3 -v         # verbose: flags, sdkconfig dir (must be qio_opi)
+tools/make_factory.sh esp32s3 # .pio/build/esp32s3/factory.bin, flashable at 0x0
 ```
 
-Check the size report at the end: `Flash:` is the percentage of one 4 MB OTA slot.
+The size report's `Flash:` is the percentage of one OTA slot (4 MB on the S3,
+1.31 MB on lite boards). The version is `FW_VERSION` in `platformio.ini`.
 
 ## USB upload (board connected)
 
 ```bash
 pio device list                              # find the port
 pio run -e esp32s3 -t upload                 # firmware
-pio run -e esp32s3 -t uploadfs               # LittleFS image built from data/
-pio run -e esp32s3 -t erase                  # full chip erase (wipes NVS + list!)
+pio run -e esp32s3 -t erase                  # full erase: wipes NVS (settings, password) + list
 pio device monitor -e esp32s3                # 115200 baud, esp32_exception_decoder
 ```
 
 The DevKitC-1 has **two USB-C ports**:
 - `UART` (CP210x/CH343 bridge): `/dev/cu.usbserial-*` or `/dev/cu.wchusbserial-*`.
-  Most reliable for flashing.
-- `USB` (native USB-Serial-JTAG): `/dev/cu.usbmodem*`. Also works for flashing and
-  JTAG.
+  Most reliable for flashing; the serial console is here.
+- `USB` (native USB-Serial-JTAG): `/dev/cu.usbmodem*`. Flashing and JTAG.
 
-Set a fixed port with `upload_port = /dev/cu.usbserial-XXXX` in a gitignored
-`platformio_override.ini`, or pass `--upload-port`.
+Fix the port with `upload_port = /dev/cu.usbserial-XXXX` in a gitignored
+`platformio_override.ini` (`[env:esp32s3]` section), or pass `--upload-port`.
 
-## OTA over Wi-Fi
+Optional: preload a blocklist without network by putting a v2 list at
+`data/blocklist.bin` and running `pio run -e esp32s3 -t uploadfs` (normally the device
+downloads it itself).
 
-```bash
-pio run -e esp32s3 -t upload --upload-port s3adblock.local --upload-protocol espota \
-    --upload-flags="--auth=$OTA_PASS"
-```
+## First boot
 
-Or upload `.pio/build/esp32s3/firmware.bin` on the dashboard (Firmware → OTA). If
-signing is enabled, upload `firmware.signed.bin` from `tools/sign_firmware.py`. A new
-image must report healthy within 2 minutes, or the bootloader rolls back (see
-[ARCHITECTURE.md §9](../../../docs/ARCHITECTURE.md)).
+1. No Wi-Fi configured: join the `S3-AdBlock-XXXX` AP from a phone, pick a network.
+2. Serial log prints `One-time setup code: xxxxxxxxxxxx`. Open `http://s3adblock.local`,
+   log in as `admin` with the code, set a password (10+ chars).
+
+## OTA
+
+- Dashboard: *Device → Flash firmware* with `.pio/build/esp32s3/firmware.bin`.
+- Network: `pio run -e esp32s3 -t upload --upload-port s3adblock.local --upload-protocol espota --upload-flags="--auth=<OTA_PASS>"`.
+
+A new image must be healthy (Wi-Fi + DNS running 60 s) within 5 minutes or the
+bootloader rolls back (`maintainOtaHealth()` in `src/main.cpp`).
 
 ## Common errors
 
 | Symptom | Fix |
 |---|---|
 | `Failed to connect to ESP32-S3: No serial data received` | Hold **BOOT**, tap **RST**, release BOOT, retry. Try the other USB-C port or a data-capable cable. |
-| `A fatal error occurred: Could not open port ... Resource busy` | Close the serial monitor (`pio device monitor`) or other apps using the port. |
-| Port not listed on macOS | Use a data cable. For CH343 boards, install the WCH driver only if the `cu.wchusbserial*` device doesn't appear. |
-| Boot loop with `octal_psram` / `PSRAM ID read error` | `memory_type` must be `qio_opi` for N16R8, never `opi_opi`. |
-| `psramFound() == false` | Same as above; or `-DBOARD_HAS_PSRAM` is missing. |
-| `Error: The program size ... is greater than maximum allowed` | Check `board_build.partitions` points to `partitions_16MB.csv`. |
-| `uploadfs` data missing after a firmware flash | Normal: firmware and FS are separate partitions; run `uploadfs` once. |
-| `espota` auth failed | `OTA_PASS` in `secrets.h` must match `--auth`. |
-| `AttributeError: ... 'resultcallback'` | PlatformIO too old: `brew upgrade platformio`. |
+| `Could not open port ... Resource busy` | Close `pio device monitor` or other apps using the port. |
+| Port not listed on macOS | Use a data cable. For CH343 boards, install the WCH driver only if no `cu.wchusbserial*` appears. |
+| Boot loop, `PSRAM ID read error` | `memory_type` must be `qio_opi` for N16R8, never `opi_opi`. |
+| `psramFound() == false` / "lite profile" on an S3 | Same as above, or `-DBOARD_HAS_PSRAM` missing. |
+| `program size ... greater than maximum allowed` | Check `board_build.partitions` for the env. |
+| espota auth failed / OTA not listening | `OTA_PASS` must be 10+ chars (and match `--auth`); check the boot log. |
+| `AttributeError: ... 'resultcallback'` | PlatformIO too old: use `.venv/bin/pio` (pinned 6.2.0). |
