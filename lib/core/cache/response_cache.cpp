@@ -84,7 +84,7 @@ bool ResponseCache::keyMatches(const Entry& e, const dns::Query& q) const {
     copied += chunk;
   }
   const size_t nameEnd = dns::skipName(head, n, dns::kHeaderSize);
-  if (nameEnd == 0 || nameEnd + 4 > n) return false;
+  if (nameEnd == 0 || nameEnd > n || n - nameEnd < 4) return false;  // overflow-safe
   if (!dns::nameEquals(head, n, dns::kHeaderSize, q.qnameWire, q.qnameWireLen)) return false;
   return util::readU16Be(head + nameEnd) == q.qtype && util::readU16Be(head + nameEnd + 2) == q.qclass;
 }

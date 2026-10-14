@@ -48,7 +48,7 @@ bool FileIndex::contains(uint64_t hash48) const {
   if (!file_->seek(kHeaderSize + kBucketTableBytes + size_t{4} * start)) return false;
   while (i < end) {
     const uint32_t n = (end - i) < sizeof(chunk) / 4 ? (end - i) : sizeof(chunk) / 4;
-    if (file_->read(chunk, size_t{4} * n) != size_t{4} * n) return false;
+    if (n == 0 || file_->read(chunk, size_t{4} * n) != size_t{4} * n) return false;
     if (searchSuffixes(chunk, n, want)) return true;
     // Sorted: stop once the last value of this chunk is past `want`.
     if (util::readU32Le(chunk + size_t{4} * (n - 1)) > want) return false;

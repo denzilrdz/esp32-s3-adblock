@@ -22,11 +22,17 @@ Checks: >
   modernize-use-override,
   modernize-use-equals-delete,
   performance-*,
-  readability-braces-around-statements,
   readability-misleading-indentation,
   readability-redundant-*,
-WarningsAsErrors: ''
+  -misc-const-correctness,
+  -performance-enum-size,
+  -cert-err33-c,
+  -bugprone-assignment-in-if-condition,
+  -bugprone-not-null-terminated-result,
+  -cert-dcl50-cpp,
+WarningsAsErrors: '*'
 HeaderFilterRegex: 'lib/core/.*'
-CheckOptions:
-  - key: readability-braces-around-statements.ShortStatementLines
-    value: '2'
+# Disabled on purpose: braces/const-correctness/enum-size are style choices that fight
+# the project style; err33 flags every ignored snprintf; not-null-terminated-result
+# misfires on binary buffers (file magic, DNS wire data); dcl50 flags the
+# printf-style logger, which is deliberate and format-checked by the compiler.

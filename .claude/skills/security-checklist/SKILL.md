@@ -78,7 +78,7 @@ network as hostile.
 ```bash
 git grep -nE 'setInsecure|strcpy|sprintf\(|VERIFY_NONE|skip_common_name'
 git grep -nE 'innerHTML *=' src/web  # must print nothing
-pio check -e native
+tools/lint.sh
 ```
 
 Report findings with file:line and a concrete failure scenario. Fix or explicitly

@@ -99,9 +99,11 @@ bool PasswordStore::verify(const char* user, const char* password) {
 }
 
 bool PasswordStore::change(const char* current, const char* next, const char** why) {
+  if (!current) current = "";
+  if (!next) next = "";
   const char* reason = nullptr;
-  const size_t n = next ? strlen(next) : 0;
-  if (!verify(user_, current ? current : ""))
+  const size_t n = strlen(next);
+  if (!verify(user_, current))
     reason = "current password is wrong";
   else if (n < kMinPasswordLength)
     reason = "new password must be at least 10 characters";

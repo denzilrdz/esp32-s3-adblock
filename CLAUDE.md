@@ -28,9 +28,10 @@ pio run -e esp32s3 -t uploadfs           # flash LittleFS image from data/
 pio device monitor -e esp32s3            # serial monitor (115200, exception decoder)
 pio test -e native                       # all native unit tests
 pio test -e native -f test_dns           # one test folder
-tools/coverage.sh                        # native tests + HTML coverage (Phase 5)
-tools/format.sh                          # clang-format all C/C++ (Phase 5)
-pio check -e native                      # clang-tidy / cppcheck (Phase 5)
+tools/setup-dev.sh                       # once: pinned dev tools into .venv + git hook
+tools/coverage.sh                        # native tests + coverage -> coverage/index.html
+tools/format.sh [--check]                # clang-format (C/C++) + black (Python)
+tools/lint.sh                            # clang-tidy on lib/core (.clang-tidy)
 python3 tools/build_blocklist.py data/blocklist.bin    # build default blocklist
 python3 -m unittest discover -s tools -p 'test_*.py'   # tool tests
 ```

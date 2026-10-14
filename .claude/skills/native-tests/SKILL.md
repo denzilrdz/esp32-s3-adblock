@@ -43,8 +43,9 @@ pio test -e native -f test_dns -v     # verbose (shows each assertion)
 tools/coverage.sh                     # tests + coverage -> coverage/index.html
 ```
 
-On macOS, coverage uses Apple clang `--coverage` with gcovr and
-`--gcov-executable "xcrun llvm-cov gcov"` (wrapped in `tools/coverage.sh`).
+Coverage (`[env:coverage]`, no sanitizers) uses `--coverage` and gcovr with
+`--gcov-executable "xcrun llvm-cov gcov"` on macOS (wrapped in `tools/coverage.sh`;
+run `tools/setup-dev.sh` once). Only `lib/core` is measured: `src/` needs hardware.
 
 ## Writing a test
 

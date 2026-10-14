@@ -203,8 +203,8 @@ bool save(hal::IKeyValueStore& kv, const AppConfig& c) {
 
 bool requiresRestart(const AppConfig& a, const AppConfig& b) {
   return a.primary != b.primary || a.secondary != b.secondary || a.dohFallback != b.dohFallback ||
-         a.plainFallback != b.plainFallback || strcmp(a.customIp, b.customIp) ||
-         strcmp(a.customIp2, b.customIp2) || strcmp(a.customName, b.customName) ||
+         a.plainFallback != b.plainFallback || strcmp(a.customIp, b.customIp) != 0 ||
+         strcmp(a.customIp2, b.customIp2) != 0 || strcmp(a.customName, b.customName) != 0 ||
          a.customDoh != b.customDoh || a.padding != b.padding || a.passAd != b.passAd ||
          a.blockedTtl != b.blockedTtl || a.firefoxCanary != b.firefoxCanary ||
          a.icloudRelay != b.icloudRelay || a.privateReverse != b.privateReverse;
