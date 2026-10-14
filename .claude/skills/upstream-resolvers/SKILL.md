@@ -12,9 +12,9 @@ Design: [ARCHITECTURE.md §7](../../../docs/ARCHITECTURE.md).
 | Piece | File |
 |---|---|
 | Transport interface (strategy) | `lib/core/upstream/transport.h` |
-| DoT framing, DoH HTTP/1.1 codec | `lib/core/upstream/framing.{h,cpp}` |
+| DoT framing, DoH HTTP/1.1 codec (Content-Length only, no chunked) | `lib/core/upstream/framing.{h,cpp}` |
 | Health state machine | `lib/core/upstream/health.{h,cpp}` |
-| Chain + in-flight table | `lib/core/upstream/chain.{h,cpp}` |
+| Forwarder: chain, in-flight table, hedging, deadlines | `lib/core/upstream/forwarder.{h,cpp}` |
 | Response cache | `lib/core/cache/response_cache.{h,cpp}` |
 | ESP32 transports | `src/platform/dot_transport.cpp`, `doh_transport.cpp`, `udp_transport.cpp` |
 | Task | `src/tasks/upstream_task.cpp` |
@@ -45,10 +45,13 @@ Design: [ARCHITECTURE.md §7](../../../docs/ARCHITECTURE.md).
 
 ## Health state machine
 
-`Unknown → Connecting → Up ⇄ Degraded → Down → Probing → Up/Down`.
+`Unknown → Up ⇄ Degraded → Down → Probing → Up/Down` (a failed connect is just a failure).
 - 3 consecutive failures → Down.
 - Probe backoff: 1 s, 2 s, 4 s … max 300 s, ±20 % jitter.
-- The chain uses the first upstream that is not Down.
+- The forwarder uses the first encrypted upstream that is not Down (or Down with its
+  backoff elapsed: that query is the probe).
+- Plain UDP is chosen only when every encrypted upstream is Down. A query whose
+  encrypted upstreams merely failed gets SERVFAIL, never a plain-text retry.
 - Tests: `test/test_upstream/`, using `FakeTransport` + `FakeClock`. Assert every
   transition.
 

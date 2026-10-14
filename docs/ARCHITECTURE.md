@@ -95,7 +95,7 @@ lib/core/                     portable C++17, unit-tested natively
   upstream/   transport.h         ITransport (strategy interface)
               framing.{h,cpp}     DoT 2-byte length framing, DoH HTTP/1.1 codec
               health.{h,cpp}      per-upstream health state machine
-              chain.{h,cpp}       ordered fallback chain + in-flight table
+              forwarder.{h,cpp}   ordered fallback chain, in-flight table, hedging
   sched/      daily_scheduler.{h,cpp}  02:00 local trigger, retry, dedupe
   update/     updater.{h,cpp}     download -> validate -> swap state machine
   config/     config.{h,cpp}      typed settings, validation, (de)serialisation
@@ -457,17 +457,18 @@ timeout)`, `close()`, plus `pipelined()`. Implementations:
 ```mermaid
 stateDiagram-v2
     [*] --> Unknown
-    Unknown --> Connecting: query needs it
-    Connecting --> Up: handshake ok
-    Connecting --> Down: handshake/connect fail
-    Up --> Up: answer ok (reset failure count)
-    Up --> Degraded: timeout / error
+    Unknown --> Up: answer ok
+    Unknown --> Degraded: failure (connect, send, timeout, malformed)
+    Up --> Degraded: failure
     Degraded --> Up: answer ok
     Degraded --> Down: 3 consecutive failures
-    Down --> Probing: backoff elapsed (1s, 2s, 4s ... max 5 min, ±20% jitter)
+    Down --> Probing: picked after backoff (1s, 2s, 4s ... max 5 min, ±20% jitter)
     Probing --> Up: probe answer ok
     Probing --> Down: probe fails (backoff doubles)
 ```
+
+Connection setup (TCP + TLS handshake) belongs to the transport; a failed connect is
+reported to the health machine as an ordinary failure.
 
 The chain always uses the **first** upstream in priority order that is `Up`,
 `Degraded`, or `Unknown`. A `Down` upstream is retried only by a probe (a real
@@ -668,7 +669,7 @@ coredump,  data, coredump, 0xFF0000,  0x10000    64 KB   crash dumps
 | **Hardware-abstraction interfaces** | `lib/core/hal/*.h` (`IClock`, `IRandom`, `IKeyValueStore`, `IFileSystem`, `IHttpClient`, `ITransport`, `ILogger`) | Core logic compiles and is tested on macOS with fakes; time, randomness and I/O become deterministic in tests. |
 | **Dependency injection** (constructor) | every core class; wired in `src/main.cpp` (composition root) | No hidden globals; tests swap in fakes; ownership and lifetimes are explicit. |
 | **Strategy** | `ITransport`: DoT / DoH / UDP | Add a provider or transport without touching the chain logic. |
-| **Chain of responsibility / fallback chain** | `upstream/chain` | Ordered failover DoT → DoT → DoH → UDP with per-link health. |
+| **Chain of responsibility / fallback chain** | `upstream/forwarder` | Ordered failover DoT → DoT → DoH → UDP with per-link health. |
 | **State machine** | upstream health (§7.2), updater (§6.3), Wi-Fi supervisor | Explicit states and transitions are easy to test and reason about; no tangled flags. |
 | **Circuit breaker with exponential backoff + jitter** | health FSM | Stops hammering a dead upstream; recovers automatically. |
 | **Double buffering + atomic pointer swap (RCU-style)** | blocklist index | Lock-free reads on the hot path; an update is all-or-nothing. |
