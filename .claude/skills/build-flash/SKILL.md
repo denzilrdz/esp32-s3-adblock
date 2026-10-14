@@ -1,14 +1,13 @@
 ---
 name: build-flash
-description: Build, flash and monitor the firmware. Use when compiling any PlatformIO env (esp32s3, c3, esp32dev), uploading firmware over USB or OTA, building a factory image, finding the board's serial port on macOS, first-boot setup (setup code), or fixing upload/boot errors.
+description: Build, flash and monitor the firmware. Use when compiling the esp32s3 env, uploading firmware over USB or OTA, building a factory image, finding the board's serial port on macOS, first-boot setup (setup code), or fixing upload/boot errors.
 ---
 
 # Build and flash
 
 Main target is `esp32s3` (ESP32-S3-DevKitC-1, WROOM-1-N16R8). Config:
 [platformio.ini](../../../platformio.ini); partitions:
-[partitions_16MB.csv](../../../partitions_16MB.csv) (S3),
-[partitions_4MB.csv](../../../partitions_4MB.csv) (c3/esp32dev).
+[partitions_16MB.csv](../../../partitions_16MB.csv). ESP32-S3 only.
 
 ## First-time setup
 
@@ -23,15 +22,13 @@ cp src/secrets.example.h src/secrets.h      # gitignored; first-boot defaults on
 ## Build
 
 ```bash
-pio run -e esp32s3            # main target (also the default env)
-pio run -e c3                 # lite profile, compile check (watch Flash %: ~87%)
-pio run -e esp32dev           # lite profile, compile check
+pio run -e esp32s3            # the firmware (also the default env)
 pio run -e esp32s3 -v         # verbose: flags, sdkconfig dir (must be qio_opi)
-tools/make_factory.sh esp32s3 # .pio/build/esp32s3/factory.bin, flashable at 0x0
+tools/make_factory.sh         # .pio/build/esp32s3/factory.bin, flashable at 0x0
 ```
 
-The size report's `Flash:` is the percentage of one OTA slot (4 MB on the S3,
-1.31 MB on lite boards). The version is `FW_VERSION` in `platformio.ini`.
+The size report's `Flash:` is the percentage of one 4 MB OTA slot. The version is
+`FW_VERSION` in `platformio.ini`.
 
 ## USB upload (board connected)
 
@@ -76,7 +73,7 @@ bootloader rolls back (`maintainOtaHealth()` in `src/main.cpp`).
 | `Could not open port ... Resource busy` | Close `pio device monitor` or other apps using the port. |
 | Port not listed on macOS | Use a data cable. For CH343 boards, install the WCH driver only if no `cu.wchusbserial*` appears. |
 | Boot loop, `PSRAM ID read error` | `memory_type` must be `qio_opi` for N16R8, never `opi_opi`. |
-| `psramFound() == false` / "lite profile" on an S3 | Same as above, or `-DBOARD_HAS_PSRAM` missing. |
+| `[ERROR] No PSRAM found` in the boot log | Same as above, or `-DBOARD_HAS_PSRAM` missing, or not an N16R8 module. |
 | `program size ... greater than maximum allowed` | Check `board_build.partitions` for the env. |
 | espota auth failed / OTA not listening | `OTA_PASS` must be 10+ chars (and match `--auth`); check the boot log. |
 | `AttributeError: ... 'resultcallback'` | PlatformIO too old: use `.venv/bin/pio` (pinned 6.2.0). |

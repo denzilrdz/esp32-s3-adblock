@@ -44,9 +44,7 @@ BlocklistManager::BlocklistManager(hal::IFileSystem& fs, hal::IHttpClient& http,
       tick_(tick),
       limits_([] {
         blocklist::Limits l;
-        // PSRAM holds up to ~4 MB of list; lite boards must fit live + temp copies in
-        // a ~1.3 MB filesystem.
-        l.maxEntries = platform::havePsram() ? 1000000 : 150000;
+        l.maxEntries = 1000000;  // ~4.3 MB in PSRAM; live + temp copies fit the 7.9 MB LittleFS
         return l;
       }()),
       holder_(yieldBriefly),
@@ -80,8 +78,8 @@ void BlocklistManager::begin() {
 }
 
 void BlocklistManager::prepareSwap() {
-  // A file-backed index keeps the live file open; LittleFS can't rename it while
-  // open, so drop it. Lite boards briefly block only custom rules during the swap.
+  // A file-backed index (the PSRAM-short bridge) keeps the live file open; LittleFS
+  // can't rename it while open, so drop it. Only custom rules block during the swap.
   if (fileBacked_) {
     holder_.publish(nullptr);
     fileBacked_ = false;
@@ -90,53 +88,42 @@ void BlocklistManager::prepareSwap() {
 
 bool BlocklistManager::install(const char* path, const blocklist::Header& h) {
   const size_t size = blocklist::fileSizeFor(h.count);
-  if (platform::havePsram()) {
-    void* mem = platform::allocLarge(size);
+  void* mem = platform::allocLarge(size);
+  if (!mem) {
+    // Not enough PSRAM for old + new side by side: bridge through a file-backed index
+    // so blocking never stops, free the old list, then load into memory.
+    auto f = fs_.open(path, hal::FileMode::kRead);
+    if (!f) return false;
+    holder_.publish(std::unique_ptr<blocklist::IIndex>(new blocklist::FileIndex(std::move(f), h.count)));
+    fileBacked_ = true;
+    inMemory_ = false;
+    buildTime_ = h.buildTime;
+    mem = platform::allocLarge(size);
     if (!mem) {
-      // Not enough PSRAM for old + new side by side: bridge through a file-backed
-      // index so blocking never stops, free the old list, then load into memory.
-      auto f = fs_.open(path, hal::FileMode::kRead);
-      if (!f) return false;
-      holder_.publish(std::unique_ptr<blocklist::IIndex>(new blocklist::FileIndex(std::move(f), h.count)));
-      fileBacked_ = true;
-      inMemory_ = false;
-      mem = platform::allocLarge(size);
-    }
-    if (mem) {
-      std::shared_ptr<void> owner(mem, platform::LargeFree());
-      auto f = fs_.open(path, hal::FileMode::kRead);
-      uint8_t* p = static_cast<uint8_t*>(mem);
-      size_t got = 0, n;
-      while (f && got < size && (n = f->read(p + got, size - got > 4096 ? 4096 : size - got)) > 0) {
-        got += n;
-        if (tick_ && (got & 0xFFFF) < 4096) tick_();  // ~every 64 KB
-      }
-      if (got != size) {
-        log_.log(LogLevel::kError, kTag, "short read loading the list (%u of %u bytes)",
-                 static_cast<unsigned>(got), static_cast<unsigned>(size));
-        return fileBacked_;  // keep whatever is live
-      }
-      holder_.publish(std::unique_ptr<blocklist::IIndex>(
-          new blocklist::MemoryIndex(p + blocklist::kHeaderSize, h.count, std::move(owner))));
-      fileBacked_ = false;
-      inMemory_ = true;
-      buildTime_ = h.buildTime;
-      log_.log(LogLevel::kInfo, kTag, "loaded %u domains into PSRAM (%u KB)", static_cast<unsigned>(h.count),
-               static_cast<unsigned>(size / 1024));
+      log_.log(LogLevel::kWarn, kTag, "PSRAM exhausted: serving the list from flash");
       return true;
     }
-    log_.log(LogLevel::kWarn, kTag, "PSRAM exhausted: serving the list from flash");
-    buildTime_ = h.buildTime;
-    return fileBacked_;
   }
-  // Lite profile (no PSRAM): look up straight from flash.
+  std::shared_ptr<void> owner(mem, platform::LargeFree());
   auto f = fs_.open(path, hal::FileMode::kRead);
-  if (!f) return false;
-  holder_.publish(std::unique_ptr<blocklist::IIndex>(new blocklist::FileIndex(std::move(f), h.count)));
-  fileBacked_ = true;
-  inMemory_ = false;
+  uint8_t* p = static_cast<uint8_t*>(mem);
+  size_t got = 0, n;
+  while (f && got < size && (n = f->read(p + got, size - got > 4096 ? 4096 : size - got)) > 0) {
+    got += n;
+    if (tick_ && (got & 0xFFFF) < 4096) tick_();  // ~every 64 KB
+  }
+  if (got != size) {
+    log_.log(LogLevel::kError, kTag, "short read loading the list (%u of %u bytes)",
+             static_cast<unsigned>(got), static_cast<unsigned>(size));
+    return fileBacked_;  // keep whatever is live
+  }
+  holder_.publish(std::unique_ptr<blocklist::IIndex>(
+      new blocklist::MemoryIndex(p + blocklist::kHeaderSize, h.count, std::move(owner))));
+  fileBacked_ = false;
+  inMemory_ = true;
   buildTime_ = h.buildTime;
-  log_.log(LogLevel::kInfo, kTag, "serving %u domains from flash", static_cast<unsigned>(h.count));
+  log_.log(LogLevel::kInfo, kTag, "loaded %u domains into PSRAM (%u KB)", static_cast<unsigned>(h.count),
+           static_cast<unsigned>(size / 1024));
   return true;
 }
 

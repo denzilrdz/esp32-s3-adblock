@@ -16,7 +16,7 @@ body:
     id: board
     attributes:
       label: Board
-      options: [ESP32-S3 (N16R8), ESP32-S3 (other), ESP32-C3, ESP32]
+      options: [ESP32-S3-DevKitC-1 N16R8, Other ESP32-S3 with octal PSRAM]
     validations:
       required: true
   - type: textarea

@@ -14,7 +14,7 @@ Only the latest release (and `main`) receives security fixes.
 - Email **denzil.rdz@gmail.com** with the subject `esp32-s3-adblock security`, or
 - use GitHub's private reporting: *Security → Report a vulnerability* on this repository.
 
-Include the affected version or commit, the board (ESP32-S3/C3/ESP32), steps to
+Include the affected version or commit, the board, steps to
 reproduce, and the impact you expect. You'll get an acknowledgement within 7 days; a
 fix or a plan should follow within 30 days for confirmed issues. Credit is given in
 the release notes unless you prefer otherwise.

@@ -277,8 +277,7 @@ DO bit echoed, and the extended RCODE recomputed. Upstream queries carry our own
   and empty sections (RFC 2181 §9, RFC 6891 §7). The client retries over TCP.
 - `dns_tcp` serves TCP/53 (RFC 7766 says resolvers MUST support TCP) with 2-byte
   length framing, at most 2 concurrent connections (socket budget, §11) and a 10 s
-  idle timeout. It uses the same pipeline, cache and upstream queue as UDP. Lite
-  boards (no PSRAM) are UDP-only.
+  idle timeout. It uses the same pipeline, cache and upstream queue as UDP.
 - Upstream DoT/DoH answers are never truncated (stream transports), so we always
   hold the full answer to cache.
 
@@ -340,14 +339,12 @@ DO bit echoed, and the extended RCODE recomputed. Upstream queries carry our own
   ```
 
   At 400k names the file is about 1.86 MB; at 1M names, about 4.26 MB.
-- **On the S3** the whole file is read into one PSRAM buffer (`ps_malloc`) and
-  queried in memory, so the DNS hot path does no flash I/O. **On C3/ESP32 (no
-  PSRAM)** the same format is queried straight from the file: two small reads per
-  hash (the bucket bounds, then the bucket). This is the "lite" profile.
-- **Legacy input is not accepted.** Upstream's headerless 40-bit blob cannot be
-  converted to 48-bit hashes (the names are not in the file), and supporting a
-  second hash scheme is not worth it. `build_blocklist.py --format legacy` still
-  writes it for devices running the original firmware.
+- The whole file is read into one PSRAM buffer and queried in memory, so the DNS hot
+  path does no flash I/O. The same format can also be queried straight from the file
+  (`FileIndex`: two small reads per hash); that is only used as a bridge during a
+  swap when PSRAM can't hold the old and the new list at once.
+- **Upstream's 40-bit list format is not accepted** (48-bit hashes can't be derived
+  from it, the names are not in the file).
 - **Matching:** for `a.b.ads.example.com` we check `a.b.ads.example.com`,
   `b.ads.example.com`, `ads.example.com` and `example.com` (never the bare TLD).
   Unlike upstream, **no `www.` stripping**: parent matching already covers
@@ -629,7 +626,7 @@ automatically. This is a circuit-breaker with exponential backoff.
 | **All upstreams fail** (internet down) | Cache hits still served; misses get SERVFAIL after 2.5 s so clients fail fast instead of hanging. Blocked names are still blocked. |
 | **Blocklist download corrupt / truncated / wrong format** | Validation fails, temp file deleted, old list stays live, result shown on the dashboard, retry hourly (max 6), then next day. |
 | **Power loss during swap** | Boot-time recovery: valid live file → use it; else valid `.old` → restore it; else start with an empty list (fail open) and schedule an immediate download. |
-| **PSRAM missing / wrong memory_type** | `havePsram()` is false, so the device uses the lite profile: file-backed index, 512-entry internal-RAM cache, UDP only. |
+| **PSRAM missing / wrong memory_type** | The boot log prints an error (check `qio_opi`); the DNS service can't allocate its cache and does not start. The firmware requires the N16R8's PSRAM. |
 | **Clock not synced** | DoT still works (validity dates are not checked; see §7.1); the scheduler does nothing until sync; the dashboard shows "time not synced". NTP uses `pool.ntp.org` plus hard-coded `time.cloudflare.com` IPs (162.159.200.1, 162.159.200.123), so it works even if the device's own DNS is not ready. |
 | **Task hangs** | TWDT panic → core dump to flash (`coredump` partition) → reboot. The dump is decoded on the Mac (see the `debugging` skill). |
 | **Bad firmware** | App rollback (§9). |

@@ -37,8 +37,9 @@ class MemoryIndex final : public IIndex {
   std::shared_ptr<void> owner_;
 };
 
-// Index read straight from the file (lite profile, no PSRAM): two small reads per
-// lookup. Lookups are serialised because a file handle has one position.
+// Index read straight from the file: two small reads per lookup. Used as a bridge while
+// a new list is loaded when PSRAM can't hold old and new at once. Lookups are serialised because a file
+// handle has one position.
 class FileIndex final : public IIndex {
  public:
   FileIndex(std::unique_ptr<hal::IFile> file, uint32_t count) : file_(std::move(file)), count_(count) {}

@@ -11,9 +11,7 @@ before changing core logic or tasks.** User docs: README.md, docs/ROUTER_SETUP.m
 
 | Env | Board | Notes |
 |---|---|---|
-| `esp32s3` | esp32-s3-devkitc-1, N16R8 | **main target** (default env); `qio_opi`, 16 MB, PSRAM |
-| `c3` | esp32-c3-devkitm-1 | "lite" profile: no PSRAM, list read from flash; compile-tested |
-| `esp32dev` | classic ESP32, 4 MB | lite profile; compile-tested |
+| `esp32s3` | esp32-s3-devkitc-1, N16R8 | **the only firmware target**; `qio_opi`, 16 MB, PSRAM |
 | `native` | host (macOS/Linux) | Unity tests for `lib/core`, ASan + UBSan |
 | `coverage` | host | like `native` with `--coverage` (used by `tools/coverage.sh`) |
 
@@ -35,7 +33,7 @@ tools/coverage.sh                        # native tests + coverage -> coverage/i
 tools/format.sh [--check]                # clang-format (C/C++) + black (Python)
 tools/lint.sh                            # clang-tidy on lib/core (.clang-tidy)
 .venv/bin/zizmor --persona=auditor .github/ && .venv/bin/actionlint   # workflow lint
-tools/make_factory.sh esp32s3            # merged image flashable at 0x0 (after a build)
+tools/make_factory.sh                    # merged image flashable at 0x0 (after a build)
 python3 tools/build_blocklist.py out.bin # build a format-v2 blocklist (stdlib only)
 python3 -m unittest discover -s tools -p 'test_*.py'   # tool tests
 ```
@@ -104,7 +102,9 @@ native tests; pre-push = clang-tidy + esp32s3 firmware build.
 
 - **Octal PSRAM:** `board_build.arduino.memory_type = qio_opi` (quad flash, octal
   PSRAM). `opi_opi` boot-loops the N16R8. GPIO 35–37 belong to the PSRAM.
-- **Partition tables:** `partitions_16MB.csv` (S3), `partitions_4MB.csv` (lite). The
+- **ESP32-S3 only** (needs PSRAM + 16 MB flash). Don't add other chips or a no-PSRAM
+  path back.
+- **Partition table:** `partitions_16MB.csv`. The
   LittleFS partition must stay labelled and typed `spiffs` (IDF 4.4 has no littlefs
   subtype). Changing offsets wipes data and needs a USB flash.
 - **mbedTLS buffers are internal RAM only** (prebuilt libs): about 45 KB per TLS
@@ -115,7 +115,7 @@ native tests; pre-push = clang-tidy + esp32s3 firmware build.
 - **ARP/lwIP core calls** (e.g. `etharp_find_addr`) only via `tcpip_callback`.
 - **C hooks from Arduino** (`verifyRollbackLater`, …) need `extern "C"` to override.
 - `<esp_crt_bundle.h>` resolves to the Arduino copy; use `platform/crt_bundle.h`.
-- mDNS name: `s3adblock.local` on the S3, `c3adblock.local` on C3/ESP32.
+- mDNS name: `s3adblock.local`; setup AP `S3-AdBlock-XXXX`.
 - **First boot:** a placeholder/weak `WEB_PASS` never works; the serial console prints
   a one-time setup code. ArduinoOTA stays off until `OTA_PASS` is real (10+ chars).
 - **IPv6 / browser secure DNS bypass** the blocker: docs/ROUTER_SETUP.md.

@@ -42,15 +42,14 @@ First release of the ESP32-S3 fork of
   canary; optional iCloud Private Relay opt-out.
 - Settings in NVS, editable on a new dashboard; hashed dashboard password with a
   serial-console setup code, login lockout, Host/Origin checks, POST-only API.
-- Browser installer (GitHub Pages), release workflow, native unit tests with
+- Browser installer for the ESP32-S3 (GitHub Pages), release workflow, native unit tests with
   sanitizers and coverage, clang-format/clang-tidy, uv-managed tooling, git hooks.
 - Documentation: architecture, router/IPv6 setup guide, Claude Code skills.
 
 ### Changed
 - Blocking replies: AAAA returns `::`, HTTPS/SVCB return NODATA with an SOA, and
   EDNS clients get Extended DNS Error 15.
-- Blocklist builder writes format v2 by default (`--format legacy` for upstream
-  devices); `www.` is no longer stripped.
+- Blocklist builder writes format v2 only; `www.` is no longer stripped.
 
 ### Fixed (compared with upstream)
 - A failed or corrupt blocklist download no longer leaves the device without a list.
@@ -59,8 +58,9 @@ First release of the ESP32-S3 fork of
 - Blocklist downloads verify HTTPS certificates and refuse redirects to plain HTTP.
 
 ### Removed
-- Japanese README, the C3 web-installer binaries and the C3 SuperMini enclosure
-  (still available upstream).
+- ESP32-C3 and classic ESP32 support (this fork is ESP32-S3 only: PSRAM and 16 MB
+  flash are required), upstream's 40-bit blocklist format, the Japanese README,
+  the C3 web-installer binaries and the C3 SuperMini enclosure.
 
 [Unreleased]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/denzilrdz/esp32-s3-adblock/releases/tag/v0.1.0

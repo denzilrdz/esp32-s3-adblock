@@ -45,9 +45,11 @@ client query ──▶ dns_io task ──▶ local name? ─▶ answer on the de
 
 | Board | Status | Notes |
 |---|---|---|
-| **ESP32-S3-DevKitC-1, WROOM-1-N16R8** | Main target | 16 MB flash, 8 MB octal PSRAM. Full feature set. |
-| Other ESP32-S3 with ≥8 MB flash and PSRAM | Should work | Check flash size and PSRAM type (`qio_opi` is octal). |
-| ESP32-C3 / classic ESP32 (4 MB, no PSRAM) | "Lite" profile, build-tested | Smaller cache, list read from flash (≤150k domains), no TCP DNS. |
+| **ESP32-S3-DevKitC-1, WROOM-1-N16R8** | Supported | 16 MB flash, 8 MB octal PSRAM. |
+| Other ESP32-S3 boards with an N16R8 module | Should work | Needs 16 MB flash and 8 MB **octal** PSRAM (`qio_opi`). |
+
+Only the ESP32-S3 is supported: the blocklist and DNS cache live in PSRAM, and the
+partition table needs 16 MB of flash.
 
 **Power:** any stable 5 V USB source. A router's USB port is ideal (no extra adapter).
 Cheap or loose cables can brown out the board during Wi-Fi transmission; if it reboots

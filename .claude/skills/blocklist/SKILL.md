@@ -29,9 +29,8 @@ Design: [ARCHITECTURE.md §6](../../../docs/ARCHITECTURE.md).
   `uint32 suffix[N]`, sorted within each bucket.
 - **Matching:** the name and each parent down to two labels (never the bare TLD).
   No `www.` stripping.
-- **Legacy:** upstream's headerless 40-bit blob is **not** accepted by the device
-  (48-bit hashes can't be derived from it). `--format legacy` only exists for
-  devices still running the original esp32-c3-adblock firmware.
+- Upstream's headerless 40-bit format is **not** supported (48-bit hashes can't be
+  derived from it).
 - **Rule:** the C++ (`lib/core/blocklist/hash.h`, `format.cpp`) and Python
   (`tools/build_blocklist.py`) must agree. A test checks golden hashes on both
   sides; change them together.
@@ -41,7 +40,6 @@ Design: [ARCHITECTURE.md §6](../../../docs/ARCHITECTURE.md).
 ```bash
 python3 tools/build_blocklist.py out.bin                             # default sources
 python3 tools/build_blocklist.py out.bin hosts.txt https://...      # custom sources
-python3 tools/build_blocklist.py --format legacy out.bin            # upstream C3 devices
 python3 -m unittest discover -s tools -p 'test_*.py'
 ```
 
@@ -66,7 +64,7 @@ Code: `lib/core/sched/daily_scheduler.*`, `lib/core/update/updater.*`, wired up 
    first.
 5. Validate: magic/version/bits, size formula, N ≤ max, N ≥ min (1000), CRC, bucket
    monotonicity, suffix order. Any failure → delete tmp, keep the old list.
-6. Swap: `prepareSwap()` (lite boards release the open file), live → `.old`,
+6. Swap: `prepareSwap()` (a file-backed bridge index releases the open file), live → `.old`,
    tmp → live, delete `.old`; any rename failure reinstalls the live list. Then
    `BlocklistManager::install()` loads the file into a new PSRAM buffer and
    `IndexHolder::publish()` swaps it in (readers never lock; the old index is freed
@@ -95,8 +93,8 @@ list + immediate download.
 
 - Dashboard says `invalid list: crc mismatch` / `download truncated` → network
   problem or a wrong file at the URL; the old list stays. `bad magic` → not a v2
-  file (e.g. an HTML error page or a legacy list).
+  file (e.g. an HTML error page or an old 40-bit list).
 - `0 domains` after boot → no valid list and no `.old` file; it downloads as soon as
   the clock syncs. Or *Update now* / upload a file on the dashboard.
-- `too many entries` → limits are 1M (PSRAM) / 150k (lite), set in
+- `too many entries` → the limit is 1M entries, set in
   `BlocklistManager`'s constructor; raise only if the budget (ARCHITECTURE §11) allows.

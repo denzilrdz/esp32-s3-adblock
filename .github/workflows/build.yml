@@ -1,8 +1,8 @@
 name: build
 
 # Every push to main and every pull request: workflow lint (zizmor, actionlint), format
-# check, clang-tidy, unit tests (with coverage), the blocklist tool tests, and firmware
-# builds for all boards.
+# check, clang-tidy, unit tests (with coverage), the blocklist tool tests, and the
+# ESP32-S3 firmware build.
 on:
   push:
     branches: [main]
@@ -56,17 +56,11 @@ jobs:
           path: coverage/
 
   firmware:
-    name: firmware (${{ matrix.env }})
+    name: firmware (esp32s3)
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
       contents: read # checkout
-    strategy:
-      fail-fast: false
-      matrix:
-        env: [esp32s3, c3, esp32dev]
-    env:
-      PIO_ENV: ${{ matrix.env }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -78,17 +72,17 @@ jobs:
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.platformio
-          key: pio-${{ matrix.env }}-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
+          key: pio-esp32s3-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
       - name: Placeholder secrets (real ones are gitignored; first boot uses the setup code)
         run: cp src/secrets.example.h src/secrets.h
       - name: Build
-        run: .venv/bin/pio run -e "$PIO_ENV"
+        run: .venv/bin/pio run -e esp32s3
       - name: Factory image
-        run: tools/make_factory.sh "$PIO_ENV"
+        run: tools/make_factory.sh
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: firmware-${{ matrix.env }}
+          name: firmware-esp32s3
           path: |
-            .pio/build/${{ matrix.env }}/firmware.bin
-            .pio/build/${{ matrix.env }}/factory.bin
-            .pio/build/${{ matrix.env }}/firmware.elf
+            .pio/build/esp32s3/firmware.bin
+            .pio/build/esp32s3/factory.bin
+            .pio/build/esp32s3/firmware.elf

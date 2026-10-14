@@ -3,8 +3,6 @@
   "version": "__VERSION__",
   "new_install_prompt_erase": true,
   "builds": [
-    { "chipFamily": "ESP32-S3", "parts": [{ "path": "factory-esp32s3.bin", "offset": 0 }] },
-    { "chipFamily": "ESP32-C3", "parts": [{ "path": "factory-c3.bin", "offset": 0 }] },
-    { "chipFamily": "ESP32", "parts": [{ "path": "factory-esp32dev.bin", "offset": 0 }] }
+    { "chipFamily": "ESP32-S3", "parts": [{ "path": "factory-esp32s3.bin", "offset": 0 }] }
   ]
 }

@@ -39,13 +39,8 @@
 
 namespace {
 
-#if CONFIG_IDF_TARGET_ESP32S3
 const char* kHostname = "s3adblock";
 const char* kApPrefix = "S3-AdBlock";
-#else
-const char* kHostname = "c3adblock";
-const char* kApPrefix = "C3-AdBlock";
-#endif
 const char* kOtaPlaceholder = "CHANGE_ME_OTA_PASSWORD";
 
 // ---- platform services (long-lived singletons) ----
@@ -127,13 +122,6 @@ void startDnsService() {
   cfg.forwarder.allowPlainFallback = gConfig.plainFallback;
   cfg.forwarder.query.padding = gConfig.padding;
   cfg.forwarder.query.requestAd = gConfig.passAd;
-  if (!platform::havePsram()) {  // lite profile (C3 / classic ESP32): small cache, UDP only
-    cfg.cache.maxEntries = 512;
-    cfg.cache.arenaBytes = 64 * 1024;
-    cfg.pendingSlots = 16;
-    cfg.tcpEnabled = false;
-    cfg.replyCap = dns::kMaxUdpPayload;
-  }
   gDns = new app::DnsService(cfg, *gPolicy, gClock, gRandom, gLog, chain, n);
   if (!gDns->start()) gLog.log(hal::LogLevel::kError, "boot", "DNS service failed to start");
 }
@@ -203,11 +191,7 @@ void superviseWifi() {
 }
 
 void clearWifiIfBootHeld() {
-#if CONFIG_IDF_TARGET_ESP32C3
-  const int bootPin = 9;  // C3 BOOT button
-#else
-  const int bootPin = 0;  // ESP32 / ESP32-S3 BOOT button
-#endif
+  const int bootPin = 0;  // ESP32-S3 BOOT button
   pinMode(bootPin, INPUT_PULLUP);
   if (digitalRead(bootPin) == LOW) {
     delay(60);
@@ -234,6 +218,10 @@ void setup() {
   delay(300);
   Serial.printf("\n[adblock] v%s booting (%s, PSRAM %u KB)\n", FW_VERSION, kHostname,
                 static_cast<unsigned>(ESP.getPsramSize() / 1024));
+  if (!platform::havePsram())
+    Serial.println(
+        "[ERROR] No PSRAM found. This firmware needs an ESP32-S3 with octal PSRAM (N16R8); "
+        "check board_build.arduino.memory_type = qio_opi. DNS will not start.");
   if (!LittleFS.begin(true)) Serial.println("[ERROR] LittleFS failed");
   if (!gKv.begin()) Serial.println("[ERROR] NVS failed");
   config::load(gKv, gConfig);

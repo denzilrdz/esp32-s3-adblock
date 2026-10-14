@@ -6,7 +6,7 @@ import tempfile
 import unittest
 import zlib
 
-from build_blocklist import HASH_BYTES, fnv, hash48
+from build_blocklist import hash48
 
 SCRIPT = pathlib.Path(__file__).with_name("build_blocklist.py")
 
@@ -95,29 +95,6 @@ class BuildBlocklistTests(unittest.TestCase):
         for bucket in range(65536):
             run = f["suffixes"][f["starts"][bucket] : f["starts"][bucket + 1]]
             self.assertTrue(all(a < b for a, b in zip(run, run[1:])), bucket)
-
-    def test_legacy_hosts_line_includes_every_domain(self):
-        with tempfile.TemporaryDirectory() as directory:
-            data = run_builder(
-                pathlib.Path(directory),
-                "0.0.0.0 ads.example.com tracker.example.com # comment\n"
-                "127.0.0.1 metrics.example.com\n",
-                "--format",
-                "legacy",
-            )
-        hashes = {
-            int.from_bytes(data[i : i + HASH_BYTES], "little")
-            for i in range(0, len(data), HASH_BYTES)
-        }
-        expected = {
-            fnv(domain.encode())
-            for domain in (
-                "ads.example.com",
-                "tracker.example.com",
-                "metrics.example.com",
-            )
-        }
-        self.assertEqual(hashes, expected)
 
 
 if __name__ == "__main__":

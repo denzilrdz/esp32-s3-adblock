@@ -12,7 +12,7 @@ schema), MINOR (features), PATCH (fixes).
 ## Steps
 
 1. `main` is green locally: `pio test -e native`, `tools/lint.sh`,
-   `tools/format.sh --check`, and `pio run -e esp32s3 -e c3 -e esp32dev`.
+   `tools/format.sh --check`, and `pio run -e esp32s3`.
 2. Bump `FW_VERSION` in `platformio.ini` (`[esp32_base]` build_flags,
    `-DFW_VERSION=\"X.Y.Z\"`). It shows in the boot log, `/api/stats` and the dashboard.
    The release workflow fails if the tag and `FW_VERSION` differ.
@@ -29,15 +29,15 @@ schema), MINOR (features), PATCH (fixes).
 
 ## What `.github/workflows/release.yml` does on a `v*` tag
 
-- Builds `esp32s3`, `c3`, `esp32dev` (tools from `uv.lock`, placeholder `secrets.h`).
-- Attaches `firmware-<env>-vX.Y.Z.bin`, `factory-<env>-vX.Y.Z.bin` (flash at 0x0),
-  `firmware-<env>-vX.Y.Z.elf` (for crash decoding) and `SHA256SUMS` to the release.
+- Builds `esp32s3` (tools from `uv.lock`, placeholder `secrets.h`).
+- Attaches `firmware-esp32s3-vX.Y.Z.bin`, `factory-esp32s3-vX.Y.Z.bin` (flash at 0x0),
+  `firmware-esp32s3-vX.Y.Z.elf` (for crash decoding) and `SHA256SUMS` to the release.
 - Creates Sigstore build-provenance attestations for every `.bin`. Users verify a
   download with `gh attestation verify factory-esp32s3-vX.Y.Z.bin -R denzilrdz/esp32-s3-adblock`.
 - Uses no caches (a poisoned cache can't reach release artifacts) and never cancels
   an in-progress release.
 - Deploys the browser installer to GitHub Pages: `installer/index.html` +
-  `manifest.json` (all three chips) + esp-web-tools vendored from the npm tarball
+  `manifest.json` (ESP32-S3) + esp-web-tools vendored from the npm tarball
   pinned in `installer/esp-web-tools.lock` (SHA-512 checked). Needs Pages set to
   "GitHub Actions" in the repo settings.
 

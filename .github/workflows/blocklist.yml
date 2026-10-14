@@ -3,7 +3,6 @@ name: blocklist
 # Rebuilds the default blocklist weekly and publishes it at a stable URL:
 #   https://github.com/<owner>/<repo>/releases/download/blocklist/blocklist.bin  (format v2)
 # Devices fetch it daily at 02:00 IST (ETag: unchanged lists are not re-downloaded).
-# blocklist-legacy.bin is the 40-bit format for the original esp32-c3-adblock firmware.
 on:
   schedule:
     - cron: "17 4 * * 1"   # Mondays 04:17 UTC
@@ -29,8 +28,6 @@ jobs:
       # The builder only needs the Python standard library (runner's python3).
       - name: Build default blocklist (fails if any source is unreachable)
         run: python3 tools/build_blocklist.py blocklist.bin 2>&1 | tee build.log
-      - name: Build legacy-format list for upstream C3 firmware
-        run: python3 tools/build_blocklist.py --format legacy blocklist-legacy.bin
       - name: Sanity checks
         run: |
           size=$(stat -c%s blocklist.bin)
@@ -53,4 +50,4 @@ jobs:
           else
             gh release create blocklist --title "Weekly blocklist" --notes "$notes" --latest=false
           fi
-          gh release upload blocklist blocklist.bin blocklist-legacy.bin --clobber
+          gh release upload blocklist blocklist.bin --clobber
