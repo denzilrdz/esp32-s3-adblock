@@ -1,6 +1,5 @@
 # esp32-s3-adblock
 
-[![build](https://github.com/denzilrdz/esp32-s3-adblock/actions/workflows/build.yml/badge.svg)](https://github.com/denzilrdz/esp32-s3-adblock/actions/workflows/build.yml)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 A **Pi-hole-style DNS ad blocker for the ESP32-S3** (N16R8: 16 MB flash, 8 MB PSRAM).
