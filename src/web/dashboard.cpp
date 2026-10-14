@@ -212,7 +212,7 @@ void Dashboard::handleStats() {
   const app::DnsStats d = ctx_.dns->stats();
   const cache::CacheStats cs = ctx_.dns->cacheStats();
   const app::UpstreamSnapshot us = ctx_.dns->upstreams();
-  char hhmm[6];
+  char hhmm[8];
   snprintf(hhmm, sizeof(hhmm), "%02u:%02u", bl.hour, bl.minute);
 
   String j;
