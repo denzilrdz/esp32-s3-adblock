@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C3 AdBlocker — flash it in your browser</title>
+<meta name="description" content="Flash the $2 ESP32-C3 network ad-blocker straight from your browser. No toolchain, no PlatformIO.">
+<script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { font: 16px/1.6 system-ui, -apple-system, sans-serif; margin: 0; background: #0d1117; color: #c9d1d9; }
+  .wrap { max-width: 640px; margin: 0 auto; padding: 48px 20px 80px; }
+  h1 { font-size: 30px; margin: 0 0 6px; }
+  h1 .g { color: #3fb950; }
+  .price { color: #ffd400; font-weight: 700; }
+  .sub { color: #8b949e; margin: 0 0 28px; }
+  .card { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 22px; margin: 18px 0; }
+  ol { padding-left: 20px; } li { margin: 6px 0; }
+  esp-web-install-button { --esp-tools-button-color: #000; --esp-tools-button-background-color: #3fb950; }
+  esp-web-install-button[install-unsupported] { display: none; }
+  .unsupported { display: none; color: #f85149; }
+  esp-web-install-button[install-unsupported] ~ .unsupported { display: block; }
+  a { color: #58a6ff; }
+  .note { color: #8b949e; font-size: 14px; }
+  code { background: #21262d; padding: 1px 6px; border-radius: 5px; }
+  .flags { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
+  .flag { background: #21262d; border-radius: 6px; padding: 4px 10px; font-size: 13px; color: #8b949e; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🛡️ <span class="g">C3 AdBlocker</span></h1>
+  <p class="sub">A network-wide DNS ad-blocker on a <span class="price">$2</span> ESP32-C3 — 141,000+ domains, no PSRAM. Flash it right here, no toolchain needed.</p>
+
+  <div class="card" style="text-align:center">
+    <p style="margin-top:0">Plug your ESP32-C3 into this computer, then:</p>
+    <esp-web-install-button manifest="./manifest.json">
+      <button slot="activate" style="font:600 17px system-ui;padding:14px 26px;border:0;border-radius:8px;background:#3fb950;color:#000;cursor:pointer">⚡ Connect &amp; Install</button>
+      <span slot="unsupported" class="unsupported">Your browser can't flash — use <b>Chrome</b> or <b>Edge</b> on a desktop.</span>
+      <span slot="not-allowed" class="unsupported">You need to allow the serial port.</span>
+    </esp-web-install-button>
+    <div class="flags">
+      <span class="flag">Chrome / Edge · desktop</span>
+      <span class="flag">~30 seconds</span>
+      <span class="flag">blocklist included</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <b>What happens</b>
+    <ol>
+      <li>Click <b>Connect &amp; Install</b> and pick your ESP32-C3's serial port.</li>
+      <li>It flashes the firmware + a 141k-domain blocklist (~30s).</li>
+      <li>After it reboots, it makes a WiFi network called <code>C3-AdBlock-XXXX</code> — join it from your phone, pick your WiFi, type the password.</li>
+      <li>Set it as your router's secondary DNS (or per-device), and ads are blocked network-wide. Dashboard at <code>c3adblock.local</code>.</li>
+    </ol>
+    <p class="note">No WiFi credentials are baked into this build — you set them on-device, privately.</p>
+  </div>
+
+  <p class="note">
+    📰 Featured on <a href="https://www.tomshardware.com/networking/clever-hacker-fits-537-000-domains-in-a-tiny-usd5-esp32-ad-blocking-dongle-firmware-uses-only-around-50kb-of-ram-and-can-answer-blocked-lookups-in-10-milliseconds">Tom's Hardware</a>,
+    <a href="https://www.xda-developers.com/this-tiny-esp32-powered-gadget-blocks-537000-domains-only-uses-50kb-of-ram/">XDA</a>, and
+    <a href="https://korben.info/en/half-million-ad-blocking-domains-50kb-ram-esp32.html">Korben</a>.
+    &nbsp;·&nbsp; Source + docs: <a href="https://github.com/M-Abozaid/esp32-c3-adblock">GitHub</a> (MIT).
+  </p>
+</div>
+</body>
+</html>
