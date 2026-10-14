@@ -86,8 +86,13 @@ class StreamValidator {
   Header header_;
 };
 
+// Called periodically during long operations (e.g. to feed a task watchdog).
+using ProgressFn = void (*)();
+
 // Full validation of a stored file: header, size, CRC, bucket monotonicity and
 // suffix ordering. Streams the file with two sequential readers; constant memory.
-FormatError validateFile(hal::IFileSystem& fs, const char* path, const Limits& limits, Header* out);
+// `tick` (optional) is called about every 64 KB read.
+FormatError validateFile(hal::IFileSystem& fs, const char* path, const Limits& limits, Header* out,
+                         ProgressFn tick = nullptr);
 
 }  // namespace blocklist

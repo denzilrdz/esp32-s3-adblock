@@ -107,7 +107,8 @@ class U32Reader {
 
 }  // namespace
 
-FormatError validateFile(hal::IFileSystem& fs, const char* path, const Limits& limits, Header* out) {
+FormatError validateFile(hal::IFileSystem& fs, const char* path, const Limits& limits, Header* out,
+                         ProgressFn tick) {
   auto f = fs.open(path, hal::FileMode::kRead);
   if (!f) return FormatError::kIoError;
   uint8_t head[kHeaderSize];
@@ -122,7 +123,14 @@ FormatError validateFile(hal::IFileSystem& fs, const char* path, const Limits& l
   uint32_t crc = 0;
   uint8_t chunk[512];
   size_t n;
-  while ((n = f->read(chunk, sizeof(chunk))) > 0) crc = util::crc32Update(crc, chunk, n);
+  size_t sinceTick = 0;
+  while ((n = f->read(chunk, sizeof(chunk))) > 0) {
+    crc = util::crc32Update(crc, chunk, n);
+    if (tick && (sinceTick += n) >= 65536) {
+      tick();
+      sinceTick = 0;
+    }
+  }
   if (crc != h.crc) return FormatError::kBadCrc;
 
   // Pass 2: walk the bucket table and the suffixes side by side.
@@ -135,6 +143,7 @@ FormatError validateFile(hal::IFileSystem& fs, const char* path, const Limits& l
   uint32_t start = 0;
   if (!br.next(start) || start != 0) return FormatError::kBadBuckets;
   for (uint32_t b = 0; b < kBucketCount; b++) {
+    if (tick && (b & 0x0FFF) == 0) tick();
     uint32_t end;
     if (!br.next(end) || end < start || end > h.count) return FormatError::kBadBuckets;
     bool first = true;

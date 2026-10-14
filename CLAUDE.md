@@ -100,6 +100,10 @@ must pass before every commit. Use fakes behind the HAL interfaces; see skill
   session, so at most 2 at once.
 - **UDP socket buffers only 6 datagrams** (`LWIP_UDP_RECVMBOX_SIZE`), so the DNS
   receive task must never block.
+- **Only 16 lwIP sockets in total**: budget in ARCHITECTURE.md §11 before adding one.
+- **ARP/lwIP core calls** (e.g. `etharp_find_addr`) only via `tcpip_callback`.
+- **C hooks from Arduino** (`verifyRollbackLater`, …) need `extern "C"` to override.
+- mDNS name: `s3adblock.local` on the S3, `c3adblock.local` on C3/ESP32.
 - **IPv6 bypass:** clients may use the router's IPv6 DNS (Airtel advertises its own)
   and skip the blocker; documented in the README.
 - **Browser secure DNS** bypasses the blocker if a user turns it on; we answer

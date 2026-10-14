@@ -151,7 +151,7 @@ UpdateReport BlocklistUpdater::update(const char* url) {
   if (res.error != hal::HttpError::kNone) return fail(UpdateStatus::kInvalid, "download aborted", 200);
 
   blocklist::Header h;
-  const FormatError full = blocklist::validateFile(fs_, paths_.tmp, limits_, &h);
+  const FormatError full = blocklist::validateFile(fs_, paths_.tmp, limits_, &h, tick_);
   if (full != FormatError::kNone) return fail(UpdateStatus::kInvalid, blocklist::formatErrorName(full), 200);
 
   uint32_t current = 0;
@@ -172,7 +172,7 @@ UpdateReport BlocklistUpdater::update(const char* url) {
 
 UpdateReport BlocklistUpdater::installFile(const char* path) {
   blocklist::Header h;
-  const FormatError e = blocklist::validateFile(fs_, path, limits_, &h);
+  const FormatError e = blocklist::validateFile(fs_, path, limits_, &h, tick_);
   if (e != FormatError::kNone) {
     fs_.remove(path);
     UpdateReport r;
@@ -222,16 +222,17 @@ UpdateReport BlocklistUpdater::swapAndInstall(const char* from, const blocklist:
 
 void BlocklistUpdater::reinstallLive() {
   blocklist::Header h;
-  if (blocklist::validateFile(fs_, paths_.live, limits_, &h) == FormatError::kNone && installer_.install(paths_.live, h))
+  if (blocklist::validateFile(fs_, paths_.live, limits_, &h, tick_) == FormatError::kNone && installer_.install(paths_.live, h))
     return;
   log_.log(LogLevel::kError, kTag, "could not reload the previous list after a failed swap");
 }
 
-RecoveryResult BlocklistUpdater::recover(hal::IFileSystem& fs, const blocklist::Limits& limits, Paths paths) {
+RecoveryResult BlocklistUpdater::recover(hal::IFileSystem& fs, const blocklist::Limits& limits, Paths paths,
+                                          blocklist::ProgressFn tick) {
   RecoveryResult r;
   fs.remove(paths.tmp);
   if (fs.exists(paths.live)) {
-    r.liveError = blocklist::validateFile(fs, paths.live, limits, &r.header);
+    r.liveError = blocklist::validateFile(fs, paths.live, limits, &r.header, tick);
     if (r.liveError == FormatError::kNone) {
       fs.remove(paths.old);
       r.haveList = true;
@@ -241,7 +242,7 @@ RecoveryResult BlocklistUpdater::recover(hal::IFileSystem& fs, const blocklist::
     r.liveError = FormatError::kIoError;
   }
   blocklist::Header oldHeader;
-  if (fs.exists(paths.old) && blocklist::validateFile(fs, paths.old, limits, &oldHeader) == FormatError::kNone) {
+  if (fs.exists(paths.old) && blocklist::validateFile(fs, paths.old, limits, &oldHeader, tick) == FormatError::kNone) {
     fs.remove(paths.live);
     if (fs.rename(paths.old, paths.live)) {
       r.haveList = true;

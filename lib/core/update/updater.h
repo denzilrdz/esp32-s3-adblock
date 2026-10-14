@@ -81,9 +81,13 @@ class BlocklistUpdater {
   // Validates and installs a file already on flash (dashboard upload).
   UpdateReport installFile(const char* path);
 
+  // Optional callback during long validations (feeds the task watchdog on device).
+  void setProgress(blocklist::ProgressFn tick) { tick_ = tick; }
+
   // Boot: make sure /blocklist.bin is valid, restoring /blocklist.old after an
   // interrupted swap. Deletes stale temp files.
-  static RecoveryResult recover(hal::IFileSystem& fs, const blocklist::Limits& limits, Paths paths = Paths{});
+  static RecoveryResult recover(hal::IFileSystem& fs, const blocklist::Limits& limits, Paths paths = Paths{},
+                                blocklist::ProgressFn tick = nullptr);
 
  private:
   UpdateReport fail(UpdateStatus s, const char* detail, int http = 0);
@@ -98,6 +102,7 @@ class BlocklistUpdater {
   IListInstaller& installer_;
   hal::ILogger& log_;
   Paths paths_;
+  blocklist::ProgressFn tick_ = nullptr;
 };
 
 }  // namespace update

@@ -74,6 +74,18 @@ static void assertInvalid(FormatError want, const Bytes& file, Limits limits = s
   }
 }
 
+static int ticks = 0;
+static void countTick() { ticks++; }
+
+static void test_validation_reports_progress_for_large_files() {
+  MemFileSystem fs;
+  fs.put("/bl.bin", testbl::build(testbl::syntheticNames(100000)));  // ~650 KB
+  ticks = 0;
+  TEST_ASSERT_EQUAL(static_cast<int>(FormatError::kNone),
+                    static_cast<int>(validateFile(fs, "/bl.bin", small(), nullptr, countTick)));
+  TEST_ASSERT_TRUE(ticks >= 10);  // the watchdog gets fed during long validations
+}
+
 static void test_corrupt_files_are_rejected() {
   const Bytes good = testbl::build(testbl::syntheticNames(2000));
   Bytes f = good;
@@ -251,6 +263,7 @@ int main(int, char**) {
   UNITY_BEGIN();
   RUN_TEST(test_hash_matches_python_golden_values);
   RUN_TEST(test_valid_file_passes_full_validation);
+  RUN_TEST(test_validation_reports_progress_for_large_files);
   RUN_TEST(test_corrupt_files_are_rejected);
   RUN_TEST(test_structural_corruption_with_valid_crc_is_rejected);
   RUN_TEST(test_memory_and_file_index_agree);

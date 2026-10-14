@@ -42,7 +42,8 @@ class BlocklistManager final : public update::IListInstaller {
   static constexpr size_t kMaxRules = 1000;
 
   BlocklistManager(hal::IFileSystem& fs, hal::IHttpClient& http, hal::IKeyValueStore& kv,
-                   const hal::IClock& clock, hal::IRandom& random, hal::ILogger& log);
+                   const hal::IClock& clock, hal::IRandom& random, hal::ILogger& log,
+                   blocklist::ProgressFn tick = nullptr);
 
   void begin();  // boot: recover files, load the list and custom rules
   void loop();   // maintenance task: run the daily update when due
@@ -76,6 +77,7 @@ class BlocklistManager final : public update::IListInstaller {
   hal::IKeyValueStore& kv_;
   const hal::IClock& clock_;
   hal::ILogger& log_;
+  blocklist::ProgressFn tick_;
   blocklist::Limits limits_;
   blocklist::IndexHolder holder_;
   blocklist::Matcher matcher_;

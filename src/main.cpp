@@ -18,7 +18,10 @@
 #include "lwip/etharp.h"
 #include "lwip/netif.h"
 #include <esp_netif.h>
+#include <esp_ota_ops.h>
 #include <esp_sntp.h>
+#include <esp_task_wdt.h>
+#include "lwip/tcpip.h"
 #include "app/blocklist_manager.h"
 #include "platform/esp_http.h"
 #include "platform/littlefs_fs.h"
@@ -34,6 +37,11 @@
                        // have been provisioned via the captive portal (copy secrets.example.h)
 
 // ---- globals ----
+#if CONFIG_IDF_TARGET_ESP32S3
+static const char* HOSTNAME = "s3adblock";
+#else
+static const char* HOSTNAME = "c3adblock";
+#endif
 WebServer web(80);
 uint32_t totalBlocked = 0, totalAllowed = 0;
 
@@ -51,7 +59,7 @@ static platform::NvsKvStore gKv("adblock");
 static platform::EspHttpClient gHttp;
 static app::BlocklistManager* gBlocklist = nullptr;
 
-struct Dev { uint32_t ip; uint8_t mac[6]; uint32_t blocked, allowed, lastSeen; bool banned; String label; };
+struct Dev { uint32_t ip; uint8_t mac[6]; uint32_t blocked, allowed, lastSeen; bool banned; bool macPending; uint8_t macTries; String label; };
 static const int MAX_CLIENTS = 96;
 Dev clients[MAX_CLIENTS]; int numClients = 0;
 
@@ -83,20 +91,55 @@ static void saveBanned() {
 }
 
 // ---------- client table ----------
-static void getMac(uint32_t ip, uint8_t* mac) {
-  memset(mac, 0, 6); ip4_addr_t ipa; ipa.addr = ip;
-  struct eth_addr* eth = nullptr; const ip4_addr_t* ipret = nullptr;
-  for (struct netif* nif = netif_list; nif; nif = nif->next)
-    if (etharp_find_addr(nif, &ipa, &eth, &ipret) >= 0 && eth) { memcpy(mac, eth->addr, 6); return; }
-}
+// Caller holds gState. MAC addresses are filled in later by resolvePendingMacs():
+// the ARP table may only be read from lwIP's own thread.
 static Dev* getClient(uint32_t ip) {
   for (int i = 0; i < numClients; i++) if (clients[i].ip == ip) { clients[i].lastSeen = millis(); return &clients[i]; }
   if (numClients < MAX_CLIENTS) {
     Dev* c = &clients[numClients++];
     c->ip = ip; c->blocked = c->allowed = 0; c->lastSeen = millis(); c->banned = isBannedIP(ip); c->label = "";
-    getMac(ip, c->mac); return c;
+    memset(c->mac, 0, 6); c->macPending = true; c->macTries = 0;
+    return c;
   }
   return nullptr;
+}
+
+// ARP lookups run inside the lwIP thread via tcpip_callback(); results are copied
+// back under gState by the maintenance task. No lock is taken in the lwIP thread.
+struct MacJob { int n; uint32_t ip[8]; uint8_t mac[8][6]; bool found[8]; SemaphoreHandle_t done; };
+static void macJobInLwip(void* ctx) {
+  MacJob* job = static_cast<MacJob*>(ctx);
+  for (int k = 0; k < job->n; k++) {
+    ip4_addr_t ipa; ipa.addr = job->ip[k];
+    struct eth_addr* eth = nullptr; const ip4_addr_t* ipret = nullptr;
+    job->found[k] = false;
+    for (struct netif* nif = netif_list; nif && !job->found[k]; nif = nif->next)
+      if (etharp_find_addr(nif, &ipa, &eth, &ipret) >= 0 && eth) { memcpy(job->mac[k], eth->addr, 6); job->found[k] = true; }
+  }
+  xSemaphoreGive(job->done);
+}
+static void resolvePendingMacs() {
+  static MacJob job = {0, {}, {}, {}, xSemaphoreCreateBinary()};
+  static bool inFlight = false;
+  if (inFlight && xSemaphoreTake(job.done, 0) != pdTRUE) return;  // previous job still queued
+  inFlight = false;
+  job.n = 0;
+  {
+    StateLock g(gState);
+    for (int i = 0; i < numClients && job.n < 8; i++)
+      if (clients[i].macPending && (clients[i].ip >> 24) != 127) job.ip[job.n++] = clients[i].ip;
+  }
+  if (!job.n || tcpip_callback(macJobInLwip, &job) != ERR_OK) return;
+  inFlight = true;
+  if (xSemaphoreTake(job.done, pdMS_TO_TICKS(500)) != pdTRUE) return;  // collect next time
+  inFlight = false;
+  StateLock g(gState);
+  for (int k = 0; k < job.n; k++)
+    for (int i = 0; i < numClients; i++)
+      if (clients[i].ip == job.ip[k] && clients[i].macPending) {
+        if (job.found[k]) { memcpy(clients[i].mac, job.mac[k], 6); clients[i].macPending = false; }
+        else if (++clients[i].macTries >= 10) clients[i].macPending = false;  // give up quietly
+      }
 }
 
 // ---------- DNS policy ----------
@@ -410,14 +453,69 @@ static void startDnsService() {
       new platform::UdpTransport("cloudflare-udp", "1.1.1.1"),
   };
   app::DnsServiceConfig cfg;
-  if (!platform::havePsram()) {        // lite profile (C3 / classic ESP32): small cache
+  if (!platform::havePsram()) {        // lite profile (C3 / classic ESP32): small cache, UDP only
     cfg.cache.maxEntries = 512;
     cfg.cache.arenaBytes = 64 * 1024;
     cfg.pendingSlots = 16;
+    cfg.tcpEnabled = false;
+    cfg.replyCap = dns::kMaxUdpPayload;
   }
   gDns = new app::DnsService(cfg, gPolicy, gClock, gRandom, gLog, chain, sizeof(chain) / sizeof(chain[0]));
   if (!gDns->start()) Serial.println("[ERROR] DNS service failed to start");
 }
+
+// ---------- tasks ----------
+// web (core 0, prio 3): dashboard + ArduinoOTA, so a slow HTTP client or a blocklist
+// download in the maintenance task never stalls the other.
+static void webTask(void*) {
+  esp_task_wdt_add(nullptr);
+  while (true) {
+    web.handleClient();
+    ArduinoOTA.handle();
+    esp_task_wdt_reset();
+    vTaskDelay(pdMS_TO_TICKS(2));
+  }
+}
+
+static void feedWatchdog() { esp_task_wdt_reset(); }
+
+// Firmware rollback: Arduino would mark a freshly OTA-flashed image valid at boot.
+// We defer that until the new firmware has proved healthy (see maintainOtaHealth()).
+extern "C" bool verifyRollbackLater() { return true; }  // overrides a weak C symbol
+
+static void maintainOtaHealth() {
+  static bool done = false;
+  if (done) return;
+  esp_ota_img_states_t state;
+  if (esp_ota_get_state_partition(esp_ota_get_running_partition(), &state) != ESP_OK ||
+      state != ESP_OTA_IMG_PENDING_VERIFY) { done = true; return; }
+  // Healthy = Wi-Fi up and the DNS service running for 60 s without a crash. Upstream
+  // reachability is deliberately not required: an ISP outage must not roll back.
+  if (WiFi.status() == WL_CONNECTED && gDns && gDns->running() && millis() > 60000) {
+    esp_ota_mark_app_valid_cancel_rollback();
+    gLog.log(hal::LogLevel::kInfo, "ota", "new firmware marked valid");
+    done = true;
+  } else if (millis() > 300000) {
+    gLog.log(hal::LogLevel::kError, "ota", "new firmware unhealthy after 5 min: rolling back");
+    esp_ota_mark_app_invalid_rollback_and_reboot();
+  }
+}
+
+// Reconnects are automatic (WiFi.setAutoReconnect); if the network stays gone for
+// 10 minutes, reboot (a never-configured device still gets the setup portal).
+static void superviseWifi() {
+  static uint32_t downSince = 0;
+  if (WiFi.status() == WL_CONNECTED) {
+    if (downSince) gLog.log(hal::LogLevel::kInfo, "wifi", "reconnected after %lu s", (millis() - downSince) / 1000);
+    downSince = 0;
+    return;
+  }
+  if (!downSince) { downSince = millis() | 1; gLog.log(hal::LogLevel::kWarn, "wifi", "disconnected"); }
+  else if (millis() - downSince > 600000UL) { gLog.log(hal::LogLevel::kError, "wifi", "down for 10 min: rebooting"); delay(200); ESP.restart(); }
+}
+
+// The maintenance task is Arduino's loopTask (core 1, prio 1): give it room for TLS.
+SET_LOOP_TASK_STACK_SIZE(16 * 1024);
 
 void setup() {
   Serial.begin(115200); delay(300);
@@ -425,7 +523,7 @@ void setup() {
   if (!LittleFS.begin(true)) Serial.println("LittleFS FAILED");
   if (!gKv.begin()) Serial.println("NVS FAILED");
   Serial.printf("PSRAM: %u KB free\n", (unsigned)(ESP.getFreePsram() / 1024));
-  gBlocklist = new app::BlocklistManager(gFs, gHttp, gKv, gClock, gRandom, gLog);
+  gBlocklist = new app::BlocklistManager(gFs, gHttp, gKv, gClock, gRandom, gLog, feedWatchdog);
   gBlocklist->begin();
   loadBanned();
   Serial.printf("blocklist: %u domains, banned: %d\n", (unsigned)gBlocklist->status().entries, numBanned);
@@ -443,7 +541,7 @@ void setup() {
 
   if (!connectWiFi()) startConfigPortal();   // portal blocks + reboots on save; returns only when connected
   Serial.printf("WiFi up: %s\n", WiFi.localIP().toString().c_str());
-  if (MDNS.begin("c3adblock")) { MDNS.addService("http", "tcp", 80); Serial.println("dashboard: http://c3adblock.local"); }
+  if (MDNS.begin(HOSTNAME)) { MDNS.addService("http", "tcp", 80); Serial.printf("dashboard: http://%s.local\n", HOSTNAME); }
 
   if (strcmp(WEB_PASS, "CHANGE_ME_WEB_PASSWORD") == 0 || strcmp(OTA_PASS, "CHANGE_ME_OTA_PASSWORD") == 0)
     Serial.println("[WARN] secrets.h still has placeholder WEB_PASS/OTA_PASS — those are public "
@@ -484,21 +582,32 @@ void setup() {
     web.send(200, "text/plain", "ok");
   });
   web.begin();
-  ArduinoOTA.setHostname("c3adblock");   // pio run -t upload --upload-port c3adblock.local
+  ArduinoOTA.setHostname(HOSTNAME);      // pio run -t upload --upload-port <HOSTNAME>.local
   ArduinoOTA.setPassword(OTA_PASS);      // network OTA was unauthenticated upstream
   ArduinoOTA.begin();
+  xTaskCreatePinnedToCore(webTask, "web", 8192, nullptr, 3, nullptr, 0);
+  WiFi.setAutoReconnect(true);
   Serial.println("DNS :53 (DoT/DoH upstream) + dashboard :80 + OTA up");
 }
 
+// Maintenance task: everything slow or periodic. Never touches DNS sockets.
 void loop() {
-  ArduinoOTA.handle();
-  web.handleClient();
+  static bool watched = false;
+  if (!watched) { esp_task_wdt_add(nullptr); watched = true; }
+  esp_task_wdt_reset();
   if (!blockingOn && resumeAt && (int32_t)(millis() - resumeAt) >= 0) {
     StateLock lock(gState);
     blockingOn = true; resumeAt = 0;
   }
+  static uint32_t lastSlow = 0;
+  if (millis() - lastSlow > 2000) {
+    lastSlow = millis();
+    resolvePendingMacs();
+    superviseWifi();
+    maintainOtaHealth();
+  }
   static uint32_t lastResolverFix = 0;
   if (millis() - lastResolverFix > 60000) { lastResolverFix = millis(); pointResolverToSelf(); }
-  gBlocklist->loop();                       // daily 02:00 IST update (blocks while downloading)
-  delay(2);   // DNS no longer runs here; the loop only serves the dashboard and OTA
+  gBlocklist->loop();                       // daily 02:00 IST update (feeds the watchdog itself)
+  delay(50);
 }

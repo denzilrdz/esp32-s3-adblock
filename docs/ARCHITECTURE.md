@@ -185,9 +185,13 @@ do microsecond work.
 | lwIP `tcpip` / Wi-Fi (IDF) | 0 | 18 / 23 | IDF | — | network stack |
 | `dns_io_task` | 1 | 10 | 6 KB | yes | UDP/53 receive, policy, cache, replies |
 | `upstream_task` | 1 | 8 | 10 KB | yes | transports, chain, health, cache insert |
-| `tcp53_task` | 0 | 5 | 6 KB | yes | TCP/53, ≤ 4 connections, 10 s idle |
-| `web_task` | 0 | 3 | 8 KB | yes | dashboard, REST API, ArduinoOTA |
-| `maintenance_task` (Arduino `loopTask`) | 1 | 1 | 12 KB | yes | Wi-Fi supervision, NTP, scheduler, blocklist update, stats, OTA health mark |
+| `dns_tcp` | 0 | 5 | 6 KB | yes | TCP/53, ≤ 2 connections, 10 s idle (PSRAM boards only) |
+| `web` | 0 | 3 | 8 KB | yes | dashboard, REST API, ArduinoOTA |
+| maintenance (Arduino `loopTask`) | 1 | 1 | 16 KB | yes | Wi-Fi supervision, scheduler, blocklist update (HTTPS), MAC lookups, resolver re-pointing, OTA health mark |
+
+The DNS tasks are named `dns_io` and `dns_up` in code (`src/tasks/dns_service.*`).
+MAC addresses for the client table are read from the ARP table inside lwIP's own
+thread (`tcpip_callback`), never from the DNS task.
 
 - DNS work is pinned to **core 1**, away from Wi-Fi/lwIP on core 0, and runs above
   everything we own. It stays well below `tcpip` (18) so it can never starve the
@@ -261,9 +265,10 @@ DO bit echoed, and the extended RCODE recomputed. Upstream queries carry our own
   EDNS.
 - If an answer exceeds the limit, we send header + question + OPT with **TC = 1**
   and empty sections (RFC 2181 §9, RFC 6891 §7). The client retries over TCP.
-- `tcp53_task` serves TCP/53 (RFC 7766 says resolvers MUST support TCP) with 2-byte
-  length framing, at most 4 concurrent connections and a 10 s idle timeout. It
-  uses the same policy, cache and upstream queue as UDP.
+- `dns_tcp` serves TCP/53 (RFC 7766 says resolvers MUST support TCP) with 2-byte
+  length framing, at most 2 concurrent connections (socket budget, §11) and a 10 s
+  idle timeout. It uses the same pipeline, cache and upstream queue as UDP. Lite
+  boards (no PSRAM) are UDP-only.
 - Upstream DoT/DoH answers are never truncated (stream transports), so we always
   hold the full answer to cache.
 
@@ -575,10 +580,11 @@ automatically. This is a circuit-breaker with exponential backoff.
     (`mbedtls_pk_verify`) before `Update.end()` marks the slot bootable; a bad
     signature aborts the update. The private key stays offline or in a CI secret.
   - **Rollback:** the prebuilt bootloader has `CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE`.
-    A new image calls `esp_ota_mark_app_valid_cancel_rollback()` only after Wi-Fi,
-    DNS and one successful upstream answer within 2 minutes. If it crashes or never
-    gets that far, the bootloader returns to the previous image.
-    *(verify in Phase 4: the Arduino `Update` flow and rollback interplay.)*
+    Arduino's `verifyRollbackLater()` hook is overridden, so a new image stays
+    "pending verify" until it has had Wi-Fi and a running DNS service for 60 s; only
+    then is `esp_ota_mark_app_valid_cancel_rollback()` called. Upstream
+    reachability is deliberately not required (an ISP outage must not roll back
+    good firmware). A crash loop, or no health within 5 minutes, rolls back.
 - **Blocklist and upstream integrity:** HTTPS/DoT/DoH with certificate verification.
   The blocklist also has a CRC check (integrity only; authenticity comes from TLS).
 - **Network input hardening:**
@@ -638,6 +644,19 @@ one DNS session is open.
 | Query log ring (last 2 000 queries for the dashboard) | 0.2 MB |
 | Stats, client table (256 clients), custom sets | < 0.2 MB |
 | **Free** | ≥ 1 MB at a 1M-name list (more during swap via the file-backed bridge) |
+
+### Sockets (lwIP: `CONFIG_LWIP_MAX_SOCKETS = 16`, fixed in the prebuilt libs)
+
+| User | Sockets |
+|---|---|
+| DNS: UDP/53, TCP/53 listener + 2 connections, 2 wake sockets + 1 sender | 7 |
+| Upstream: active DoT/DoH (+1 transient on failover), plain UDP when used | 1–3 |
+| Web server listener + client | 2 |
+| ArduinoOTA | 1 |
+| Blocklist download (esp_http_client) | 1 |
+| **Total** | **12–14** |
+
+This is why TCP/53 is limited to 2 concurrent connections.
 
 ### Flash (16 MB)
 

@@ -32,11 +32,13 @@ void yieldBriefly() { vTaskDelay(1); }
 }  // namespace
 
 BlocklistManager::BlocklistManager(hal::IFileSystem& fs, hal::IHttpClient& http, hal::IKeyValueStore& kv,
-                                   const hal::IClock& clock, hal::IRandom& random, hal::ILogger& log)
+                                   const hal::IClock& clock, hal::IRandom& random, hal::ILogger& log,
+                                   blocklist::ProgressFn tick)
     : fs_(fs),
       kv_(kv),
       clock_(clock),
       log_(log),
+      tick_(tick),
       limits_([] {
         blocklist::Limits l;
         // PSRAM holds up to ~4 MB of list; lite boards must fit live + temp copies in
@@ -47,7 +49,9 @@ BlocklistManager::BlocklistManager(hal::IFileSystem& fs, hal::IHttpClient& http,
       holder_(yieldBriefly),
       matcher_(holder_),
       scheduler_(sched::ScheduleConfig{}, clock, kv, random),
-      updater_(limits_, fs, http, kv, *this, log) {}
+      updater_(limits_, fs, http, kv, *this, log) {
+  updater_.setProgress(tick);
+}
 
 void BlocklistManager::begin() {
   char buf[200];
@@ -60,7 +64,7 @@ void BlocklistManager::begin() {
   kv_.getI64(kKeyAttempt, lastAttempt_);
   fs_.remove("/update.cfg");  // upstream's settings file: superseded by NVS
 
-  const update::RecoveryResult rec = update::BlocklistUpdater::recover(fs_, limits_);
+  const update::RecoveryResult rec = update::BlocklistUpdater::recover(fs_, limits_, update::Paths{}, tick_);
   if (rec.restoredOld) log_.log(LogLevel::kWarn, kTag, "restored previous list after an interrupted update");
   if (rec.haveList) {
     install(kLivePath, rec.header);
@@ -100,7 +104,10 @@ bool BlocklistManager::install(const char* path, const blocklist::Header& h) {
       auto f = fs_.open(path, hal::FileMode::kRead);
       uint8_t* p = static_cast<uint8_t*>(mem);
       size_t got = 0, n;
-      while (f && got < size && (n = f->read(p + got, size - got > 4096 ? 4096 : size - got)) > 0) got += n;
+      while (f && got < size && (n = f->read(p + got, size - got > 4096 ? 4096 : size - got)) > 0) {
+        got += n;
+        if (tick_ && (got & 0xFFFF) < 4096) tick_();  // ~every 64 KB
+      }
       if (got != size) {
         log_.log(LogLevel::kError, kTag, "short read loading the list (%u of %u bytes)", static_cast<unsigned>(got),
                  static_cast<unsigned>(size));
