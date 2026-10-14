@@ -5,10 +5,10 @@
 #   tools/coverage.sh -f test_dns
 set -euo pipefail
 cd "$(dirname "$0")/.."
-GCOVR=".venv/bin/gcovr"
-[ -x "$GCOVR" ] || GCOVR="gcovr"
+GCOVR=".venv/bin/gcovr"; [ -x "$GCOVR" ] || GCOVR="gcovr"
+PIO=".venv/bin/pio"; [ -x "$PIO" ] || PIO="pio"  # CI has pio only in .venv
 rm -rf coverage .pio/build/coverage
-pio test -e coverage "$@"
+"$PIO" test -e coverage "$@"
 # Apple clang writes LLVM-format .gcda files: read them with llvm-cov's gcov mode.
 if [[ "$(uname)" == "Darwin" ]]; then GCOV=(--gcov-executable "xcrun llvm-cov gcov"); else GCOV=(); fi
 mkdir -p coverage
