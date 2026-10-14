@@ -453,6 +453,45 @@ static void test_idle_connections_are_closed_before_the_server_does() {
   TEST_ASSERT_EQUAL(2, sink.results.size());
 }
 
+static void test_reply_flood_cannot_trap_poll() {
+  // 1000 forged/unmatched replies queued ahead of the real answer: poll() must return
+  // after a bounded amount of work, and the real answer still arrives eventually.
+  dot1->holdReplies = true;
+  fwd->submit(1, query("flood.example"));
+  for (int i = 0; i < 1000; i++)
+    dot1->inbox.push_back(ResponseBuilder(static_cast<uint16_t>(i), "junk.example", 1).build());
+  dot1->release();
+  fwd->poll(0);
+  TEST_ASSERT_EQUAL(1001 - Forwarder::kMaxRepliesPerPoll, dot1->inbox.size());
+  for (int i = 0; i < 20 && sink.results.empty(); i++) fwd->poll(0);
+  TEST_ASSERT_EQUAL(1, sink.results.size());
+  TEST_ASSERT_TRUE(sink.results[0].ok);
+}
+
+static void test_slow_failing_connects_respect_the_blocking_budget() {
+  // Each failed connect "takes" 3 s. One call may only start a connect if it still
+  // fits in maxBlockingMs (4 s), so no single call blocks long enough to trip the
+  // 5 s task watchdog; the remaining upstreams are tried on later polls.
+  downAll(*dot1);
+  downAll(*dot2);
+  downAll(*doh);
+  for (FakeTransport* t : {dot1.get(), dot2.get(), doh.get()})
+    t->onConnect = [] { fakeClock.advanceMs(3000); };
+  uint64_t t0 = fakeClock.monotonicMs();
+  fwd->submit(1, query("slow-net.example"));
+  TEST_ASSERT_EQUAL(1, dot1->connects);
+  TEST_ASSERT_EQUAL(0, dot2->connects);
+  TEST_ASSERT_TRUE(fakeClock.monotonicMs() - t0 <= 4000);
+  t0 = fakeClock.monotonicMs();
+  fwd->poll(0);
+  TEST_ASSERT_EQUAL(1, dot2->connects);
+  TEST_ASSERT_EQUAL(0, doh->connects);
+  TEST_ASSERT_TRUE(fakeClock.monotonicMs() - t0 <= 4000);
+  // 6 s have passed: well beyond the 2.5 s deadline, so the client got SERVFAIL.
+  TEST_ASSERT_EQUAL(1, sink.results.size());
+  TEST_ASSERT_FALSE(sink.results[0].ok);
+}
+
 int main(int, char**) {
   UNITY_BEGIN();
   RUN_TEST(test_health_goes_down_after_three_failures_and_backs_off);
@@ -477,5 +516,7 @@ int main(int, char**) {
   RUN_TEST(test_closed_connection_reroutes_in_flight_queries);
   RUN_TEST(test_malformed_reply_counts_as_failure_and_reroutes);
   RUN_TEST(test_idle_connections_are_closed_before_the_server_does);
+  RUN_TEST(test_reply_flood_cannot_trap_poll);
+  RUN_TEST(test_slow_failing_connects_respect_the_blocking_budget);
   return UNITY_END();
 }

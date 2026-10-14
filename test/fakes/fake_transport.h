@@ -34,6 +34,7 @@ class FakeTransport final : public upstream::ITransport {
 
   upstream::IoStatus connect(uint32_t) override {
     connects++;
+    if (onConnect) onConnect();  // e.g. advance a FakeClock to simulate a slow handshake
     if (mode == Mode::kRefuseConnect) return upstream::IoStatus::kError;
     connected_ = true;
     return upstream::IoStatus::kOk;
@@ -92,6 +93,7 @@ class FakeTransport final : public upstream::ITransport {
   Mode mode = Mode::kAnswer;
   bool holdReplies = false;
   Responder responder;
+  std::function<void()> onConnect;
   std::vector<testdns::Bytes> sent;
   std::deque<testdns::Bytes> inbox;
   std::deque<testdns::Bytes> held;

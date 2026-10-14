@@ -27,7 +27,10 @@ namespace upstream {
 struct ForwarderConfig {
   uint32_t totalDeadlineMs = 2500;
   uint32_t hedgeAfterMs = 1200;
-  uint32_t connectTimeoutMs = 3000;  // must stay below the 5 s task watchdog
+  uint32_t connectTimeoutMs = 3000;
+  // Upper bound on blocking connects per submit()/poll() call: keeps the upstream
+  // task well inside the 5 s task watchdog when every upstream is unreachable.
+  uint32_t maxBlockingMs = 4000;
   uint32_t idleCloseMs = 9000;       // servers drop idle DoT after ~10 s
   bool allowPlainFallback = true;
   dns::UpstreamQueryOptions query;   // padding, AD request
@@ -59,6 +62,7 @@ class Forwarder {
   static constexpr size_t kMaxInFlight = 32;
   static constexpr size_t kMaxUpstreams = 8;
   static constexpr size_t kMaxAnswer = 4096;
+  static constexpr size_t kMaxRepliesPerPoll = 64;
 
   Forwarder(const ForwarderConfig& cfg, ITransport* const* transports, size_t count,
             const hal::IClock& clock, hal::IRandom& random, hal::ILogger& log, IForwarderSink& sink);
@@ -118,6 +122,7 @@ class Forwarder {
   IForwarderSink& sink_;
   Slot slots_[kMaxInFlight];
   bool plainActive_ = false;
+  uint64_t callStartMs_ = 0;
   uint8_t txBuf_[512];
   uint8_t rxBuf_[kMaxAnswer];
 };

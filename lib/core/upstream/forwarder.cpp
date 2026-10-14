@@ -112,6 +112,7 @@ uint16_t Forwarder::freshId(int u) {
 
 bool Forwarder::submit(uint32_t token, const dns::Query& q) {
   if (!q.hasQuestion) return false;
+  callStartMs_ = clock_.monotonicMs();
   for (Slot& s : slots_) {
     if (s.used) continue;
     const uint64_t now = clock_.monotonicMs();
@@ -157,11 +158,16 @@ void Forwarder::trySend(Slot& s) {
     ITransport* t = transports_[u];
     if (!t->pipelined() && busy(u)) return;  // DoH: wait for the current request
 
-    if (!t->connected() && t->connect(cfg_.connectTimeoutMs) != IoStatus::kOk) {
-      t->close();
-      recordFailure(u);
-      reroute(s);
-      continue;
+    if (!t->connected()) {
+      // A connect can block for connectTimeoutMs. Only start one if it still fits
+      // the blocking budget of this call; otherwise retry on the next poll().
+      if (clock_.monotonicMs() - callStartMs_ + cfg_.connectTimeoutMs > cfg_.maxBlockingMs) return;
+      if (t->connect(cfg_.connectTimeoutMs) != IoStatus::kOk) {
+        t->close();
+        recordFailure(u);
+        reroute(s);
+        continue;
+      }
     }
     s.wireId = freshId(u);
     const size_t n = dns::buildUpstreamQuery(s.q, s.wireId, cfg_.query, txBuf_, sizeof(txBuf_));
@@ -232,6 +238,7 @@ void Forwarder::handleReply(int u, uint8_t* msg, size_t len) {
 
 void Forwarder::poll(uint32_t waitMs) {
   uint64_t now = clock_.monotonicMs();
+  callStartMs_ = now;
 
   // 1. Close idle connections before the server does, so we never write into a
   //    half-closed socket.
@@ -245,11 +252,13 @@ void Forwarder::poll(uint32_t waitMs) {
   for (Slot& s : slots_)
     if (s.used && s.needsSend) trySend(s);
 
-  // 3. Receive. Only the first receive call may block, so poll() stays bounded.
+  // 3. Receive. Only the first receive call may block, and each transport yields at
+  //    most kMaxRepliesPerPoll messages, so a flood of forged replies cannot keep
+  //    this task busy forever.
   uint32_t wait = waitMs;
   for (size_t i = 0; i < count_; i++) {
     const int u = static_cast<int>(i);
-    while (busy(u)) {
+    for (size_t budget = kMaxRepliesPerPoll; budget > 0 && busy(u); budget--) {
       size_t len = 0;
       const IoStatus st = transports_[i]->receive(rxBuf_, sizeof(rxBuf_), len, wait);
       wait = 0;

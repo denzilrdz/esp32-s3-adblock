@@ -60,6 +60,10 @@ Design: [ARCHITECTURE.md §7](../../../docs/ARCHITECTURE.md).
 - Total deadline 2.5 s per query.
 - Hedge to the next healthy upstream after 1.2 s.
 - SERVFAIL at the deadline.
+- Blocking budget: one `submit()`/`poll()` call starts a connect only if it fits in
+  `maxBlockingMs` (4 s), so unreachable upstreams can't trip the 5 s watchdog.
+- At most `kMaxRepliesPerPoll` (64) replies are read per transport per `poll()`, so
+  a flood of forged UDP replies can't monopolise the upstream task.
 - In-flight table: 32 slots. Each upstream query gets a fresh random ID; a reply
   must match ID **and** question.
 
