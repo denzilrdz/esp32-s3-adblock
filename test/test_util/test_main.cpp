@@ -2,11 +2,14 @@
 
 #include <unity.h>
 
+#include <algorithm>
 #include <cstring>
+#include <string>
 
 #include "util/bytes.h"
 #include "util/civil_time.h"
 #include "util/crc32.h"
+#include "util/sha256.h"
 
 void setUp() {}
 void tearDown() {}
@@ -77,6 +80,54 @@ static void test_civil_round_trip_including_leap_day() {
   TEST_ASSERT_EQUAL(1, back.day);
 }
 
+static std::string hex(const uint8_t* p, size_t n) {
+  static const char* d = "0123456789abcdef";
+  std::string s;
+  for (size_t i = 0; i < n; i++) {
+    s += d[p[i] >> 4];
+    s += d[p[i] & 15];
+  }
+  return s;
+}
+
+// Expected values computed with Python's hashlib/hmac (and RFC 4231 / RFC 7914).
+static void test_sha256_vectors() {
+  uint8_t out[32];
+  util::sha256(reinterpret_cast<const uint8_t*>("abc"), 3, out);
+  TEST_ASSERT_EQUAL_STRING("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", hex(out, 32).c_str());
+  std::string a(1000, 'a');  // multi-block, streamed in odd chunks
+  util::Sha256 s;
+  for (size_t i = 0; i < a.size(); i += 7) s.update(reinterpret_cast<const uint8_t*>(a.data() + i), std::min<size_t>(7, a.size() - i));
+  s.finish(out);
+  TEST_ASSERT_EQUAL_STRING("41edece42d63e8d9bf515a9ba6932e1c20cbc9f5a5d134645adb5db1b9737ea3", hex(out, 32).c_str());
+}
+
+static void test_hmac_sha256_vectors() {
+  uint8_t out[32];
+  const char* msg = "what do ya want for nothing?";
+  util::hmacSha256(reinterpret_cast<const uint8_t*>("Jefe"), 4, reinterpret_cast<const uint8_t*>(msg), strlen(msg), out);
+  TEST_ASSERT_EQUAL_STRING("5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843", hex(out, 32).c_str());
+  std::string longKey(100, 'k');  // key longer than the block size is hashed first
+  util::hmacSha256(reinterpret_cast<const uint8_t*>(longKey.data()), longKey.size(), reinterpret_cast<const uint8_t*>("msg"), 3, out);
+  TEST_ASSERT_EQUAL_STRING("bd56a1782c2830e8abc6ed866a57a1230661e650b84c62f7ee3accc5fa5af491", hex(out, 32).c_str());
+}
+
+static void test_pbkdf2_sha256_vectors() {
+  uint8_t out[64];
+  util::pbkdf2Sha256(reinterpret_cast<const uint8_t*>("passwd"), 6, reinterpret_cast<const uint8_t*>("salt"), 4, 1, out, 64);
+  TEST_ASSERT_EQUAL_STRING(
+      "55ac046e56e3089fec1691c22544b605f94185216dde0465e68b9d57c20dacbc49ca9cccf179b645991664b39d77ef317c71b845b1e30bd509112041d3a19783",
+      hex(out, 64).c_str());
+  util::pbkdf2Sha256(reinterpret_cast<const uint8_t*>("password"), 8, reinterpret_cast<const uint8_t*>("salt"), 4, 4096, out, 32);
+  TEST_ASSERT_EQUAL_STRING("c5e478d59288c841aa530db6845c4c8d962893a001ce4e11a4963873aa98134a", hex(out, 32).c_str());
+}
+
+static void test_constant_time_equal() {
+  const uint8_t a[4] = {1, 2, 3, 4}, b[4] = {1, 2, 3, 5};
+  TEST_ASSERT_TRUE(util::constantTimeEqual(a, a, 4));
+  TEST_ASSERT_FALSE(util::constantTimeEqual(a, b, 4));
+}
+
 int main(int, char**) {
   UNITY_BEGIN();
   RUN_TEST(test_crc32_matches_zlib_check_value);
@@ -85,5 +136,9 @@ int main(int, char**) {
   RUN_TEST(test_byte_helpers_round_trip);
   RUN_TEST(test_civil_epoch_and_ist_offset);
   RUN_TEST(test_civil_round_trip_including_leap_day);
+  RUN_TEST(test_sha256_vectors);
+  RUN_TEST(test_hmac_sha256_vectors);
+  RUN_TEST(test_pbkdf2_sha256_vectors);
+  RUN_TEST(test_constant_time_equal);
   return UNITY_END();
 }
