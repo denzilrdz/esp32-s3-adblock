@@ -1,0 +1,43 @@
+name: Bug report
+description: Something doesn't work as documented
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: "For security problems, please don't open an issue: see SECURITY.md."
+  - type: input
+    id: version
+    attributes:
+      label: Firmware version
+      description: Shown on the dashboard header and in the boot log (e.g. v0.1.0 or a commit).
+    validations:
+      required: true
+  - type: dropdown
+    id: board
+    attributes:
+      label: Board
+      options: [ESP32-S3 (N16R8), ESP32-S3 (other), ESP32-C3, ESP32]
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: "1. ...\n2. dig @192.168.1.50 example.com\n3. ..."
+  - type: textarea
+    id: logs
+    attributes:
+      label: Serial log / dashboard status
+      description: "pio device monitor output around the problem. Remove passwords, Wi-Fi names and the setup code."
+      render: text
+  - type: input
+    id: network
+    attributes:
+      label: Router / ISP (optional)
+      placeholder: "e.g. Airtel Xstream Fiber, IPv6 on"

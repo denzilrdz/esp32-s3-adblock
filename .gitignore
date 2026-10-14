@@ -1,6 +1,7 @@
-# PlatformIO build output
+# PlatformIO build output (keep the shared extension recommendations)
 .pio/
-.vscode/
+.vscode/*
+!.vscode/extensions.json
 
 # macOS metadata
 .DS_Store
@@ -25,3 +26,8 @@ CLAUDE.local.md
 # Developer tooling (tools/setup-dev.sh) and reports
 .venv/
 coverage/
+
+# Python caches and release/installer staging
+__pycache__/
+dist/
+site/
