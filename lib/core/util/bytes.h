@@ -1,5 +1,5 @@
 #pragma once
-// Big/little-endian helpers and a minimal non-owning byte view (C++17 has no std::span).
+// Big/little-endian helpers for wire formats.
 
 #include <cstddef>
 #include <cstdint>
@@ -47,11 +47,5 @@ inline void writeU64Le(uint8_t* p, uint64_t v) {
   writeU32Le(p, static_cast<uint32_t>(v));
   writeU32Le(p + 4, static_cast<uint32_t>(v >> 32));
 }
-
-// Non-owning view of read-only bytes.
-struct ByteView {
-  const uint8_t* data = nullptr;
-  size_t size = 0;
-};
 
 }  // namespace util

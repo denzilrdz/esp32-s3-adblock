@@ -22,11 +22,4 @@ class ILogger {
   }
 };
 
-// Discards everything; handy default for components that log optionally.
-class NullLogger final : public ILogger {
- public:
-  void vlog(LogLevel, const char*, const char*, va_list) override {}
-  bool enabled(LogLevel) const override { return false; }
-};
-
 }  // namespace hal

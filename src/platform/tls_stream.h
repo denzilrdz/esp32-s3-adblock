@@ -35,9 +35,6 @@ class TlsStream {
   // Sends close_notify (best effort) and frees the connection; keeps the session.
   void close();
 
-  uint32_t lastHandshakeMs() const { return lastHandshakeMs_; }
-  int lastError() const { return lastError_; }
-
  private:
   static int bioSend(void* ctx, const unsigned char* buf, size_t len);
   static int bioRecv(void* ctx, unsigned char* buf, size_t len);
