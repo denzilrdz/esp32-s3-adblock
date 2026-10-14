@@ -67,7 +67,9 @@ auth::PasswordStore* gPasswords = nullptr;
 auth::LoginGuard gLogins(gClock);
 web::Dashboard* gDashboard = nullptr;
 
-void feedWatchdog() { esp_task_wdt_reset(); }
+void feedWatchdog() {
+  esp_task_wdt_reset();
+}
 
 void applyLiveConfig(const config::AppConfig& c) {
   setenv("TZ", c.timezone, 1);
@@ -107,8 +109,12 @@ void startDnsService() {
   for (size_t i = 0; i < n; i++) {
     const config::Endpoint& e = endpoints[i];
     switch (e.kind) {
-      case upstream::TransportKind::kDoT: chain[i] = new platform::DotTransport(e.name, e.ip, e.verifyName, e.port); break;
-      case upstream::TransportKind::kDoH: chain[i] = new platform::DohTransport(e.name, e.ip, e.verifyName, "/dns-query", e.port); break;
+      case upstream::TransportKind::kDoT:
+        chain[i] = new platform::DotTransport(e.name, e.ip, e.verifyName, e.port);
+        break;
+      case upstream::TransportKind::kDoH:
+        chain[i] = new platform::DohTransport(e.name, e.ip, e.verifyName, "/dns-query", e.port);
+        break;
       case upstream::TransportKind::kUdp: chain[i] = new platform::UdpTransport(e.name, e.ip, e.port); break;
     }
   }
@@ -146,7 +152,8 @@ void webTask(void*) {
 
 void startOta() {
   if (!OTA_PASS || strlen(OTA_PASS) < 10 || strcmp(OTA_PASS, kOtaPlaceholder) == 0) {
-    gLog.log(hal::LogLevel::kWarn, "ota", "network OTA disabled: set a real OTA_PASS (10+ chars) in secrets.h");
+    gLog.log(hal::LogLevel::kWarn, "ota",
+             "network OTA disabled: set a real OTA_PASS (10+ chars) in secrets.h");
     return;
   }
   ArduinoOTA.setHostname(kHostname);  // pio run -t upload --upload-port <hostname>.local
@@ -180,7 +187,8 @@ void maintainOtaHealth() {
 void superviseWifi() {
   static uint32_t downSince = 0;
   if (WiFi.status() == WL_CONNECTED) {
-    if (downSince) gLog.log(hal::LogLevel::kInfo, "wifi", "reconnected after %lu s", (millis() - downSince) / 1000);
+    if (downSince)
+      gLog.log(hal::LogLevel::kInfo, "wifi", "reconnected after %lu s", (millis() - downSince) / 1000);
     downSince = 0;
     return;
   }
@@ -214,7 +222,9 @@ void clearWifiIfBootHeld() {
 
 // Firmware rollback: Arduino would mark a freshly OTA-flashed image valid at boot. We
 // defer that until the new firmware has proved healthy (maintainOtaHealth()).
-extern "C" bool verifyRollbackLater() { return true; }  // overrides a weak C symbol
+extern "C" bool verifyRollbackLater() {
+  return true;
+}  // overrides a weak C symbol
 
 // The maintenance task is Arduino's loopTask (core 1, prio 1): give it room for TLS.
 SET_LOOP_TASK_STACK_SIZE(16 * 1024);

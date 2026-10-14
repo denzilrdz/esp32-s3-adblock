@@ -29,7 +29,9 @@ void setUp() {
   cfg.arenaBytes = 64 * 1024;
   makeCache(cfg);
 }
-void tearDown() { c.reset(); }
+void tearDown() {
+  c.reset();
+}
 
 static dns::Query query(const std::string& name, uint16_t type = dns::kTypeA, bool dnssecOk = false) {
   QueryOpts o;
@@ -124,7 +126,8 @@ static void test_payload_memory_pressure_evicts_until_it_fits() {
   TEST_ASSERT_TRUE(c->lookup(t2, out, sizeof(out)) > 0);
   // An answer bigger than the whole arena is refused instead of flushing everything.
   dns::Query huge = query("huge.example", dns::kTypeTxt);
-  TEST_ASSERT_FALSE(put(huge, ResponseBuilder(1, "huge.example", dns::kTypeTxt).answerTxt(300, 2000).build()));
+  TEST_ASSERT_FALSE(
+      put(huge, ResponseBuilder(1, "huge.example", dns::kTypeTxt).answerTxt(300, 2000).build()));
   TEST_ASSERT_TRUE(c->lookup(t2, out, sizeof(out)) > 0);
 }
 
@@ -162,7 +165,8 @@ static void test_never_caches_servfail_truncated_or_zero_ttl() {
   dns::Query q = query("bad.example");
   TEST_ASSERT_FALSE(put(q, ResponseBuilder(1, "bad.example", dns::kTypeA, 0x8182).build()));
   TEST_ASSERT_FALSE(put(q, ResponseBuilder(1, "bad.example", dns::kTypeA, 0x8185).build()));
-  TEST_ASSERT_FALSE(put(q, ResponseBuilder(1, "bad.example", dns::kTypeA, 0x8380).answerA(60, 1, 1, 1, 1).build()));
+  TEST_ASSERT_FALSE(
+      put(q, ResponseBuilder(1, "bad.example", dns::kTypeA, 0x8380).answerA(60, 1, 1, 1, 1).build()));
   TEST_ASSERT_FALSE(put(q, answerA("bad.example", 0)));
   TEST_ASSERT_EQUAL(0, c->stats().entries);
 }

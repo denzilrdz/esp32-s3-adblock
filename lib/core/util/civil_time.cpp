@@ -46,10 +46,9 @@ CivilTime civilFromUnix(int64_t unixSeconds, int32_t utcOffsetSeconds) {
 }
 
 int64_t unixFromCivil(const CivilTime& local, int32_t utcOffsetSeconds) {
-  const int64_t days = daysFromCivil(local.year, static_cast<unsigned>(local.month),
-                                     static_cast<unsigned>(local.day));
-  return days * 86400 + local.hour * 3600 + local.minute * 60 + local.second -
-         utcOffsetSeconds;
+  const int64_t days =
+      daysFromCivil(local.year, static_cast<unsigned>(local.month), static_cast<unsigned>(local.day));
+  return days * 86400 + local.hour * 3600 + local.minute * 60 + local.second - utcOffsetSeconds;
 }
 
 }  // namespace util

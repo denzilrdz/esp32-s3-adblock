@@ -176,7 +176,8 @@ static void test_origin_checks_block_cross_site_requests() {
   TEST_ASSERT_FALSE(auth::originAllowed("https://evil.example", nullptr, ip, "s3adblock"));
   TEST_ASSERT_FALSE(auth::originAllowed("null", nullptr, ip, "s3adblock"));
   TEST_ASSERT_FALSE(auth::originAllowed("http://s3adblock.local@evil.example", nullptr, ip, "s3adblock"));
-  TEST_ASSERT_FALSE(auth::originAllowed(nullptr, "http://evil.example/?x=http://192.168.1.50", ip, "s3adblock"));
+  TEST_ASSERT_FALSE(
+      auth::originAllowed(nullptr, "http://evil.example/?x=http://192.168.1.50", ip, "s3adblock"));
   // Origin wins over Referer when both are present.
   TEST_ASSERT_FALSE(auth::originAllowed("http://evil.example", "http://192.168.1.50/", ip, "s3adblock"));
 }

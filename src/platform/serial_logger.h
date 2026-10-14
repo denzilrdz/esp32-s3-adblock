@@ -26,7 +26,8 @@ class SerialLogger final : public hal::ILogger {
     if (n < 0) return;
     int m = vsnprintf(line_ + n, sizeof(line_) - n - 2, fmt, args);
     if (m < 0) return;
-    size_t len = static_cast<size_t>(n) + (static_cast<size_t>(m) < sizeof(line_) - n - 2 ? m : sizeof(line_) - n - 3);
+    size_t len =
+        static_cast<size_t>(n) + (static_cast<size_t>(m) < sizeof(line_) - n - 2 ? m : sizeof(line_) - n - 3);
     line_[len++] = '\r';
     line_[len++] = '\n';
     Serial.write(reinterpret_cast<const uint8_t*>(line_), len);

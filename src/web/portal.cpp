@@ -15,7 +15,9 @@ DNSServer dnsPortal;
 String portalOptions;  // <option> list of scanned networks
 const char* portalHostname = "";
 
-bool secretsConfigured() { return WIFI_SSID && *WIFI_SSID && strcmp(WIFI_SSID, "YOUR_WIFI_SSID") != 0; }
+bool secretsConfigured() {
+  return WIFI_SSID && *WIFI_SSID && strcmp(WIFI_SSID, "YOUR_WIFI_SSID") != 0;
+}
 
 bool hasCredentials() {
   prefs.begin("wifi", true);
@@ -94,14 +96,17 @@ void forgetWifi() {
         "<body style='font:16px system-ui,sans-serif;max-width:420px;margin:36px auto;padding:0 16px;"
         "background:#0d1117;color:#c9d1d9'>"
         "<h2>&#128737; AdBlock &mdash; Wi-Fi setup</h2>"
-        "<p style='color:#8b949e'>Pick your network and enter its password. The device restarts and joins it.</p>"
+        "<p style='color:#8b949e'>Pick your network and enter its password. The device restarts and joins "
+        "it.</p>"
         "<form method=POST action=/wifisave>"
         "<input list=nets name=s placeholder='Wi-Fi name' required ";
     html += kInput;
-    html += "><datalist id=nets>" + portalOptions + "</datalist><input name=p type=password placeholder='Password' ";
+    html += "><datalist id=nets>" + portalOptions +
+            "</datalist><input name=p type=password placeholder='Password' ";
     html += kInput;
     html +=
-        "><button style='width:100%;padding:12px;margin-top:8px;border-radius:6px;border:0;background:#3fb950;"
+        "><button "
+        "style='width:100%;padding:12px;margin-top:8px;border-radius:6px;border:0;background:#3fb950;"
         "color:#000;font-weight:600;cursor:pointer'>Connect</button></form></body>";
     server.send(200, "text/html", html);
   };
@@ -117,9 +122,11 @@ void forgetWifi() {
     prefs.putString("pass", pw);
     prefs.end();
     server.send(200, "text/html",
-                "<!doctype html><meta charset=utf-8><body style='font:16px system-ui;text-align:center;margin-top:60px'>"
+                "<!doctype html><meta charset=utf-8><body style='font:16px "
+                "system-ui;text-align:center;margin-top:60px'>"
                 "&#9989; Saved. Restarting and joining <b>" +
-                    htmlEscape(ss) + "</b>&hellip;<br><br>Reconnect your phone to your normal Wi-Fi, then open <b>" +
+                    htmlEscape(ss) +
+                    "</b>&hellip;<br><br>Reconnect your phone to your normal Wi-Fi, then open <b>" +
                     htmlEscape(portalHostname) + ".local</b>.</body>");
     delay(900);
     ESP.restart();

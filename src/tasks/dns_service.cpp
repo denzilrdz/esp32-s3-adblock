@@ -24,10 +24,10 @@ constexpr int kDnsCore = 1;
 constexpr int kTcpCore = 0;
 constexpr int kMaxDatagramsPerWake = 16;
 // TCP abuse limits (one LAN client must not be able to starve everyone else):
-constexpr uint32_t kTcpWriteTimeoutMs = 500;    // a client that doesn't read is dropped
-constexpr uint32_t kTcpPartialFrameMs = 2000;   // slow-loris: a frame must arrive quickly
-constexpr uint8_t kTcpMaxInFlightPerConn = 4;   // pipelined queries awaiting upstream
-constexpr uint8_t kTcpMaxInFlightTotal = 8;     // share of the pending pool for all TCP
+constexpr uint32_t kTcpWriteTimeoutMs = 500;   // a client that doesn't read is dropped
+constexpr uint32_t kTcpPartialFrameMs = 2000;  // slow-loris: a frame must arrive quickly
+constexpr uint8_t kTcpMaxInFlightPerConn = 4;  // pipelined queries awaiting upstream
+constexpr uint8_t kTcpMaxInFlightTotal = 8;    // share of the pending pool for all TCP
 
 // Only answer the LAN: RFC 1918, loopback and link-local sources. Prevents the
 // device from becoming an open resolver if port 53 is ever exposed.
@@ -55,7 +55,8 @@ DnsService::DnsService(const DnsServiceConfig& cfg, dns::IQueryPolicy& policy, c
       log_(log),
       transports_(transports),
       transportCount_(transportCount) {
-  if (cfg_.pendingSlots > upstream::Forwarder::kMaxInFlight) cfg_.pendingSlots = upstream::Forwarder::kMaxInFlight;
+  if (cfg_.pendingSlots > upstream::Forwarder::kMaxInFlight)
+    cfg_.pendingSlots = upstream::Forwarder::kMaxInFlight;
   if (cfg_.tcpMaxConns > sizeof(tcp_) / sizeof(tcp_[0])) cfg_.tcpMaxConns = sizeof(tcp_) / sizeof(tcp_[0]);
   if (cfg_.replyCap < dns::kMaxUdpPayload) cfg_.replyCap = dns::kMaxUdpPayload;
   if (cfg_.replyCap > upstream::Forwarder::kMaxAnswer) cfg_.replyCap = upstream::Forwarder::kMaxAnswer;
@@ -119,7 +120,8 @@ bool DnsService::start() {
     tcpListenFd_ = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     int one = 1;
     setsockopt(tcpListenFd_, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
-    if (tcpListenFd_ < 0 || bind(tcpListenFd_, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)) != 0 ||
+    if (tcpListenFd_ < 0 ||
+        bind(tcpListenFd_, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)) != 0 ||
         listen(tcpListenFd_, 2) != 0 || !createWakePair(tcpWakeRxFd_, tcpWakeAddr_)) {
       log_.log(LogLevel::kWarn, kTag, "TCP/53 unavailable; UDP only");
       if (tcpListenFd_ >= 0) close(tcpListenFd_);
@@ -128,11 +130,12 @@ bool DnsService::start() {
     }
   }
 
-  if (xTaskCreatePinnedToCore(ioTaskEntry, "dns_io", kIoStack, this, kIoPriority, nullptr, kDnsCore) != pdPASS ||
+  if (xTaskCreatePinnedToCore(ioTaskEntry, "dns_io", kIoStack, this, kIoPriority, nullptr, kDnsCore) !=
+          pdPASS ||
       xTaskCreatePinnedToCore(upstreamTaskEntry, "dns_up", kUpstreamStack, this, kUpstreamPriority, nullptr,
                               kDnsCore) != pdPASS ||
-      (cfg_.tcpEnabled &&
-       xTaskCreatePinnedToCore(tcpTaskEntry, "dns_tcp", kTcpStack, this, kTcpPriority, nullptr, kTcpCore) != pdPASS)) {
+      (cfg_.tcpEnabled && xTaskCreatePinnedToCore(tcpTaskEntry, "dns_tcp", kTcpStack, this, kTcpPriority,
+                                                  nullptr, kTcpCore) != pdPASS)) {
     log_.log(LogLevel::kError, kTag, "cannot start DNS tasks");
     return false;
   }
@@ -143,9 +146,15 @@ bool DnsService::start() {
   return true;
 }
 
-void DnsService::ioTaskEntry(void* self) { static_cast<DnsService*>(self)->ioLoop(); }
-void DnsService::tcpTaskEntry(void* self) { static_cast<DnsService*>(self)->tcpLoop(); }
-void DnsService::upstreamTaskEntry(void* self) { static_cast<DnsService*>(self)->upstreamLoop(); }
+void DnsService::ioTaskEntry(void* self) {
+  static_cast<DnsService*>(self)->ioLoop();
+}
+void DnsService::tcpTaskEntry(void* self) {
+  static_cast<DnsService*>(self)->tcpLoop();
+}
+void DnsService::upstreamTaskEntry(void* self) {
+  static_cast<DnsService*>(self)->upstreamLoop();
+}
 
 // --------------------------------------------------------------------------------
 // Shared pipeline (dns_io and dns_tcp)
@@ -234,7 +243,6 @@ size_t DnsService::processQuery(const uint8_t* pkt, size_t len, const ClientRef&
   return 0;
 }
 
-
 // --------------------------------------------------------------------------------
 // dns_io task: UDP/53
 
@@ -268,8 +276,8 @@ void DnsService::ioLoop() {
       const int n = recvfrom(udpFd_, udpRx_, sizeof(udpRx_), MSG_DONTWAIT,
                              reinterpret_cast<struct sockaddr*>(&c.addr), &fromLen);
       if (n <= 0) break;
-      const size_t r = processQuery(udpRx_, static_cast<size_t>(n), c, udpScratch_, sizeof(udpScratch_), udpOut_,
-                                    sizeof(udpOut_));
+      const size_t r = processQuery(udpRx_, static_cast<size_t>(n), c, udpScratch_, sizeof(udpScratch_),
+                                    udpOut_, sizeof(udpOut_));
       if (r) sendto(udpFd_, udpOut_, r, 0, reinterpret_cast<const struct sockaddr*>(&c.addr), sizeof(c.addr));
     }
   }
@@ -414,7 +422,8 @@ void DnsService::tcpLoop() {
     }
     // Queries left buffered while a connection was at its in-flight limit.
     for (uint8_t i = 0; i < cfg_.tcpMaxConns; i++)
-      if (tcp_[i].fd >= 0 && tcp_[i].rxLen >= 2 && tcp_[i].inFlight < kTcpMaxInFlightPerConn) tcpProcessBuffered(i);
+      if (tcp_[i].fd >= 0 && tcp_[i].rxLen >= 2 && tcp_[i].inFlight < kTcpMaxInFlightPerConn)
+        tcpProcessBuffered(i);
     if (FD_ISSET(tcpListenFd_, &rfds)) tcpAccept();
     for (uint8_t i = 0; i < cfg_.tcpMaxConns; i++)
       if (tcp_[i].fd >= 0 && FD_ISSET(tcp_[i].fd, &rfds)) tcpRead(i);
@@ -456,7 +465,8 @@ void DnsService::onAnswer(uint32_t token, const dns::Query& q, const uint8_t* an
   p.replyLen = static_cast<uint16_t>(dns::finalizeForClient(answer, len, q, co, p.reply, cfg_.replyCap));
   if (p.replyLen == 0) {
     stats_.servfail++;
-    p.replyLen = static_cast<uint16_t>(dns::buildErrorReply(q, dns::Rcode::kServFail, p.reply, cfg_.replyCap));
+    p.replyLen =
+        static_cast<uint16_t>(dns::buildErrorReply(q, dns::Rcode::kServFail, p.reply, cfg_.replyCap));
   }
   completeSlot(static_cast<uint16_t>(token));
 }

@@ -13,9 +13,9 @@
 #include "fakes/mem_kv_store.h"
 #include "update/updater.h"
 
+using testbl::Bytes;
 using update::BlocklistUpdater;
 using update::UpdateStatus;
-using testbl::Bytes;
 
 class RecordingInstaller final : public update::IListInstaller {
  public:

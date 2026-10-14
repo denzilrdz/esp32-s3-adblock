@@ -8,8 +8,8 @@
 
 namespace update {
 
-using hal::LogLevel;
 using blocklist::FormatError;
+using hal::LogLevel;
 
 namespace {
 
@@ -85,8 +85,9 @@ const char* updateStatusName(UpdateStatus s) {
   return "?";
 }
 
-BlocklistUpdater::BlocklistUpdater(const blocklist::Limits& limits, hal::IFileSystem& fs, hal::IHttpClient& http,
-                                   hal::IKeyValueStore& kv, IListInstaller& installer, hal::ILogger& log, Paths paths)
+BlocklistUpdater::BlocklistUpdater(const blocklist::Limits& limits, hal::IFileSystem& fs,
+                                   hal::IHttpClient& http, hal::IKeyValueStore& kv, IListInstaller& installer,
+                                   hal::ILogger& log, Paths paths)
     : limits_(limits), fs_(fs), http_(http), kv_(kv), installer_(installer), log_(log), paths_(paths) {}
 
 UpdateReport BlocklistUpdater::fail(UpdateStatus s, const char* detail, int http) {
@@ -95,7 +96,8 @@ UpdateReport BlocklistUpdater::fail(UpdateStatus s, const char* detail, int http
   r.status = s;
   r.httpStatus = http;
   snprintf(r.detail, sizeof(r.detail), "%s", detail ? detail : "");
-  log_.log(LogLevel::kWarn, kTag, "update failed: %s (%s); keeping the current list", updateStatusName(s), r.detail);
+  log_.log(LogLevel::kWarn, kTag, "update failed: %s (%s); keeping the current list", updateStatusName(s),
+           r.detail);
   return r;
 }
 
@@ -129,7 +131,8 @@ UpdateReport BlocklistUpdater::update(const char* url) {
   const FormatError fe = sink.finish();
 
   if (res.error == hal::HttpError::kConnect || res.error == hal::HttpError::kTimeout)
-    return fail(UpdateStatus::kNetworkError, res.error == hal::HttpError::kTimeout ? "timeout" : "connect failed");
+    return fail(UpdateStatus::kNetworkError,
+                res.error == hal::HttpError::kTimeout ? "timeout" : "connect failed");
   if (res.status == 304) {
     fs_.remove(paths_.tmp);
     UpdateReport r;
@@ -183,7 +186,8 @@ UpdateReport BlocklistUpdater::installFile(const char* path) {
   return swapAndInstall(path, h, nullptr);
 }
 
-UpdateReport BlocklistUpdater::swapAndInstall(const char* from, const blocklist::Header& h, const char* etag) {
+UpdateReport BlocklistUpdater::swapAndInstall(const char* from, const blocklist::Header& h,
+                                              const char* etag) {
   // live -> old, new -> live, delete old. A crash in between is repaired by recover().
   // prepareSwap() may have released the live index (file-backed lite boards), so
   // every failure below must reinstall the list that is live on disk afterwards.
@@ -212,8 +216,10 @@ UpdateReport BlocklistUpdater::swapAndInstall(const char* from, const blocklist:
     log_.log(LogLevel::kError, kTag, "new list saved but not loaded");
     return r;
   }
-  if (etag && etag[0]) kv_.setString(kEtagKey, etag);
-  else if (!etag) kv_.erase(kEtagKey);  // manual upload: next download must be full
+  if (etag && etag[0])
+    kv_.setString(kEtagKey, etag);
+  else if (!etag)
+    kv_.erase(kEtagKey);  // manual upload: next download must be full
   r.status = UpdateStatus::kUpdated;
   snprintf(r.detail, sizeof(r.detail), "%u domains", static_cast<unsigned>(h.count));
   log_.log(LogLevel::kInfo, kTag, "blocklist updated: %u domains", static_cast<unsigned>(h.count));
@@ -222,13 +228,14 @@ UpdateReport BlocklistUpdater::swapAndInstall(const char* from, const blocklist:
 
 void BlocklistUpdater::reinstallLive() {
   blocklist::Header h;
-  if (blocklist::validateFile(fs_, paths_.live, limits_, &h, tick_) == FormatError::kNone && installer_.install(paths_.live, h))
+  if (blocklist::validateFile(fs_, paths_.live, limits_, &h, tick_) == FormatError::kNone &&
+      installer_.install(paths_.live, h))
     return;
   log_.log(LogLevel::kError, kTag, "could not reload the previous list after a failed swap");
 }
 
 RecoveryResult BlocklistUpdater::recover(hal::IFileSystem& fs, const blocklist::Limits& limits, Paths paths,
-                                          blocklist::ProgressFn tick) {
+                                         blocklist::ProgressFn tick) {
   RecoveryResult r;
   fs.remove(paths.tmp);
   if (fs.exists(paths.live)) {
@@ -242,7 +249,8 @@ RecoveryResult BlocklistUpdater::recover(hal::IFileSystem& fs, const blocklist::
     r.liveError = FormatError::kIoError;
   }
   blocklist::Header oldHeader;
-  if (fs.exists(paths.old) && blocklist::validateFile(fs, paths.old, limits, &oldHeader, tick) == FormatError::kNone) {
+  if (fs.exists(paths.old) &&
+      blocklist::validateFile(fs, paths.old, limits, &oldHeader, tick) == FormatError::kNone) {
     fs.remove(paths.live);
     if (fs.rename(paths.old, paths.live)) {
       r.haveList = true;

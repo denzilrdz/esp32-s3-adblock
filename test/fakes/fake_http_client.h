@@ -15,8 +15,8 @@ class FakeHttpClient final : public hal::IHttpClient {
     int status = 200;
     std::vector<uint8_t> body;
     std::string etag;
-    size_t chunk = 1000;       // delivery chunk size
-    bool truncateHalf = false; // deliver half the body, then report kTruncated
+    size_t chunk = 1000;        // delivery chunk size
+    bool truncateHalf = false;  // deliver half the body, then report kTruncated
   };
 
   hal::HttpGetResult get(const hal::HttpGetRequest& req, hal::IHttpBodySink& sink) override {

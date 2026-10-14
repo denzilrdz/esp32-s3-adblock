@@ -41,8 +41,7 @@ class StreamDeframer {
 };
 
 // Builds the HTTP/1.1 request head for a DoH POST. The DNS message follows as the body.
-size_t buildDohRequestHead(const char* host, const char* path, size_t bodyLen, uint8_t* out,
-                           size_t cap);
+size_t buildDohRequestHead(const char* host, const char* path, size_t bodyLen, uint8_t* out, size_t cap);
 
 // Incremental HTTP/1.1 response parser for DoH replies.
 class HttpResponseParser {

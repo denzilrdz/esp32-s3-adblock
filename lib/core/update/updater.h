@@ -74,7 +74,8 @@ class BlocklistUpdater {
   static constexpr const char* kEtagKey = "bl_etag";
 
   BlocklistUpdater(const blocklist::Limits& limits, hal::IFileSystem& fs, hal::IHttpClient& http,
-                   hal::IKeyValueStore& kv, IListInstaller& installer, hal::ILogger& log, Paths paths = Paths{});
+                   hal::IKeyValueStore& kv, IListInstaller& installer, hal::ILogger& log,
+                   Paths paths = Paths{});
 
   // Scheduled/remote update from `url` (HTTPS).
   UpdateReport update(const char* url);

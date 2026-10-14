@@ -24,10 +24,13 @@ constexpr const char* kKeyResult = "bl_res";
 constexpr const char* kKeyAttempt = "bl_at";
 
 #ifndef DEFAULT_BLOCKLIST_URL
-#define DEFAULT_BLOCKLIST_URL "https://github.com/denzilrdz/esp32-s3-adblock/releases/download/blocklist/blocklist.bin"
+#define DEFAULT_BLOCKLIST_URL \
+  "https://github.com/denzilrdz/esp32-s3-adblock/releases/download/blocklist/blocklist.bin"
 #endif
 
-void yieldBriefly() { vTaskDelay(1); }
+void yieldBriefly() {
+  vTaskDelay(1);
+}
 
 }  // namespace
 
@@ -109,8 +112,8 @@ bool BlocklistManager::install(const char* path, const blocklist::Header& h) {
         if (tick_ && (got & 0xFFFF) < 4096) tick_();  // ~every 64 KB
       }
       if (got != size) {
-        log_.log(LogLevel::kError, kTag, "short read loading the list (%u of %u bytes)", static_cast<unsigned>(got),
-                 static_cast<unsigned>(size));
+        log_.log(LogLevel::kError, kTag, "short read loading the list (%u of %u bytes)",
+                 static_cast<unsigned>(got), static_cast<unsigned>(size));
         return fileBacked_;  // keep whatever is live
       }
       holder_.publish(std::unique_ptr<blocklist::IIndex>(
@@ -141,7 +144,8 @@ void BlocklistManager::record(const update::UpdateReport& r) {
   platform::LockGuard g(stateMutex_);
   lastAttempt_ = clock_.wallClockSynced() ? clock_.unixTime() : 0;
   lastOk_ = r.success();
-  lastResult_ = String(update::updateStatusName(r.status)) + (r.detail[0] ? String(": ") + r.detail : String());
+  lastResult_ =
+      String(update::updateStatusName(r.status)) + (r.detail[0] ? String(": ") + r.detail : String());
   kv_.setString(kKeyResult, lastResult_.c_str());
   kv_.setI64(kKeyAttempt, lastAttempt_);
 }
@@ -160,8 +164,10 @@ void BlocklistManager::loop() {
     r = updater_.update(url.c_str());
   }
   record(r);
-  if (r.success()) scheduler_.markSuccess();
-  else scheduler_.markFailure();
+  if (r.success())
+    scheduler_.markSuccess();
+  else
+    scheduler_.markFailure();
 }
 
 update::UpdateReport BlocklistManager::installUpload(const char* path) {

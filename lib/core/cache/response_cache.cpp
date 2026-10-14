@@ -8,7 +8,9 @@ namespace cache {
 
 namespace {
 
-size_t alignUp(size_t n) { return (n + 7) & ~static_cast<size_t>(7); }
+size_t alignUp(size_t n) {
+  return (n + 7) & ~static_cast<size_t>(7);
+}
 
 }  // namespace
 
@@ -21,8 +23,8 @@ uint32_t ResponseCache::bucketCountFor(uint32_t maxEntries) {
 size_t ResponseCache::requiredBytes(const CacheConfig& cfg) {
   const size_t blocks = cfg.arenaBytes / kBlockSize;
   return alignUp(sizeof(Entry) * cfg.maxEntries) +
-         alignUp(sizeof(uint32_t) * bucketCountFor(cfg.maxEntries)) +
-         alignUp(sizeof(uint32_t) * blocks) + blocks * kBlockSize;
+         alignUp(sizeof(uint32_t) * bucketCountFor(cfg.maxEntries)) + alignUp(sizeof(uint32_t) * blocks) +
+         blocks * kBlockSize;
 }
 
 ResponseCache::ResponseCache(const CacheConfig& cfg, void* memory, const hal::IClock& clock)
@@ -54,7 +56,9 @@ void ResponseCache::clear() {
   stats_.freeBlocks = blockCount_;
 }
 
-CacheStats ResponseCache::stats() const { return stats_; }
+CacheStats ResponseCache::stats() const {
+  return stats_;
+}
 
 uint32_t ResponseCache::keyHash(const dns::Query& q) {
   uint32_t h = 2166136261u;  // FNV-1a 32 over (wire name, type, class, DO)
@@ -93,10 +97,14 @@ uint32_t ResponseCache::find(const dns::Query& q, uint32_t hash) const {
 
 void ResponseCache::lruUnlink(uint32_t idx) {
   Entry& e = entries_[idx];
-  if (e.lruPrev != kNone) entries_[e.lruPrev].lruNext = e.lruNext;
-  else lruHead_ = e.lruNext;
-  if (e.lruNext != kNone) entries_[e.lruNext].lruPrev = e.lruPrev;
-  else lruTail_ = e.lruPrev;
+  if (e.lruPrev != kNone)
+    entries_[e.lruPrev].lruNext = e.lruNext;
+  else
+    lruHead_ = e.lruNext;
+  if (e.lruNext != kNone)
+    entries_[e.lruNext].lruPrev = e.lruPrev;
+  else
+    lruTail_ = e.lruPrev;
   e.lruPrev = e.lruNext = kNone;
 }
 
@@ -191,8 +199,10 @@ bool ResponseCache::insert(const dns::Query& q, const uint8_t* answer, size_t le
     const size_t chunk = len - copied < kBlockSize ? len - copied : kBlockSize;
     memcpy(blocks_ + static_cast<size_t>(b) * kBlockSize, answer + copied, chunk);
     copied += chunk;
-    if (prev == kNone) first = b;
-    else blockNext_[prev] = b;
+    if (prev == kNone)
+      first = b;
+    else
+      blockNext_[prev] = b;
     prev = b;
   }
 

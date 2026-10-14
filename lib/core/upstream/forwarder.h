@@ -31,9 +31,9 @@ struct ForwarderConfig {
   // Upper bound on blocking connects per submit()/poll() call: keeps the upstream
   // task well inside the 5 s task watchdog when every upstream is unreachable.
   uint32_t maxBlockingMs = 4000;
-  uint32_t idleCloseMs = 9000;       // servers drop idle DoT after ~10 s
+  uint32_t idleCloseMs = 9000;  // servers drop idle DoT after ~10 s
   bool allowPlainFallback = true;
-  dns::UpstreamQueryOptions query;   // padding, AD request
+  dns::UpstreamQueryOptions query;  // padding, AD request
   HealthConfig health;
 };
 
@@ -64,8 +64,8 @@ class Forwarder {
   static constexpr size_t kMaxAnswer = 4096;
   static constexpr size_t kMaxRepliesPerPoll = 64;
 
-  Forwarder(const ForwarderConfig& cfg, ITransport* const* transports, size_t count,
-            const hal::IClock& clock, hal::IRandom& random, hal::ILogger& log, IForwarderSink& sink);
+  Forwarder(const ForwarderConfig& cfg, ITransport* const* transports, size_t count, const hal::IClock& clock,
+            hal::IRandom& random, hal::ILogger& log, IForwarderSink& sink);
   Forwarder(const Forwarder&) = delete;
   Forwarder& operator=(const Forwarder&) = delete;
 

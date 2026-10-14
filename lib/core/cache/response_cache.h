@@ -20,9 +20,9 @@ struct CacheConfig {
   size_t arenaBytes = 2 * 1024 * 1024;  // payload slab
   uint32_t minTtl = 0;                  // clamp for positive answers (seconds)
   uint32_t maxTtl = 86400;
-  uint32_t maxNegativeTtl = 10800;      // RFC 2308 suggests <= 3 h
-  uint32_t noSoaNegativeTtl = 30;       // NXDOMAIN/NODATA without an SOA
-  size_t maxPayload = 4096;             // larger answers are not cached
+  uint32_t maxNegativeTtl = 10800;  // RFC 2308 suggests <= 3 h
+  uint32_t noSoaNegativeTtl = 30;   // NXDOMAIN/NODATA without an SOA
+  size_t maxPayload = 4096;         // larger answers are not cached
 };
 
 struct CacheStats {

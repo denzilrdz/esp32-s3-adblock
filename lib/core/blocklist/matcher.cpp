@@ -4,7 +4,9 @@
 
 namespace blocklist {
 
-void DomainSet::add(const char* name, size_t len) { hashes_.push_back(hashDomain(name, len)); }
+void DomainSet::add(const char* name, size_t len) {
+  hashes_.push_back(hashDomain(name, len));
+}
 
 void DomainSet::finalize() {
   std::sort(hashes_.begin(), hashes_.end());

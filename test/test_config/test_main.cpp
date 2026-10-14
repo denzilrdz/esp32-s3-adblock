@@ -121,7 +121,7 @@ static void test_default_chain_order() {
   config::Endpoint e[8];
   const size_t n = config::buildChain(c, e, 8);
   TEST_ASSERT_EQUAL(8, n);
-  const char* names[] = {"cloudflare-dot", "cloudflare-dot-2", "quad9-dot", "quad9-dot-2",
+  const char* names[] = {"cloudflare-dot", "cloudflare-dot-2", "quad9-dot",      "quad9-dot-2",
                          "cloudflare-doh", "cloudflare-doh-2", "cloudflare-udp", "quad9-udp"};
   for (size_t i = 0; i < n; i++) TEST_ASSERT_EQUAL_STRING(names[i], e[i].name);
   TEST_ASSERT_EQUAL_STRING("1.1.1.1", e[0].ip);

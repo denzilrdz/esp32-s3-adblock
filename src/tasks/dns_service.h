@@ -40,11 +40,11 @@ struct DnsServiceConfig {
   dns::LocalZoneOptions local;
   uint32_t blockedTtl = 10;
   uint32_t localTtl = 60;
-  bool passAd = true;  // pass the DNSSEC AD bit from authenticated upstreams
+  bool passAd = true;          // pass the DNSSEC AD bit from authenticated upstreams
   uint16_t pendingSlots = 32;  // <= Forwarder::kMaxInFlight
   uint16_t port = 53;
   bool tcpEnabled = true;
-  uint8_t tcpMaxConns = 2;     // lwIP has 16 sockets in total; see ARCHITECTURE.md §11
+  uint8_t tcpMaxConns = 2;  // lwIP has 16 sockets in total; see ARCHITECTURE.md §11
   uint32_t tcpIdleMs = 10000;
   size_t replyCap = upstream::Forwarder::kMaxAnswer;  // per slot; >= 1232
 };
@@ -103,9 +103,9 @@ class DnsService : private upstream::IForwarderSink {
   struct TcpConn {
     int fd = -1;
     uint32_t gen = 0;
-    uint64_t lastMs = 0;       // last complete query or reply
-    uint64_t partialSince = 0; // when an incomplete frame started arriving (0 = none)
-    uint8_t inFlight = 0;      // forwarded queries awaiting a reply
+    uint64_t lastMs = 0;        // last complete query or reply
+    uint64_t partialSince = 0;  // when an incomplete frame started arriving (0 = none)
+    uint8_t inFlight = 0;       // forwarded queries awaiting a reply
     struct sockaddr_in peer;
     size_t rxLen = 0;
     uint8_t rx[2 + 512];  // one length-prefixed query (queries over 512 bytes are refused)

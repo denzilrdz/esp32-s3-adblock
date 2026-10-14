@@ -19,16 +19,20 @@ bool equals(const char* name, size_t len, const char* lit) {
 
 // RFC 6303 locally-served zones for private/special address space, plus mDNS.
 const char* const kPrivateZones[] = {
-    "10.in-addr.arpa",      "168.192.in-addr.arpa", "254.169.in-addr.arpa",
-    "127.in-addr.arpa",     "0.in-addr.arpa",       "255.255.255.255.in-addr.arpa",
-    "16.172.in-addr.arpa",  "17.172.in-addr.arpa",  "18.172.in-addr.arpa",
-    "19.172.in-addr.arpa",  "20.172.in-addr.arpa",  "21.172.in-addr.arpa",
-    "22.172.in-addr.arpa",  "23.172.in-addr.arpa",  "24.172.in-addr.arpa",
-    "25.172.in-addr.arpa",  "26.172.in-addr.arpa",  "27.172.in-addr.arpa",
-    "28.172.in-addr.arpa",  "29.172.in-addr.arpa",  "30.172.in-addr.arpa",
-    "31.172.in-addr.arpa",  "d.f.ip6.arpa",         "8.e.f.ip6.arpa",
-    "9.e.f.ip6.arpa",       "a.e.f.ip6.arpa",       "b.e.f.ip6.arpa",
-    "local",
+    "10.in-addr.arpa",      "168.192.in-addr.arpa",
+    "254.169.in-addr.arpa", "127.in-addr.arpa",
+    "0.in-addr.arpa",       "255.255.255.255.in-addr.arpa",
+    "16.172.in-addr.arpa",  "17.172.in-addr.arpa",
+    "18.172.in-addr.arpa",  "19.172.in-addr.arpa",
+    "20.172.in-addr.arpa",  "21.172.in-addr.arpa",
+    "22.172.in-addr.arpa",  "23.172.in-addr.arpa",
+    "24.172.in-addr.arpa",  "25.172.in-addr.arpa",
+    "26.172.in-addr.arpa",  "27.172.in-addr.arpa",
+    "28.172.in-addr.arpa",  "29.172.in-addr.arpa",
+    "30.172.in-addr.arpa",  "31.172.in-addr.arpa",
+    "d.f.ip6.arpa",         "8.e.f.ip6.arpa",
+    "9.e.f.ip6.arpa",       "a.e.f.ip6.arpa",
+    "b.e.f.ip6.arpa",       "local",
 };
 
 }  // namespace

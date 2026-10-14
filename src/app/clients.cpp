@@ -159,7 +159,8 @@ void ClientTable::resolvePendingMacs() {
   {
     platform::LockGuard g(mutex_);
     for (int i = 0; i < count_ && job.n < 8; i++)
-      if (entries_[i].macPending && (ntohl(entries_[i].info.ip) >> 24) != 127) job.ip[job.n++] = entries_[i].info.ip;
+      if (entries_[i].macPending && (ntohl(entries_[i].info.ip) >> 24) != 127)
+        job.ip[job.n++] = entries_[i].info.ip;
   }
   if (!job.n || tcpip_callback(macJobInLwip, &job) != ERR_OK) return;
   inFlight = true;

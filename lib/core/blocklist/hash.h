@@ -22,7 +22,11 @@ inline uint64_t hashDomain(const char* name, size_t len) {
   return h & kHashMask;
 }
 
-inline uint32_t bucketOf(uint64_t hash48) { return static_cast<uint32_t>(hash48 >> 32); }
-inline uint32_t suffixOf(uint64_t hash48) { return static_cast<uint32_t>(hash48); }
+inline uint32_t bucketOf(uint64_t hash48) {
+  return static_cast<uint32_t>(hash48 >> 32);
+}
+inline uint32_t suffixOf(uint64_t hash48) {
+  return static_cast<uint32_t>(hash48);
+}
 
 }  // namespace blocklist

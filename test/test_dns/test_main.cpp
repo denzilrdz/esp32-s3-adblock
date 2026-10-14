@@ -17,7 +17,9 @@ using dns::Rcode;
 
 static uint8_t out[2048];
 
-void setUp() { memset(out, 0xAA, sizeof(out)); }
+void setUp() {
+  memset(out, 0xAA, sizeof(out));
+}
 void tearDown() {}
 
 static Query parseOk(const Bytes& pkt) {
@@ -171,8 +173,8 @@ static void test_parse_badvers_reply_carries_extended_rcode() {
                     static_cast<int>(dns::parseQuery(pkt.data(), pkt.size(), q)));
   size_t n = dns::buildErrorReply(q, Rcode::kBadVers, out, sizeof(out));
   TEST_ASSERT_TRUE(n > 0);
-  TEST_ASSERT_EQUAL(0, get16(out, 2) & 0xF);  // low bits of 16
-  TEST_ASSERT_EQUAL(1, get16(out, 10));       // OPT present
+  TEST_ASSERT_EQUAL(0, get16(out, 2) & 0xF);    // low bits of 16
+  TEST_ASSERT_EQUAL(1, get16(out, 10));         // OPT present
   TEST_ASSERT_EQUAL_UINT8(1, out[n - 11 + 5]);  // extended RCODE high bits
 }
 
@@ -296,8 +298,7 @@ static void test_upstream_query_is_padded_to_128_bytes() {
   TEST_ASSERT_EQUAL_HEX16(0x0130, get16(out, 2));  // RD AD CD
   TEST_ASSERT_EQUAL(1, get16(out, 10));
   Query back;
-  TEST_ASSERT_EQUAL(static_cast<int>(ParseStatus::kOk),
-                    static_cast<int>(dns::parseQuery(out, n, back)));
+  TEST_ASSERT_EQUAL(static_cast<int>(ParseStatus::kOk), static_cast<int>(dns::parseQuery(out, n, back)));
   TEST_ASSERT_EQUAL_STRING("tracker.example.com", back.qname);
   TEST_ASSERT_TRUE(back.edns.dnssecOk);
   const size_t opt = 12 + q.qnameWireLen + 4;
@@ -348,9 +349,7 @@ static void test_inspect_collects_ttls_and_strips_trailing_opt() {
 }
 
 static void test_inspect_negative_ttl_from_soa() {
-  Bytes r = ResponseBuilder(1, "nx.example.com", dns::kTypeA, 0x8183)
-                .authoritySoa(3600, 900)
-                .build();
+  Bytes r = ResponseBuilder(1, "nx.example.com", dns::kTypeA, 0x8183).authoritySoa(3600, 900).build();
   dns::ResponseInfo info;
   TEST_ASSERT_TRUE(dns::inspectResponse(r.data(), r.size(), info));
   TEST_ASSERT_EQUAL(3, info.rcode);
@@ -452,7 +451,8 @@ static void test_fuzz_parsers_on_mutated_packets() {
     for (int iter = 0; iter < 4000; iter++) {
       Bytes b = seed;
       const int flips = 1 + static_cast<int>(rnd.uniform(4));
-      for (int f = 0; f < flips; f++) b[rnd.uniform(static_cast<uint32_t>(b.size()))] = static_cast<uint8_t>(rnd.next32());
+      for (int f = 0; f < flips; f++)
+        b[rnd.uniform(static_cast<uint32_t>(b.size()))] = static_cast<uint8_t>(rnd.next32());
       b.resize(rnd.uniform(static_cast<uint32_t>(b.size()) + 1));
       // Copy into an exact-size heap buffer so ASan catches any overread.
       std::vector<uint8_t> exact(b.begin(), b.end());

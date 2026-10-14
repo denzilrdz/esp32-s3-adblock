@@ -15,11 +15,11 @@
 class FakeTransport final : public upstream::ITransport {
  public:
   enum class Mode {
-    kAnswer,         // reply to each query (queued, delivered by receive)
-    kSilent,         // accept queries, never reply
-    kRefuseConnect,  // connect() fails
-    kFailSend,       // send() fails
-    kCloseAfterSend, // receive() reports the peer closed the connection
+    kAnswer,          // reply to each query (queued, delivered by receive)
+    kSilent,          // accept queries, never reply
+    kRefuseConnect,   // connect() fails
+    kFailSend,        // send() fails
+    kCloseAfterSend,  // receive() reports the peer closed the connection
   };
   using Responder = std::function<testdns::Bytes(const testdns::Bytes& query)>;
 

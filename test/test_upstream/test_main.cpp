@@ -38,9 +38,7 @@ class RecordingSink final : public upstream::IForwarderSink {
                 const dns::ResponseInfo&, bool authenticated) override {
     results.push_back({token, true, authenticated, Bytes(answer, answer + len)});
   }
-  void onFailure(uint32_t token, const dns::Query&) override {
-    results.push_back({token, false, false, {}});
-  }
+  void onFailure(uint32_t token, const dns::Query&) override { results.push_back({token, false, false, {}}); }
   std::vector<Result> results;
 };
 
@@ -69,7 +67,9 @@ void setUp() {
   plain = std::make_unique<FakeTransport>("q9-udp", TransportKind::kUdp, false, true);
   build();
 }
-void tearDown() { fwd.reset(); }
+void tearDown() {
+  fwd.reset();
+}
 
 static dns::Query query(const std::string& name, uint16_t id = 0x1111) {
   QueryOpts o;
@@ -80,7 +80,9 @@ static dns::Query query(const std::string& name, uint16_t id = 0x1111) {
   return q;
 }
 
-static void downAll(FakeTransport& t) { t.mode = FakeTransport::Mode::kRefuseConnect; }
+static void downAll(FakeTransport& t) {
+  t.mode = FakeTransport::Mode::kRefuseConnect;
+}
 
 // --- health -----------------------------------------------------------------------
 
@@ -167,8 +169,8 @@ static void test_doh_request_head() {
   TEST_ASSERT_EQUAL(0, upstream::buildDohRequestHead("h", "/p", 1, out, 20));
 }
 
-static upstream::HttpResponseParser::State feedAll(upstream::HttpResponseParser& p,
-                                                   const std::string& s, size_t step) {
+static upstream::HttpResponseParser::State feedAll(upstream::HttpResponseParser& p, const std::string& s,
+                                                   size_t step) {
   upstream::HttpResponseParser::State st = p.state();
   for (size_t i = 0; i < s.size(); i += step) {
     size_t n = std::min(step, s.size() - i);
@@ -202,12 +204,12 @@ static void test_http_parser_rejects_bad_input() {
   uint8_t buf[256];
   upstream::HttpResponseParser p(buf, sizeof(buf));
   const char* bad[] = {
-      "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n",       // chunked unsupported
-      "HTTP/1.1 200 OK\r\nContent-Type: x\r\n\r\n",                   // no length
-      "HTTP/1.1 2x0 OK\r\nContent-Length: 1\r\n\r\nA",                // bad status
-      "HTTP/1.1 200 OK\r\nContent-Length: 99999999\r\n\r\n",          // absurd length
+      "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n",  // chunked unsupported
+      "HTTP/1.1 200 OK\r\nContent-Type: x\r\n\r\n",             // no length
+      "HTTP/1.1 2x0 OK\r\nContent-Length: 1\r\n\r\nA",          // bad status
+      "HTTP/1.1 200 OK\r\nContent-Length: 99999999\r\n\r\n",    // absurd length
       "HTTP/1.1 200 OK\r\nContent-Length: 1\r\nContent-Length: 1\r\n\r\nA",
-      "HTTP/1.1 200 OK\r\nContent-Length: 1\r\n\r\nAB",               // trailing junk
+      "HTTP/1.1 200 OK\r\nContent-Length: 1\r\n\r\nAB",  // trailing junk
       "SMTP ready\r\n\r\n",
   };
   for (const char* b : bad) {
@@ -233,7 +235,7 @@ static void test_answers_from_primary_dot_with_opt_stripped() {
   TEST_ASSERT_TRUE(r.authenticated);
   TEST_ASSERT_EQUAL(0, get16(r.answer, 10));  // OPT removed before the sink
   TEST_ASSERT_EQUAL(1, dot1->sent.size());
-  TEST_ASSERT_EQUAL(0, dot1->sent[0].size() % 128);  // padded query
+  TEST_ASSERT_EQUAL(0, dot1->sent[0].size() % 128);        // padded query
   TEST_ASSERT_NOT_EQUAL(0x1111, get16(dot1->sent[0], 0));  // fresh upstream ID
   TEST_ASSERT_EQUAL(0, dot2->sent.size());
   TEST_ASSERT_EQUAL(static_cast<int>(HealthState::kUp), static_cast<int>(fwd->upstreamStatus(0).state));
@@ -247,8 +249,7 @@ static void test_falls_through_to_next_upstream_when_connect_fails() {
   TEST_ASSERT_EQUAL(1, sink.results.size());
   TEST_ASSERT_TRUE(sink.results[0].ok);
   TEST_ASSERT_EQUAL(1, dot2->sent.size());
-  TEST_ASSERT_EQUAL(static_cast<int>(HealthState::kDegraded),
-                    static_cast<int>(fwd->upstreamStatus(0).state));
+  TEST_ASSERT_EQUAL(static_cast<int>(HealthState::kDegraded), static_cast<int>(fwd->upstreamStatus(0).state));
 }
 
 static void test_down_upstream_is_skipped_until_backoff_then_probed() {
@@ -262,8 +263,8 @@ static void test_down_upstream_is_skipped_until_backoff_then_probed() {
   fwd->submit(10, query("skip.example"));
   fwd->poll(0);
   TEST_ASSERT_EQUAL(connectsWhenDown, dot1->connects);  // not even attempted
-  dot1->mode = FakeTransport::Mode::kAnswer;              // primary recovers
-  fakeClock.advanceMs(1300);                              // > 1 s backoff + jitter
+  dot1->mode = FakeTransport::Mode::kAnswer;            // primary recovers
+  fakeClock.advanceMs(1300);                            // > 1 s backoff + jitter
   fwd->submit(11, query("probe.example"));
   fwd->poll(0);
   TEST_ASSERT_EQUAL(connectsWhenDown + 1, dot1->connects);
@@ -354,7 +355,9 @@ static void test_forged_or_mismatched_replies_are_ignored() {
     dns::Query parsed;
     dns::parseQuery(q.data(), q.size(), parsed);
     // Wrong ID, then right ID but different name: neither may be accepted.
-    return ResponseBuilder(static_cast<uint16_t>(get16(q, 0) + 1), parsed.qname, 1).answerA(60, 6, 6, 6, 6).build();
+    return ResponseBuilder(static_cast<uint16_t>(get16(q, 0) + 1), parsed.qname, 1)
+        .answerA(60, 6, 6, 6, 6)
+        .build();
   };
   fwd->submit(1, query("bank.example"));
   dot1->inbox.push_back(ResponseBuilder(0, "evil.example", 1).answerA(60, 6, 6, 6, 6).build());
@@ -424,7 +427,7 @@ static void test_malformed_reply_counts_as_failure_and_reroutes() {
     dns::Query parsed;
     dns::parseQuery(q.data(), q.size(), parsed);
     Bytes r = ResponseBuilder(get16(q, 0), parsed.qname, 1).opt().answerA(60, 1, 1, 1, 1).build();
-    r[7] = 1;   // ANCOUNT 1, ARCOUNT 1: but the OPT comes first (not last)
+    r[7] = 1;  // ANCOUNT 1, ARCOUNT 1: but the OPT comes first (not last)
     r[11] = 1;
     return r;
   };

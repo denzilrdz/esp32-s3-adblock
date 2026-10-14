@@ -50,8 +50,10 @@ bool validIpv4(const char* v) {
     }
     if (!digits || n > 255) return false;
     parts++;
-    if (*p == '.') p++;
-    else if (*p) return false;
+    if (*p == '.')
+      p++;
+    else if (*p)
+      return false;
   }
   return parts == 4 && v[strlen(v) - 1] != '.';
 }
@@ -69,7 +71,8 @@ bool validTimezone(const char* v) {
   if (n < 3 || n > 47) return false;
   for (const char* p = v; *p; p++) {
     const char c = *p;
-    if (!((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || strchr("+-:,./<>", c)))
+    if (!((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') ||
+          strchr("+-:,./<>", c)))
       return false;
   }
   return true;
@@ -112,21 +115,36 @@ SetResult setField(AppConfig& c, const char* key, const char* v) {
   if (!key || !v) return SetResult::kInvalid;
   bool ok = false;
   uint32_t n = 0;
-  if (!strcmp(key, "up_pri")) ok = parseProvider(v, c.primary);
-  else if (!strcmp(key, "up_sec")) ok = parseProvider(v, c.secondary);
-  else if (!strcmp(key, "up_doh")) ok = parseBool(v, c.dohFallback);
-  else if (!strcmp(key, "up_plain")) ok = parseBool(v, c.plainFallback);
-  else if (!strcmp(key, "up_cip")) ok = copyIf(c.customIp, v, !*v || validIpv4(v));
-  else if (!strcmp(key, "up_cip2")) ok = copyIf(c.customIp2, v, !*v || validIpv4(v));
-  else if (!strcmp(key, "up_cname")) ok = copyIf(c.customName, v, !*v || validHostname(v));
-  else if (!strcmp(key, "up_cdoh")) ok = parseBool(v, c.customDoh);
-  else if (!strcmp(key, "pad")) ok = parseBool(v, c.padding);
-  else if (!strcmp(key, "ad")) ok = parseBool(v, c.passAd);
-  else if (!strcmp(key, "blk_ttl")) ok = parseU32(v, 0, 3600, c.blockedTtl);
-  else if (!strcmp(key, "ff_canary")) ok = parseBool(v, c.firefoxCanary);
-  else if (!strcmp(key, "icloud")) ok = parseBool(v, c.icloudRelay);
-  else if (!strcmp(key, "priv_rev")) ok = parseBool(v, c.privateReverse);
-  else if (!strcmp(key, "tz")) ok = copyIf(c.timezone, v, validTimezone(v));
+  if (!strcmp(key, "up_pri"))
+    ok = parseProvider(v, c.primary);
+  else if (!strcmp(key, "up_sec"))
+    ok = parseProvider(v, c.secondary);
+  else if (!strcmp(key, "up_doh"))
+    ok = parseBool(v, c.dohFallback);
+  else if (!strcmp(key, "up_plain"))
+    ok = parseBool(v, c.plainFallback);
+  else if (!strcmp(key, "up_cip"))
+    ok = copyIf(c.customIp, v, !*v || validIpv4(v));
+  else if (!strcmp(key, "up_cip2"))
+    ok = copyIf(c.customIp2, v, !*v || validIpv4(v));
+  else if (!strcmp(key, "up_cname"))
+    ok = copyIf(c.customName, v, !*v || validHostname(v));
+  else if (!strcmp(key, "up_cdoh"))
+    ok = parseBool(v, c.customDoh);
+  else if (!strcmp(key, "pad"))
+    ok = parseBool(v, c.padding);
+  else if (!strcmp(key, "ad"))
+    ok = parseBool(v, c.passAd);
+  else if (!strcmp(key, "blk_ttl"))
+    ok = parseU32(v, 0, 3600, c.blockedTtl);
+  else if (!strcmp(key, "ff_canary"))
+    ok = parseBool(v, c.firefoxCanary);
+  else if (!strcmp(key, "icloud"))
+    ok = parseBool(v, c.icloudRelay);
+  else if (!strcmp(key, "priv_rev"))
+    ok = parseBool(v, c.privateReverse);
+  else if (!strcmp(key, "tz"))
+    ok = copyIf(c.timezone, v, validTimezone(v));
   else if (!strcmp(key, "log")) {
     ok = parseU32(v, 0, 3, n);
     if (ok) c.logLevel = static_cast<uint8_t>(n);
@@ -138,9 +156,12 @@ SetResult setField(AppConfig& c, const char* key, const char* v) {
 
 bool validate(const AppConfig& c, const char** why) {
   const char* reason = nullptr;
-  if (c.primary == Provider::kNone) reason = "a primary upstream is required";
-  else if (c.primary == c.secondary) reason = "primary and secondary upstream must differ";
-  else if ((c.primary == Provider::kCustom || c.secondary == Provider::kCustom) && (!*c.customIp || !*c.customName))
+  if (c.primary == Provider::kNone)
+    reason = "a primary upstream is required";
+  else if (c.primary == c.secondary)
+    reason = "primary and secondary upstream must differ";
+  else if ((c.primary == Provider::kCustom || c.secondary == Provider::kCustom) &&
+           (!*c.customIp || !*c.customName))
     reason = "custom upstream needs an IP and a TLS name";
   if (reason && why) *why = reason;
   return !reason;
@@ -149,13 +170,13 @@ bool validate(const AppConfig& c, const char** why) {
 bool load(const hal::IKeyValueStore& kv, AppConfig& c) {
   uint32_t ver = 0;
   if (!kv.getU32("cfg_ver", ver)) return true;  // nothing saved yet: defaults
-  if (ver > kSchemaVersion) return false;      // written by newer firmware: keep defaults
+  if (ver > kSchemaVersion) return false;       // written by newer firmware: keep defaults
   char buf[64];
   const char* textKeys[] = {"up_pri", "up_sec", "up_cip", "up_cip2", "up_cname", "tz"};
   for (const char* k : textKeys)
     if (kv.getString(k, buf, sizeof(buf))) setField(c, k, buf);
-  const char* u32Keys[] = {"up_doh", "up_plain", "up_cdoh", "pad", "ad", "blk_ttl",
-                           "ff_canary", "icloud", "priv_rev", "log"};
+  const char* u32Keys[] = {"up_doh",  "up_plain",  "up_cdoh", "pad",      "ad",
+                           "blk_ttl", "ff_canary", "icloud",  "priv_rev", "log"};
   for (const char* k : u32Keys) {
     uint32_t v;
     if (kv.getU32(k, v)) {
@@ -169,28 +190,30 @@ bool load(const hal::IKeyValueStore& kv, AppConfig& c) {
 }
 
 bool save(hal::IKeyValueStore& kv, const AppConfig& c) {
-  bool ok = kv.setString("up_pri", providerName(c.primary)) && kv.setString("up_sec", providerName(c.secondary)) &&
-            kv.setString("up_cip", c.customIp) && kv.setString("up_cip2", c.customIp2) &&
-            kv.setString("up_cname", c.customName) && kv.setString("tz", c.timezone) &&
-            kv.setU32("up_doh", c.dohFallback) && kv.setU32("up_plain", c.plainFallback) &&
-            kv.setU32("up_cdoh", c.customDoh) && kv.setU32("pad", c.padding) && kv.setU32("ad", c.passAd) &&
-            kv.setU32("blk_ttl", c.blockedTtl) && kv.setU32("ff_canary", c.firefoxCanary) &&
-            kv.setU32("icloud", c.icloudRelay) && kv.setU32("priv_rev", c.privateReverse) &&
-            kv.setU32("log", c.logLevel);
+  bool ok = kv.setString("up_pri", providerName(c.primary)) &&
+            kv.setString("up_sec", providerName(c.secondary)) && kv.setString("up_cip", c.customIp) &&
+            kv.setString("up_cip2", c.customIp2) && kv.setString("up_cname", c.customName) &&
+            kv.setString("tz", c.timezone) && kv.setU32("up_doh", c.dohFallback) &&
+            kv.setU32("up_plain", c.plainFallback) && kv.setU32("up_cdoh", c.customDoh) &&
+            kv.setU32("pad", c.padding) && kv.setU32("ad", c.passAd) && kv.setU32("blk_ttl", c.blockedTtl) &&
+            kv.setU32("ff_canary", c.firefoxCanary) && kv.setU32("icloud", c.icloudRelay) &&
+            kv.setU32("priv_rev", c.privateReverse) && kv.setU32("log", c.logLevel);
   return ok && kv.setU32("cfg_ver", kSchemaVersion);
 }
 
 bool requiresRestart(const AppConfig& a, const AppConfig& b) {
   return a.primary != b.primary || a.secondary != b.secondary || a.dohFallback != b.dohFallback ||
-         a.plainFallback != b.plainFallback || strcmp(a.customIp, b.customIp) || strcmp(a.customIp2, b.customIp2) ||
-         strcmp(a.customName, b.customName) || a.customDoh != b.customDoh || a.padding != b.padding ||
-         a.passAd != b.passAd || a.blockedTtl != b.blockedTtl || a.firefoxCanary != b.firefoxCanary ||
+         a.plainFallback != b.plainFallback || strcmp(a.customIp, b.customIp) ||
+         strcmp(a.customIp2, b.customIp2) || strcmp(a.customName, b.customName) ||
+         a.customDoh != b.customDoh || a.padding != b.padding || a.passAd != b.passAd ||
+         a.blockedTtl != b.blockedTtl || a.firefoxCanary != b.firefoxCanary ||
          a.icloudRelay != b.icloudRelay || a.privateReverse != b.privateReverse;
 }
 
 size_t buildChain(const AppConfig& c, Endpoint* out, size_t max) {
   size_t n = 0;
-  auto add = [&](upstream::TransportKind kind, const char* name, const char* ip, const char* verify, uint16_t port) {
+  auto add = [&](upstream::TransportKind kind, const char* name, const char* ip, const char* verify,
+                 uint16_t port) {
     if (n >= max || !ip || !*ip) return;
     Endpoint& e = out[n++];
     e.kind = kind;

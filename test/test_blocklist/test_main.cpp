@@ -24,7 +24,9 @@ using testbl::Bytes;
 void setUp() {}
 void tearDown() {}
 
-static uint64_t h(const char* s) { return hashDomain(s, strlen(s)); }
+static uint64_t h(const char* s) {
+  return hashDomain(s, strlen(s));
+}
 
 static std::unique_ptr<IIndex> memIndex(const Bytes& file) {
   auto owner = std::make_shared<Bytes>(file);
@@ -65,17 +67,21 @@ static void test_valid_file_passes_full_validation() {
 static void assertInvalid(FormatError want, const Bytes& file, Limits limits = small()) {
   MemFileSystem fs;
   fs.put("/bl.bin", file);
-  TEST_ASSERT_EQUAL_STRING(formatErrorName(want), formatErrorName(validateFile(fs, "/bl.bin", limits, nullptr)));
+  TEST_ASSERT_EQUAL_STRING(formatErrorName(want),
+                           formatErrorName(validateFile(fs, "/bl.bin", limits, nullptr)));
   // The streaming validator (download path) must agree on header/size/CRC errors.
   if (want != FormatError::kBadBuckets && want != FormatError::kUnsorted) {
     StreamValidator v(limits);
-    for (size_t i = 0; i < file.size(); i += 777) v.feed(file.data() + i, std::min<size_t>(777, file.size() - i));
+    for (size_t i = 0; i < file.size(); i += 777)
+      v.feed(file.data() + i, std::min<size_t>(777, file.size() - i));
     TEST_ASSERT_EQUAL_STRING(formatErrorName(want), formatErrorName(v.finish()));
   }
 }
 
 static int ticks = 0;
-static void countTick() { ticks++; }
+static void countTick() {
+  ticks++;
+}
 
 static void test_validation_reports_progress_for_large_files() {
   MemFileSystem fs;
@@ -174,7 +180,9 @@ static void test_large_buckets_have_no_false_negatives() {
 struct MatchFixture {
   IndexHolder holder;
   Matcher matcher{holder};
-  explicit MatchFixture(const std::vector<std::string>& names) { holder.publish(memIndex(testbl::build(names))); }
+  explicit MatchFixture(const std::vector<std::string>& names) {
+    holder.publish(memIndex(testbl::build(names)));
+  }
   MatchResult m(const char* name) const { return matcher.match(name, strlen(name)); }
 };
 
@@ -224,13 +232,15 @@ static void test_collision_overblocks_and_allowlist_fixes_it() {
   matcher.setCustom(DomainSet(), std::move(allow));
   TEST_ASSERT_EQUAL(static_cast<int>(MatchResult::kAllowed),
                     static_cast<int>(matcher.match("innocent.example", 16)));
-  TEST_ASSERT_EQUAL(static_cast<int>(MatchResult::kBlocked), static_cast<int>(matcher.match("ads.example", 11)));
+  TEST_ASSERT_EQUAL(static_cast<int>(MatchResult::kBlocked),
+                    static_cast<int>(matcher.match("ads.example", 11)));
 }
 
 static void test_empty_holder_blocks_nothing() {
   IndexHolder holder;
   Matcher matcher(holder);
-  TEST_ASSERT_EQUAL(static_cast<int>(MatchResult::kNone), static_cast<int>(matcher.match("ads.example.com", 15)));
+  TEST_ASSERT_EQUAL(static_cast<int>(MatchResult::kNone),
+                    static_cast<int>(matcher.match("ads.example.com", 15)));
   TEST_ASSERT_EQUAL_UINT32(0, holder.count());
 }
 

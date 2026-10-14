@@ -44,8 +44,12 @@ String jsonEscape(const String& s) {
   return o;
 }
 
-String q(const String& s) { return "\"" + jsonEscape(s) + "\""; }
-const char* b(bool v) { return v ? "true" : "false"; }
+String q(const String& s) {
+  return "\"" + jsonEscape(s) + "\"";
+}
+const char* b(bool v) {
+  return v ? "true" : "false";
+}
 
 String macString(const uint8_t* m) {
   char s[18];
@@ -83,7 +87,9 @@ bool parseBasicAuth(const String& header, String& user, String& pass) {
 
 }  // namespace
 
-void Dashboard::sendText(int code, const String& text) { ctx_.server->send(code, "text/plain", text); }
+void Dashboard::sendText(int code, const String& text) {
+  ctx_.server->send(code, "text/plain", text);
+}
 
 Dashboard::Check Dashboard::check(Access access) {
   WebServer& s = *ctx_.server;
@@ -93,7 +99,8 @@ Dashboard::Check Dashboard::check(Access access) {
   if (access == Access::kPublic) return {true, 200, "", false};
   if (s.method() != HTTP_POST) return {false, 405, "use POST", false};
   if (s.header(kCsrfHeader) != kCsrfValue) return {false, 403, "missing X-Requested-With header", false};
-  if (!auth::originAllowed(s.header("Origin").c_str(), s.header("Referer").c_str(), ip.c_str(), ctx_.hostname))
+  if (!auth::originAllowed(s.header("Origin").c_str(), s.header("Referer").c_str(), ip.c_str(),
+                           ctx_.hostname))
     return {false, 403, "cross-site request refused", false};
   const uint32_t client = static_cast<uint32_t>(s.client().remoteIP());
   if (!ctx_.logins->allowed(client)) return {false, 429, "too many failed logins; try again later", false};
@@ -184,8 +191,12 @@ void Dashboard::begin() {
     delay(500);
     ESP.restart();
   });
-  s.on("/api/blocklist/upload", HTTP_POST, [this]() { handleListUploadDone(); }, [this]() { handleListUpload(); });
-  s.on("/api/firmware", HTTP_POST, [this]() { handleFirmwareUploadDone(); }, [this]() { handleFirmwareUpload(); });
+  s.on(
+      "/api/blocklist/upload", HTTP_POST, [this]() { handleListUploadDone(); },
+      [this]() { handleListUpload(); });
+  s.on(
+      "/api/firmware", HTTP_POST, [this]() { handleFirmwareUploadDone(); },
+      [this]() { handleFirmwareUpload(); });
   s.onNotFound([this]() {
     if (guard(Access::kPublic)) sendText(404, "not found");
   });
@@ -216,16 +227,16 @@ void Dashboard::handleStats() {
   j += ",\"blocking\":" + String(b(ctx_.clients->blockingOn())) +
        ",\"resumeIn\":" + String(ctx_.clients->resumeInSeconds());
   j += ",\"dns\":{\"queries\":" + String(d.queries) + ",\"tcp\":" + String(d.tcpQueries) +
-       ",\"blocked\":" + String(d.blocked) + ",\"local\":" + String(d.local) + ",\"cacheHits\":" +
-       String(d.cacheHits) + ",\"forwarded\":" + String(d.forwarded) + ",\"servfail\":" + String(d.servfail) +
-       ",\"cacheEntries\":" + String(cs.entries) + "}";
+       ",\"blocked\":" + String(d.blocked) + ",\"local\":" + String(d.local) +
+       ",\"cacheHits\":" + String(d.cacheHits) + ",\"forwarded\":" + String(d.forwarded) +
+       ",\"servfail\":" + String(d.servfail) + ",\"cacheEntries\":" + String(cs.entries) + "}";
   j += ",\"plainFallback\":" + String(b(us.plainFallback)) + ",\"upstreams\":[";
   for (size_t i = 0; i < us.count; i++) {
     const upstream::UpstreamStatus& u = us.status[i];
     if (i) j += ",";
-    j += "{\"name\":" + q(u.name) + ",\"encrypted\":" + b(u.authenticated) + ",\"state\":" +
-         q(upstream::healthStateName(u.state)) + ",\"ok\":" + String(u.stats.ok) + ",\"failed\":" +
-         String(u.stats.failed) + ",\"latencyMs\":" + String(u.stats.lastLatencyMs) + "}";
+    j += "{\"name\":" + q(u.name) + ",\"encrypted\":" + b(u.authenticated) +
+         ",\"state\":" + q(upstream::healthStateName(u.state)) + ",\"ok\":" + String(u.stats.ok) +
+         ",\"failed\":" + String(u.stats.failed) + ",\"latencyMs\":" + String(u.stats.lastLatencyMs) + "}";
   }
   j += "],\"blocklist\":{\"entries\":" + String(bl.entries) + ",\"inMemory\":" + b(bl.inMemory) +
        ",\"built\":" + q(formatTime(bl.buildTime)) + ",\"lastAttempt\":" + q(formatTime(bl.lastAttempt)) +
@@ -243,8 +254,8 @@ void Dashboard::handleStats() {
     const app::ClientInfo& c = clients[i];
     if (i) j += ",";
     j += "{\"ip\":" + q(IPAddress(c.ip).toString()) + ",\"mac\":" + q(macString(c.mac)) +
-         ",\"blocked\":" + String(c.blocked) + ",\"allowed\":" + String(c.allowed) + ",\"banned\":" + b(c.banned) +
-         "}";
+         ",\"blocked\":" + String(c.blocked) + ",\"allowed\":" + String(c.allowed) +
+         ",\"banned\":" + b(c.banned) + "}";
   }
   j += "]}";
   ctx_.server->send(200, "application/json", j);
@@ -253,10 +264,11 @@ void Dashboard::handleStats() {
 void Dashboard::handleGetConfig() {
   if (!guard(Access::kPublic)) return;
   const config::AppConfig& c = *ctx_.config;
-  String j = "{\"up_pri\":" + q(config::providerName(c.primary)) + ",\"up_sec\":" + q(config::providerName(c.secondary));
+  String j = "{\"up_pri\":" + q(config::providerName(c.primary)) +
+             ",\"up_sec\":" + q(config::providerName(c.secondary));
   j += ",\"up_doh\":" + String(b(c.dohFallback)) + ",\"up_plain\":" + b(c.plainFallback);
-  j += ",\"up_cip\":" + q(c.customIp) + ",\"up_cip2\":" + q(c.customIp2) + ",\"up_cname\":" + q(c.customName) +
-       ",\"up_cdoh\":" + b(c.customDoh);
+  j += ",\"up_cip\":" + q(c.customIp) + ",\"up_cip2\":" + q(c.customIp2) +
+       ",\"up_cname\":" + q(c.customName) + ",\"up_cdoh\":" + b(c.customDoh);
   j += ",\"pad\":" + String(b(c.padding)) + ",\"ad\":" + b(c.passAd) + ",\"blk_ttl\":" + String(c.blockedTtl);
   j += ",\"ff_canary\":" + String(b(c.firefoxCanary)) + ",\"icloud\":" + b(c.icloudRelay) +
        ",\"priv_rev\":" + b(c.privateReverse);
@@ -414,8 +426,10 @@ void Dashboard::handleFirmwareUpload() {
   } else if (u.status == UPLOAD_FILE_WRITE) {
     if (Update.write(u.buf, u.currentSize) != u.currentSize) Update.printError(Serial);
   } else if (u.status == UPLOAD_FILE_END) {
-    if (Update.end(true)) ctx_.log->log(LogLevel::kInfo, "ota", "firmware %u bytes OK", u.totalSize);
-    else Update.printError(Serial);
+    if (Update.end(true))
+      ctx_.log->log(LogLevel::kInfo, "ota", "firmware %u bytes OK", u.totalSize);
+    else
+      Update.printError(Serial);
   } else if (u.status == UPLOAD_FILE_ABORTED) {
     Update.abort();
   }
@@ -427,7 +441,8 @@ void Dashboard::handleFirmwareUploadDone() {
     return;
   }
   const bool ok = !Update.hasError() && Update.isFinished();
-  sendText(ok ? 200 : 500, ok ? "firmware accepted; rebooting (rolls back if unhealthy)" : "firmware update failed");
+  sendText(ok ? 200 : 500,
+           ok ? "firmware accepted; rebooting (rolls back if unhealthy)" : "firmware update failed");
   if (ok) {
     delay(500);
     ESP.restart();

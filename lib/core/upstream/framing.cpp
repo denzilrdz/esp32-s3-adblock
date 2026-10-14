@@ -11,7 +11,9 @@ namespace {
 
 constexpr size_t kMaxContentLength = 65535;  // a DNS message never exceeds this
 
-char lower(char c) { return (c >= 'A' && c <= 'Z') ? static_cast<char>(c + 32) : c; }
+char lower(char c) {
+  return (c >= 'A' && c <= 'Z') ? static_cast<char>(c + 32) : c;
+}
 
 // Case-insensitive compare of [p, p+n) with a lowercase literal.
 bool equalsCi(const char* p, size_t n, const char* lit) {
@@ -79,8 +81,7 @@ size_t StreamDeframer::next(uint8_t* out, size_t cap) {
   return msgLen;
 }
 
-size_t buildDohRequestHead(const char* host, const char* path, size_t bodyLen, uint8_t* out,
-                           size_t cap) {
+size_t buildDohRequestHead(const char* host, const char* path, size_t bodyLen, uint8_t* out, size_t cap) {
   const int n = snprintf(reinterpret_cast<char*>(out), cap,
                          "POST %s HTTP/1.1\r\n"
                          "Host: %s\r\n"

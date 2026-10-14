@@ -15,8 +15,10 @@ bool searchSuffixes(const uint8_t* p, uint32_t n, uint32_t want) {
     const uint32_t mid = lo + (hi - lo) / 2;
     const uint32_t v = util::readU32Le(p + size_t{4} * mid);
     if (v == want) return true;
-    if (v < want) lo = mid + 1;
-    else hi = mid;
+    if (v < want)
+      lo = mid + 1;
+    else
+      hi = mid;
   }
   return false;
 }

@@ -26,7 +26,8 @@ class Sha256 {
 };
 
 void sha256(const uint8_t* data, size_t len, uint8_t out[kSha256Size]);
-void hmacSha256(const uint8_t* key, size_t keyLen, const uint8_t* msg, size_t msgLen, uint8_t out[kSha256Size]);
+void hmacSha256(const uint8_t* key, size_t keyLen, const uint8_t* msg, size_t msgLen,
+                uint8_t out[kSha256Size]);
 void pbkdf2Sha256(const uint8_t* password, size_t passwordLen, const uint8_t* salt, size_t saltLen,
                   uint32_t iterations, uint8_t* out, size_t outLen);
 

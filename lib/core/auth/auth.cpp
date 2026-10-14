@@ -11,7 +11,9 @@ namespace {
 // Stored record: salt(16) | hash(32) | iterations(4, BE)
 constexpr size_t kRecordSize = 16 + util::kSha256Size + 4;
 
-char lower(char c) { return (c >= 'A' && c <= 'Z') ? static_cast<char>(c + 32) : c; }
+char lower(char c) {
+  return (c >= 'A' && c <= 'Z') ? static_cast<char>(c + 32) : c;
+}
 
 bool equalsCi(const char* a, size_t aLen, const char* b) {
   if (strlen(b) != aLen) return false;
@@ -24,7 +26,10 @@ bool equalsCi(const char* a, size_t aLen, const char* b) {
 
 PasswordStore::PasswordStore(hal::IKeyValueStore& kv, hal::IRandom& random, const char* defaultUser,
                              const char* defaultPassword)
-    : kv_(kv), random_(random), user_(defaultUser ? defaultUser : "admin"), defaultPassword_(defaultPassword) {
+    : kv_(kv),
+      random_(random),
+      user_(defaultUser ? defaultUser : "admin"),
+      defaultPassword_(defaultPassword) {
   uint8_t rec[kRecordSize];
   size_t len = 0;
   if (kv_.getBlob(kKey, rec, sizeof(rec), len) && len == kRecordSize &&
@@ -46,7 +51,8 @@ bool PasswordStore::mustChange() const {
                       strlen(defaultPassword_) < kMinPasswordLength);
 }
 
-void PasswordStore::deriveKey(const char* password, const uint8_t* salt, uint8_t out[util::kSha256Size]) const {
+void PasswordStore::deriveKey(const char* password, const uint8_t* salt,
+                              uint8_t out[util::kSha256Size]) const {
   util::pbkdf2Sha256(reinterpret_cast<const uint8_t*>(password), strlen(password), salt, 16, kIterations, out,
                      util::kSha256Size);
 }
@@ -95,11 +101,16 @@ bool PasswordStore::verify(const char* user, const char* password) {
 bool PasswordStore::change(const char* current, const char* next, const char** why) {
   const char* reason = nullptr;
   const size_t n = next ? strlen(next) : 0;
-  if (!verify(user_, current ? current : "")) reason = "current password is wrong";
-  else if (n < kMinPasswordLength) reason = "new password must be at least 10 characters";
-  else if (n > kMaxPasswordLength) reason = "new password is too long (max 64)";
-  else if (strcmp(next, kPlaceholderPassword) == 0) reason = "that is the public example password";
-  else if (strcmp(next, current) == 0) reason = "new password must differ from the current one";
+  if (!verify(user_, current ? current : ""))
+    reason = "current password is wrong";
+  else if (n < kMinPasswordLength)
+    reason = "new password must be at least 10 characters";
+  else if (n > kMaxPasswordLength)
+    reason = "new password is too long (max 64)";
+  else if (strcmp(next, kPlaceholderPassword) == 0)
+    reason = "that is the public example password";
+  else if (strcmp(next, current) == 0)
+    reason = "new password must differ from the current one";
   if (reason) {
     if (why) *why = reason;
     return false;

@@ -13,9 +13,9 @@ constexpr size_t kMaxLabel = 63;
 
 struct NameParse {
   bool ok = false;
-  size_t end = 0;        // offset just past the name
-  uint8_t wireLen = 0;   // bytes written to wireOut (incl. root 0)
-  uint8_t textLen = 0;   // chars written to textOut (excl. NUL)
+  size_t end = 0;       // offset just past the name
+  uint8_t wireLen = 0;  // bytes written to wireOut (incl. root 0)
+  uint8_t textLen = 0;  // chars written to textOut (excl. NUL)
 };
 
 // Parses an UNCOMPRESSED name at pkt[off] (the question section must not use
@@ -23,8 +23,7 @@ struct NameParse {
 // Writes the lowercased wire form into wireOut (>= kMaxNameWire bytes) and the
 // lowercased dotted text into textOut (>= kMaxNameText + 1 bytes); either may be null.
 // The root name yields wireLen 1 and an empty text.
-NameParse parseUncompressedName(const uint8_t* pkt, size_t len, size_t off, uint8_t* wireOut,
-                                char* textOut);
+NameParse parseUncompressedName(const uint8_t* pkt, size_t len, size_t off, uint8_t* wireOut, char* textOut);
 
 // Skips a possibly compressed name at pkt[off]. Returns the offset just past it in
 // the original byte stream, or 0 if the name is malformed or runs past len.

@@ -9,8 +9,7 @@ constexpr const char* kTag = "up";
 }
 
 Forwarder::Forwarder(const ForwarderConfig& cfg, ITransport* const* transports, size_t count,
-                     const hal::IClock& clock, hal::IRandom& random, hal::ILogger& log,
-                     IForwarderSink& sink)
+                     const hal::IClock& clock, hal::IRandom& random, hal::ILogger& log, IForwarderSink& sink)
     : cfg_(cfg),
       count_(count > kMaxUpstreams ? kMaxUpstreams : count),
       clock_(clock),
@@ -45,8 +44,8 @@ void Forwarder::recordSuccess(int u, uint32_t latencyMs) {
   const HealthState before = health_[u].state();
   health_[u].onSuccess(latencyMs);
   if (before != HealthState::kUp)
-    log_.log(LogLevel::kInfo, kTag, "%s: %s -> up (%u ms)", transports_[u]->name(),
-             healthStateName(before), static_cast<unsigned>(latencyMs));
+    log_.log(LogLevel::kInfo, kTag, "%s: %s -> up (%u ms)", transports_[u]->name(), healthStateName(before),
+             static_cast<unsigned>(latencyMs));
   if (plainActive_ && transports_[u]->authenticated()) {
     plainActive_ = false;
     log_.log(LogLevel::kInfo, kTag, "encrypted upstream %s restored; plain DNS fallback off",
@@ -267,8 +266,8 @@ void Forwarder::poll(uint32_t waitMs) {
         continue;
       }
       if (st == IoStatus::kClosed || st == IoStatus::kError) {
-        log_.log(LogLevel::kInfo, kTag, "%s: connection %s with queries in flight",
-                 transports_[i]->name(), st == IoStatus::kClosed ? "closed" : "failed");
+        log_.log(LogLevel::kInfo, kTag, "%s: connection %s with queries in flight", transports_[i]->name(),
+                 st == IoStatus::kClosed ? "closed" : "failed");
         failTransport(u);
       }
       break;

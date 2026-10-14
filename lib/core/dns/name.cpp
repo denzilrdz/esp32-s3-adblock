@@ -6,12 +6,13 @@ namespace {
 
 constexpr int kMaxPointerHops = 16;
 
-bool isLabelByte(uint8_t c) { return c >= 0x21 && c <= 0x7E && c != '.'; }
+bool isLabelByte(uint8_t c) {
+  return c >= 0x21 && c <= 0x7E && c != '.';
+}
 
 }  // namespace
 
-NameParse parseUncompressedName(const uint8_t* pkt, size_t len, size_t off, uint8_t* wireOut,
-                                char* textOut) {
+NameParse parseUncompressedName(const uint8_t* pkt, size_t len, size_t off, uint8_t* wireOut, char* textOut) {
   NameParse r;
   size_t i = off;
   size_t wire = 0;

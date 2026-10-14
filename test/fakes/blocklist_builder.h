@@ -28,7 +28,8 @@ inline Bytes buildFromHashes(std::vector<uint64_t> hashes, int64_t buildTime = 1
   for (size_t b = 1; b < start.size(); b++) start[b] += start[b - 1];
   for (size_t b = 0; b < start.size(); b++) util::writeU32Le(payload.data() + 4 * b, start[b]);
   for (uint32_t i = 0; i < n; i++)
-    util::writeU32Le(payload.data() + blocklist::kBucketTableBytes + size_t{4} * i, blocklist::suffixOf(hashes[i]));
+    util::writeU32Le(payload.data() + blocklist::kBucketTableBytes + size_t{4} * i,
+                     blocklist::suffixOf(hashes[i]));
   Bytes out(blocklist::kHeaderSize);
   blocklist::writeHeader(out.data(), n, util::crc32(payload.data(), payload.size()), buildTime);
   out.insert(out.end(), payload.begin(), payload.end());
@@ -45,7 +46,8 @@ inline Bytes build(const std::vector<std::string>& names, int64_t buildTime = 17
 inline std::vector<std::string> syntheticNames(size_t n, const char* prefix = "d") {
   std::vector<std::string> v;
   v.reserve(n);
-  for (size_t i = 0; i < n; i++) v.push_back(std::string(prefix) + std::to_string(i) + ".example" + std::to_string(i % 7) + ".com");
+  for (size_t i = 0; i < n; i++)
+    v.push_back(std::string(prefix) + std::to_string(i) + ".example" + std::to_string(i % 7) + ".com");
   return v;
 }
 

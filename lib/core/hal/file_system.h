@@ -9,7 +9,7 @@ namespace hal {
 
 class IFile {
  public:
-  virtual ~IFile() = default;  // closes the file
+  virtual ~IFile() = default;                         // closes the file
   virtual size_t read(uint8_t* buf, size_t len) = 0;  // bytes read; 0 at EOF/error
   virtual size_t write(const uint8_t* buf, size_t len) = 0;
   virtual bool seek(size_t pos) = 0;

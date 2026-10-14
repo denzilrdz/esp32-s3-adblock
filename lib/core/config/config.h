@@ -23,10 +23,10 @@ struct AppConfig {
   bool plainFallback = true;  // plain DNS when every encrypted upstream is down
   char customIp[16] = "";     // custom DoT provider
   char customIp2[16] = "";
-  char customName[64] = "";   // TLS name to verify, e.g. dns.example.net
-  bool customDoh = false;     // custom provider also serves DoH at /dns-query
-  bool padding = true;        // RFC 7830/8467 query padding
-  bool passAd = true;         // pass the DNSSEC AD bit from encrypted upstreams
+  char customName[64] = "";  // TLS name to verify, e.g. dns.example.net
+  bool customDoh = false;    // custom provider also serves DoH at /dns-query
+  bool padding = true;       // RFC 7830/8467 query padding
+  bool passAd = true;        // pass the DNSSEC AD bit from encrypted upstreams
   uint32_t blockedTtl = 10;
   bool firefoxCanary = true;
   bool icloudRelay = false;

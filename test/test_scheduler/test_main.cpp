@@ -54,7 +54,7 @@ static void test_triggers_at_2am_ist_exactly() {
 
 static void test_jitter_delays_within_window() {
   kv.setU32(DailyScheduler::kLastSuccessKey, 20261014);
-  ScheduleConfig c;  // default 10 min jitter
+  ScheduleConfig c;    // default 10 min jitter
   fakeRandom.push(7);  // jitter = 7 % 11 = 7 minutes
   DailyScheduler s(c, fakeClock, kv, fakeRandom);
   fakeClock.setLocal(2026, 10, 15, 2, 6, 59);

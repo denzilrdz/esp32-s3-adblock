@@ -56,7 +56,8 @@ hal::HttpGetResult EspHttpClient::get(const hal::HttpGetRequest& req, hal::IHttp
     result.error = hal::HttpError::kConnect;
     return result;
   }
-  if (req.ifNoneMatch && req.ifNoneMatch[0]) esp_http_client_set_header(client, "If-None-Match", req.ifNoneMatch);
+  if (req.ifNoneMatch && req.ifNoneMatch[0])
+    esp_http_client_set_header(client, "If-None-Match", req.ifNoneMatch);
 
   int status = 0;
   for (int hop = 0; hop <= kMaxRedirects; hop++) {

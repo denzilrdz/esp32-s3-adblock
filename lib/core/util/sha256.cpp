@@ -18,7 +18,9 @@ constexpr uint32_t kK[64] = {
     0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
     0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2};
 
-inline uint32_t rotr(uint32_t x, int n) { return (x >> n) | (x << (32 - n)); }
+inline uint32_t rotr(uint32_t x, int n) {
+  return (x >> n) | (x << (32 - n));
+}
 
 }  // namespace
 
@@ -96,10 +98,13 @@ void sha256(const uint8_t* data, size_t len, uint8_t out[kSha256Size]) {
   s.finish(out);
 }
 
-void hmacSha256(const uint8_t* key, size_t keyLen, const uint8_t* msg, size_t msgLen, uint8_t out[kSha256Size]) {
+void hmacSha256(const uint8_t* key, size_t keyLen, const uint8_t* msg, size_t msgLen,
+                uint8_t out[kSha256Size]) {
   uint8_t k[64] = {0};
-  if (keyLen > 64) sha256(key, keyLen, k);
-  else memcpy(k, key, keyLen);
+  if (keyLen > 64)
+    sha256(key, keyLen, k);
+  else
+    memcpy(k, key, keyLen);
   uint8_t pad[64];
   Sha256 s;
   for (int i = 0; i < 64; i++) pad[i] = k[i] ^ 0x36;

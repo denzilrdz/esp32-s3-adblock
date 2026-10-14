@@ -38,8 +38,8 @@ class ClientTable {
   void pause(uint32_t seconds);  // 0 = until resumed
   void resume();
   uint32_t resumeInSeconds();
-  void tick();                   // auto-resume a timed pause
-  void resolvePendingMacs();     // ARP lookups inside the lwIP thread
+  void tick();                // auto-resume a timed pause
+  void resolvePendingMacs();  // ARP lookups inside the lwIP thread
   std::vector<ClientInfo> snapshot();
   uint32_t totalBlocked();
   uint32_t totalAllowed();

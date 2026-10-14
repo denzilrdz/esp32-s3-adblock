@@ -14,12 +14,13 @@
 #include <cerrno>
 #include <cstring>
 
-
 namespace platform {
 
 namespace {
 
-uint64_t nowMs() { return static_cast<uint64_t>(esp_timer_get_time() / 1000); }
+uint64_t nowMs() {
+  return static_cast<uint64_t>(esp_timer_get_time() / 1000);
+}
 
 // Hardware RNG as the mbedTLS random source (secure while Wi-Fi is on).
 int hardwareRng(void*, unsigned char* out, size_t len) {

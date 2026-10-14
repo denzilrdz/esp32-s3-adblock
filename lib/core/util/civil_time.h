@@ -15,9 +15,7 @@ struct CivilTime {
   int second = 0;  // 0..59
 
   // Compact sortable date key, e.g. 20261015.
-  uint32_t dateKey() const {
-    return static_cast<uint32_t>(year * 10000 + month * 100 + day);
-  }
+  uint32_t dateKey() const { return static_cast<uint32_t>(year * 10000 + month * 100 + day); }
 };
 
 // Unix seconds + fixed UTC offset (seconds, e.g. +19800 for IST) -> local civil time.

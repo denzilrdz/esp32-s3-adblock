@@ -13,7 +13,9 @@ namespace {
 
 constexpr uint32_t kWriteTimeoutMs = 2000;
 
-uint64_t nowMs() { return static_cast<uint64_t>(esp_timer_get_time() / 1000); }
+uint64_t nowMs() {
+  return static_cast<uint64_t>(esp_timer_get_time() / 1000);
+}
 
 IoStatus fromStream(StreamStatus s) {
   switch (s) {

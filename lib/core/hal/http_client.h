@@ -21,11 +21,11 @@ struct HttpGetRequest {
 };
 
 enum class HttpError {
-  kNone,        // a response was received (check status)
-  kConnect,     // DNS/TCP/TLS failure
+  kNone,     // a response was received (check status)
+  kConnect,  // DNS/TCP/TLS failure
   kTimeout,
-  kAborted,     // sink returned false
-  kTruncated,   // connection closed before Content-Length bytes
+  kAborted,    // sink returned false
+  kTruncated,  // connection closed before Content-Length bytes
 };
 
 struct HttpGetResult {

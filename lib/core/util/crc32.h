@@ -9,6 +9,8 @@ namespace util {
 // Start with crc = 0 and feed chunks: crc = crc32Update(crc, chunk, n).
 uint32_t crc32Update(uint32_t crc, const uint8_t* data, size_t len);
 
-inline uint32_t crc32(const uint8_t* data, size_t len) { return crc32Update(0, data, len); }
+inline uint32_t crc32(const uint8_t* data, size_t len) {
+  return crc32Update(0, data, len);
+}
 
 }  // namespace util

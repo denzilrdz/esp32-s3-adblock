@@ -26,6 +26,8 @@ inline LargeBuffer makeLargeBuffer(size_t bytes) {
   return LargeBuffer(static_cast<uint8_t*>(allocLarge(bytes)));
 }
 
-inline bool havePsram() { return heap_caps_get_total_size(MALLOC_CAP_SPIRAM) > 0; }
+inline bool havePsram() {
+  return heap_caps_get_total_size(MALLOC_CAP_SPIRAM) > 0;
+}
 
 }  // namespace platform

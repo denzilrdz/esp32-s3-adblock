@@ -76,7 +76,7 @@ struct Query {
   uint16_t qclass = 0;
   uint8_t qnameWire[kMaxNameWire] = {0};  // lowercased, uncompressed
   uint8_t qnameWireLen = 0;
-  char qname[kMaxNameText + 1] = {0};     // lowercased dotted text, no trailing dot
+  char qname[kMaxNameText + 1] = {0};  // lowercased dotted text, no trailing dot
   uint8_t qnameLen = 0;
   Edns edns;
 
@@ -91,11 +91,11 @@ struct Query {
 
 enum class ParseStatus {
   kOk,
-  kDrop,      // not worth answering (too short, or a response): silently ignore
+  kDrop,  // not worth answering (too short, or a response): silently ignore
   kFormErr,
-  kNotImp,    // opcode other than QUERY
-  kRefused,   // class other than IN
-  kBadVers,   // EDNS version > 0
+  kNotImp,   // opcode other than QUERY
+  kRefused,  // class other than IN
+  kBadVers,  // EDNS version > 0
 };
 
 // Validates and parses a client query. On any status other than kOk/kDrop, the
@@ -146,8 +146,8 @@ struct BlockedReplyOptions {
 size_t buildBlockedReply(const Query& q, const BlockedReplyOptions& opt, uint8_t* out, size_t cap);
 
 // Local answer: A/AAAA get the given address (null = NODATA), other types NODATA.
-size_t buildAddressReply(const Query& q, const uint8_t* v4, const uint8_t* v6, uint32_t ttl,
-                         uint8_t* out, size_t cap);
+size_t buildAddressReply(const Query& q, const uint8_t* v4, const uint8_t* v6, uint32_t ttl, uint8_t* out,
+                         size_t cap);
 
 // NXDOMAIN (or NODATA with kNoError) with a synthetic SOA, for local zones.
 size_t buildNegativeReply(const Query& q, Rcode rc, uint32_t ttl, uint8_t* out, size_t cap);
@@ -167,8 +167,8 @@ struct UpstreamQueryOptions {
 
 // Re-encodes the client's question for an upstream with a fresh ID, RD=1, the
 // client's CD and DO bits, and our own OPT (1232 bytes, optional padding).
-size_t buildUpstreamQuery(const Query& q, uint16_t id, const UpstreamQueryOptions& opt,
-                          uint8_t* out, size_t cap);
+size_t buildUpstreamQuery(const Query& q, uint16_t id, const UpstreamQueryOptions& opt, uint8_t* out,
+                          size_t cap);
 
 // Facts about an upstream response gathered in one bounds-checked walk.
 struct ResponseInfo {
@@ -179,8 +179,8 @@ struct ResponseInfo {
   size_t questionEnd = 0;
   bool hasOpt = false;
   bool optIsLast = false;
-  size_t optOffset = 0;   // start of the OPT RR
-  uint32_t minTtl = 0;    // over all non-OPT RRs (0 if none)
+  size_t optOffset = 0;  // start of the OPT RR
+  uint32_t minTtl = 0;   // over all non-OPT RRs (0 if none)
   bool hasRecords = false;
   bool hasSoa = false;
   uint32_t negativeTtl = 0;  // min(SOA TTL, SOA MINIMUM) from the authority section
@@ -208,7 +208,7 @@ struct ClientReplyOptions {
 // Turns an upstream/cached answer (without OPT) into the reply for this client:
 // client ID, RD from the query, RA=1, AD only if authenticated and wanted, our own
 // OPT if the client used EDNS, and TC=1 with empty sections if it does not fit.
-size_t finalizeForClient(const uint8_t* answer, size_t len, const Query& q,
-                         const ClientReplyOptions& opt, uint8_t* out, size_t cap);
+size_t finalizeForClient(const uint8_t* answer, size_t len, const Query& q, const ClientReplyOptions& opt,
+                         uint8_t* out, size_t cap);
 
 }  // namespace dns

@@ -13,12 +13,14 @@ using util::writeU32Be;
 
 namespace {
 
-constexpr size_t kRrFixed = 10;    // type, class, ttl, rdlength
-constexpr size_t kOptFixed = 11;   // root name + kRrFixed
-constexpr size_t kEdeOptLen = 6;   // code(2) len(2) info-code(2)
+constexpr size_t kRrFixed = 10;   // type, class, ttl, rdlength
+constexpr size_t kOptFixed = 11;  // root name + kRrFixed
+constexpr size_t kEdeOptLen = 6;  // code(2) len(2) info-code(2)
 constexpr uint16_t kDoBit = 0x8000;
 
-uint32_t normalizeTtl(uint32_t ttl) { return ttl > 0x7FFFFFFFu ? 0 : ttl; }
+uint32_t normalizeTtl(uint32_t ttl) {
+  return ttl > 0x7FFFFFFFu ? 0 : ttl;
+}
 
 // One resource record located inside a message.
 struct Rr {
@@ -152,8 +154,7 @@ bool ReplyWriter::begin(const Query& q, Rcode rc) {
   rcode_ = static_cast<uint16_t>(rc);
   const size_t qlen = q.hasQuestion ? q.qnameWireLen + 4u : 0u;
   if (!reserve(kHeaderSize + qlen)) return false;
-  const uint16_t flags = flag::kQr | flag::kRa |
-                         (q.flags & (flag::kOpcodeMask | flag::kRd | flag::kCd)) |
+  const uint16_t flags = flag::kQr | flag::kRa | (q.flags & (flag::kOpcodeMask | flag::kRd | flag::kCd)) |
                          (rcode_ & flag::kRcodeMask);
   writeU16Be(buf_, q.id);
   writeU16Be(buf_ + 2, flags);
@@ -203,16 +204,15 @@ bool ReplyWriter::addAuthoritySoa(uint32_t ttl) {
   // Owner = question name; MNAME and RNAME = root; serial 1, then refresh, retry,
   // expire, and MINIMUM = ttl so the negative answer is cached for `ttl` seconds.
   constexpr uint16_t kRdlen = 1 + 1 + 20;
-  if (!enter(Section::kAuthority) || !hasQuestion_ || !reserve(2 + kRrFixed + kRdlen))
-    return false;
+  if (!enter(Section::kAuthority) || !hasQuestion_ || !reserve(2 + kRrFixed + kRdlen)) return false;
   uint8_t* p = buf_ + pos_;
   writeU16Be(p, 0xC000 | kHeaderSize);
   writeU16Be(p + 2, kTypeSoa);
   writeU16Be(p + 4, kClassIn);
   writeU32Be(p + 6, ttl);
   writeU16Be(p + 10, kRdlen);
-  p[12] = 0;  // MNAME
-  p[13] = 0;  // RNAME
+  p[12] = 0;                  // MNAME
+  p[13] = 0;                  // RNAME
   writeU32Be(p + 14, 1);      // serial
   writeU32Be(p + 18, 3600);   // refresh
   writeU32Be(p + 22, 600);    // retry
@@ -264,8 +264,8 @@ size_t buildBlockedReply(const Query& q, const BlockedReplyOptions& opt, uint8_t
   return w.finish();
 }
 
-size_t buildAddressReply(const Query& q, const uint8_t* v4, const uint8_t* v6, uint32_t ttl,
-                         uint8_t* out, size_t cap) {
+size_t buildAddressReply(const Query& q, const uint8_t* v4, const uint8_t* v6, uint32_t ttl, uint8_t* out,
+                         size_t cap) {
   if (!q.hasQuestion) return 0;
   ReplyWriter w(out, cap);
   w.begin(q, Rcode::kNoError);
@@ -298,8 +298,8 @@ size_t buildErrorReply(const Query& q, Rcode rc, uint8_t* out, size_t cap) {
 // ---------------------------------------------------------------------------
 // Forwarding
 
-size_t buildUpstreamQuery(const Query& q, uint16_t id, const UpstreamQueryOptions& opt,
-                          uint8_t* out, size_t cap) {
+size_t buildUpstreamQuery(const Query& q, uint16_t id, const UpstreamQueryOptions& opt, uint8_t* out,
+                          size_t cap) {
   if (!q.hasQuestion) return 0;
   const size_t base = kHeaderSize + q.qnameWireLen + 4 + kOptFixed;
   size_t pad = 0;
@@ -400,8 +400,7 @@ size_t stripTrailingOpt(uint8_t* msg, size_t len, const ResponseInfo& info) {
 
 bool ageTtls(uint8_t* msg, size_t len, uint32_t elapsed) {
   if (len < kHeaderSize) return false;
-  const uint32_t total = static_cast<uint32_t>(readU16Be(msg + 6)) + readU16Be(msg + 8) +
-                         readU16Be(msg + 10);
+  const uint32_t total = static_cast<uint32_t>(readU16Be(msg + 6)) + readU16Be(msg + 8) + readU16Be(msg + 10);
   size_t pos = questionEnd(msg, len);
   if (pos == 0) return false;
   for (uint32_t i = 0; i < total; i++) {
@@ -416,8 +415,8 @@ bool ageTtls(uint8_t* msg, size_t len, uint32_t elapsed) {
   return true;
 }
 
-size_t finalizeForClient(const uint8_t* answer, size_t len, const Query& q,
-                         const ClientReplyOptions& opt, uint8_t* out, size_t cap) {
+size_t finalizeForClient(const uint8_t* answer, size_t len, const Query& q, const ClientReplyOptions& opt,
+                         uint8_t* out, size_t cap) {
   if (len < kHeaderSize) return 0;
   const size_t optLen = q.edns.present ? kOptFixed : 0;
   const size_t limit = opt.sizeLimit < cap ? opt.sizeLimit : cap;

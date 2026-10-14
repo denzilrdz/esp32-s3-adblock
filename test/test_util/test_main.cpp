@@ -29,7 +29,9 @@ static void test_crc32_incremental_equals_one_shot() {
   TEST_ASSERT_EQUAL_HEX32(0x414FA339u, c);
 }
 
-static void test_crc32_empty_is_zero() { TEST_ASSERT_EQUAL_HEX32(0, util::crc32(nullptr, 0)); }
+static void test_crc32_empty_is_zero() {
+  TEST_ASSERT_EQUAL_HEX32(0, util::crc32(nullptr, 0));
+}
 
 static void test_byte_helpers_round_trip() {
   uint8_t b[8];
@@ -94,32 +96,43 @@ static std::string hex(const uint8_t* p, size_t n) {
 static void test_sha256_vectors() {
   uint8_t out[32];
   util::sha256(reinterpret_cast<const uint8_t*>("abc"), 3, out);
-  TEST_ASSERT_EQUAL_STRING("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", hex(out, 32).c_str());
+  TEST_ASSERT_EQUAL_STRING("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+                           hex(out, 32).c_str());
   std::string a(1000, 'a');  // multi-block, streamed in odd chunks
   util::Sha256 s;
-  for (size_t i = 0; i < a.size(); i += 7) s.update(reinterpret_cast<const uint8_t*>(a.data() + i), std::min<size_t>(7, a.size() - i));
+  for (size_t i = 0; i < a.size(); i += 7)
+    s.update(reinterpret_cast<const uint8_t*>(a.data() + i), std::min<size_t>(7, a.size() - i));
   s.finish(out);
-  TEST_ASSERT_EQUAL_STRING("41edece42d63e8d9bf515a9ba6932e1c20cbc9f5a5d134645adb5db1b9737ea3", hex(out, 32).c_str());
+  TEST_ASSERT_EQUAL_STRING("41edece42d63e8d9bf515a9ba6932e1c20cbc9f5a5d134645adb5db1b9737ea3",
+                           hex(out, 32).c_str());
 }
 
 static void test_hmac_sha256_vectors() {
   uint8_t out[32];
   const char* msg = "what do ya want for nothing?";
-  util::hmacSha256(reinterpret_cast<const uint8_t*>("Jefe"), 4, reinterpret_cast<const uint8_t*>(msg), strlen(msg), out);
-  TEST_ASSERT_EQUAL_STRING("5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843", hex(out, 32).c_str());
+  util::hmacSha256(reinterpret_cast<const uint8_t*>("Jefe"), 4, reinterpret_cast<const uint8_t*>(msg),
+                   strlen(msg), out);
+  TEST_ASSERT_EQUAL_STRING("5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843",
+                           hex(out, 32).c_str());
   std::string longKey(100, 'k');  // key longer than the block size is hashed first
-  util::hmacSha256(reinterpret_cast<const uint8_t*>(longKey.data()), longKey.size(), reinterpret_cast<const uint8_t*>("msg"), 3, out);
-  TEST_ASSERT_EQUAL_STRING("bd56a1782c2830e8abc6ed866a57a1230661e650b84c62f7ee3accc5fa5af491", hex(out, 32).c_str());
+  util::hmacSha256(reinterpret_cast<const uint8_t*>(longKey.data()), longKey.size(),
+                   reinterpret_cast<const uint8_t*>("msg"), 3, out);
+  TEST_ASSERT_EQUAL_STRING("bd56a1782c2830e8abc6ed866a57a1230661e650b84c62f7ee3accc5fa5af491",
+                           hex(out, 32).c_str());
 }
 
 static void test_pbkdf2_sha256_vectors() {
   uint8_t out[64];
-  util::pbkdf2Sha256(reinterpret_cast<const uint8_t*>("passwd"), 6, reinterpret_cast<const uint8_t*>("salt"), 4, 1, out, 64);
+  util::pbkdf2Sha256(reinterpret_cast<const uint8_t*>("passwd"), 6, reinterpret_cast<const uint8_t*>("salt"),
+                     4, 1, out, 64);
   TEST_ASSERT_EQUAL_STRING(
-      "55ac046e56e3089fec1691c22544b605f94185216dde0465e68b9d57c20dacbc49ca9cccf179b645991664b39d77ef317c71b845b1e30bd509112041d3a19783",
+      "55ac046e56e3089fec1691c22544b605f94185216dde0465e68b9d57c20dacbc49ca9cccf179b645991664b39d77ef317c71b8"
+      "45b1e30bd509112041d3a19783",
       hex(out, 64).c_str());
-  util::pbkdf2Sha256(reinterpret_cast<const uint8_t*>("password"), 8, reinterpret_cast<const uint8_t*>("salt"), 4, 4096, out, 32);
-  TEST_ASSERT_EQUAL_STRING("c5e478d59288c841aa530db6845c4c8d962893a001ce4e11a4963873aa98134a", hex(out, 32).c_str());
+  util::pbkdf2Sha256(reinterpret_cast<const uint8_t*>("password"), 8,
+                     reinterpret_cast<const uint8_t*>("salt"), 4, 4096, out, 32);
+  TEST_ASSERT_EQUAL_STRING("c5e478d59288c841aa530db6845c4c8d962893a001ce4e11a4963873aa98134a",
+                           hex(out, 32).c_str());
 }
 
 static void test_constant_time_equal() {

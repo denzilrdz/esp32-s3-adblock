@@ -32,7 +32,9 @@ struct Header {
   int64_t buildTime = 0;
 };
 
-inline size_t fileSizeFor(uint32_t count) { return kHeaderSize + kBucketTableBytes + size_t{4} * count; }
+inline size_t fileSizeFor(uint32_t count) {
+  return kHeaderSize + kBucketTableBytes + size_t{4} * count;
+}
 
 enum class FormatError {
   kNone,
