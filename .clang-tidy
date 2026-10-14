@@ -1,4 +1,4 @@
-# Static analysis for the portable core (pio check -e native). Embedded-oriented:
+# Static analysis for the portable core (tools/lint.sh). Embedded-oriented:
 # bug-finding checks on, style nits that fight fixed-size/low-level code off.
 Checks: >
   -*,
