@@ -39,6 +39,8 @@ struct HttpGetResult {
 class IHttpClient {
  public:
   virtual ~IHttpClient() = default;
+  // Follows redirects. The body is passed to `sink` only for a final 200 response;
+  // other statuses (304, 404, ...) are reported in the result without a body.
   virtual HttpGetResult get(const HttpGetRequest& req, IHttpBodySink& sink) = 0;
 };
 

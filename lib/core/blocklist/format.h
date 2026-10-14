@@ -70,6 +70,10 @@ class StreamValidator {
   void feed(const uint8_t* data, size_t len);
   // Call after the last byte. Returns kNone if header, size and CRC are all correct.
   FormatError finish();
+  // Error found so far (bad header, limits, or more bytes than the header allows);
+  // lets a download abort early instead of writing megabytes of junk to flash.
+  FormatError earlyError() const { return error_; }
+  bool headerSeen() const { return headerChecked_; }
   const Header& header() const { return header_; }
 
  private:
