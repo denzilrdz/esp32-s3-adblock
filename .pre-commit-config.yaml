@@ -1,0 +1,28 @@
+# Git pre-commit hooks (install: tools/setup-dev.sh). All hooks are local and use the
+# pinned tools in .venv, so nothing is downloaded at commit time.
+repos:
+  - repo: local
+    hooks:
+      - id: no-secrets-h
+        name: never commit src/secrets.h
+        entry: src/secrets.h holds real passwords; it must stay untracked (see .gitignore)
+        language: fail
+        files: ^src/secrets\.h$
+      - id: format
+        name: clang-format + black (check)
+        entry: tools/format.sh --check
+        language: system
+        pass_filenames: false
+        files: \.(c|cc|cpp|h|hpp|py)$
+      - id: native-tests
+        name: native unit tests (pio test -e native)
+        entry: pio test -e native
+        language: system
+        pass_filenames: false
+        files: ^(lib/core/|test/|platformio\.ini)
+      - id: tool-tests
+        name: blocklist tool tests
+        entry: python3 -m unittest discover -s tools -p test_*.py
+        language: system
+        pass_filenames: false
+        files: ^tools/.*\.py$

@@ -77,7 +77,8 @@ docs/          ARCHITECTURE.md (+ GitHub Pages web installer files)
 ## Testing rule
 
 Every feature or bug fix comes with native tests in `test/`. `pio test -e native`
-must pass before every commit. Use fakes behind the HAL interfaces; see skill
+must pass before every commit (the pre-commit hook from `tools/setup-dev.sh` runs it,
+plus the format check and a guard against committing `src/secrets.h`). Use fakes behind the HAL interfaces; see skill
 `native-tests`.
 
 ## Git rules
