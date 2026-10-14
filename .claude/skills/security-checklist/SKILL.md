@@ -93,6 +93,15 @@ network as hostile.
 - **Untracked files:** never overwrite `src/secrets.h` (or other gitignored user files)
   without looking at it first.
 
+## 8. CI / GitHub Actions changes
+
+- [ ] `.venv/bin/zizmor --persona=auditor .github/` and `.venv/bin/actionlint` are
+      clean (also run by pre-commit and CI).
+- [ ] New actions are pinned to a full commit SHA from the action's own repo, with a
+      `# vX.Y.Z` comment (Dependabot updates both, after a 7-day cooldown).
+- [ ] Job `permissions` are minimal and commented; workflow default is `{}`.
+- [ ] No `pull_request_target`/`workflow_run` triggers; no untrusted `${{ }}` in `run:`.
+
 ## Quick scans
 
 ```bash

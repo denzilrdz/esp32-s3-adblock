@@ -6,6 +6,18 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+- CI: native tests failed on Linux GCC, which predefines `unix` as a macro; coverage
+  failed because `pio` was only installed in `.venv`.
+
+### Security
+- GitHub Actions hardening: workflows audited with zizmor (auditor persona) and
+  actionlint in CI and pre-commit; checkout credentials not persisted; per-job
+  least-privilege permissions; job timeouts; no template expansion in scripts;
+  release builds never use caches; Sigstore build-provenance attestations for
+  release binaries; Dependabot cooldown; CODEOWNERS for CI and security-relevant
+  paths.
+
 ## [0.1.0] - 2026-10-14
 
 First release of the ESP32-S3 fork of

@@ -1,0 +1,6 @@
+# Changes to CI/CD, release and security-relevant files need the maintainer's review
+# (enforced when branch protection requires code-owner reviews).
+* @denzilrdz
+/.github/ @denzilrdz
+/installer/ @denzilrdz
+/src/web/ @denzilrdz

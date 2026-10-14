@@ -1,14 +1,14 @@
 name: build
 
-# Every push to main and every pull request: format check, clang-tidy, unit tests
-# (with coverage), the blocklist tool tests, and firmware builds for all boards.
+# Every push to main and every pull request: workflow lint (zizmor, actionlint), format
+# check, clang-tidy, unit tests (with coverage), the blocklist tool tests, and firmware
+# builds for all boards.
 on:
   push:
     branches: [main]
   pull_request:
 
-permissions:
-  contents: read
+permissions: {}
 
 concurrency:
   group: build-${{ github.ref }}
@@ -16,14 +16,26 @@ concurrency:
 
 jobs:
   quality:
+    name: quality
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read # checkout
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           enable-cache: true
       - name: Install pinned tools (uv.lock)
         run: uv sync --locked
+      - name: Lint workflows (zizmor security audit + actionlint)
+        env:
+          GH_TOKEN: ${{ github.token }} # read-only: lets zizmor check advisories and impostor commits
+        run: |
+          .venv/bin/zizmor --persona=auditor .github/
+          .venv/bin/actionlint
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.platformio
@@ -44,13 +56,21 @@ jobs:
           path: coverage/
 
   firmware:
+    name: firmware (${{ matrix.env }})
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read # checkout
     strategy:
       fail-fast: false
       matrix:
         env: [esp32s3, c3, esp32dev]
+    env:
+      PIO_ENV: ${{ matrix.env }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           enable-cache: true
@@ -62,9 +82,9 @@ jobs:
       - name: Placeholder secrets (real ones are gitignored; first boot uses the setup code)
         run: cp src/secrets.example.h src/secrets.h
       - name: Build
-        run: .venv/bin/pio run -e ${{ matrix.env }}
+        run: .venv/bin/pio run -e "$PIO_ENV"
       - name: Factory image
-        run: tools/make_factory.sh ${{ matrix.env }}
+        run: tools/make_factory.sh "$PIO_ENV"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: firmware-${{ matrix.env }}

@@ -34,6 +34,7 @@ pio test -e native -f test_dns           # one test folder
 tools/coverage.sh                        # native tests + coverage -> coverage/index.html
 tools/format.sh [--check]                # clang-format (C/C++) + black (Python)
 tools/lint.sh                            # clang-tidy on lib/core (.clang-tidy)
+.venv/bin/zizmor --persona=auditor .github/ && .venv/bin/actionlint   # workflow lint
 tools/make_factory.sh esp32s3            # merged image flashable at 0x0 (after a build)
 python3 tools/build_blocklist.py out.bin # build a format-v2 blocklist (stdlib only)
 python3 -m unittest discover -s tools -p 'test_*.py'   # tool tests
@@ -118,6 +119,10 @@ native tests; pre-push = clang-tidy + esp32s3 firmware build.
 - **First boot:** a placeholder/weak `WEB_PASS` never works; the serial console prints
   a one-time setup code. ArduinoOTA stays off until `OTA_PASS` is real (10+ chars).
 - **IPv6 / browser secure DNS bypass** the blocker: docs/ROUTER_SETUP.md.
+- **GitHub Actions:** pin every action to a full commit SHA with a `# vX.Y.Z` comment,
+  `persist-credentials: false` on checkout, per-job `permissions` with a comment per
+  scope, `timeout-minutes`, no `${{ }}` inside `run:` (pass via `env:`), no caches in
+  release.yml. zizmor (auditor) + actionlint must be clean (CI and pre-commit).
 - **SSH alias:** the `origin` remote uses the `github-denzil` host alias from
   `~/.ssh/config`; don't rewrite it to `github.com`.
 - **macOS:** `pio` is at `/opt/homebrew/bin/pio` (or `.venv/bin/pio`). Don't name test

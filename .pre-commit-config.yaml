@@ -29,6 +29,12 @@ repos:
         language: system
         pass_filenames: false
         files: ^tools/.*\.py$
+      - id: workflow-lint
+        name: GitHub Actions lint (zizmor + actionlint)
+        entry: bash -c '.venv/bin/zizmor --offline --persona=auditor .github/ && .venv/bin/actionlint'
+        language: system
+        pass_filenames: false
+        files: ^\.github/
       - id: lint
         name: clang-tidy (lib/core)
         entry: tools/lint.sh

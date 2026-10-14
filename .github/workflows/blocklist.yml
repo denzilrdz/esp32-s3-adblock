@@ -9,14 +9,23 @@ on:
     - cron: "17 4 * * 1"   # Mondays 04:17 UTC
   workflow_dispatch:
 
-permissions:
-  contents: write
+permissions: {}
+
+concurrency:
+  group: blocklist
+  cancel-in-progress: false
 
 jobs:
   build:
+    name: build
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write # update the 'blocklist' release assets
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       # The builder only needs the Python standard library (runner's python3).
       - name: Build default blocklist (fails if any source is unreachable)
         run: python3 tools/build_blocklist.py blocklist.bin 2>&1 | tee build.log
@@ -38,7 +47,7 @@ jobs:
           notes="Auto-built $(date -u +%F): ${entries} entries (StevenBlack base + Hagezi Light).
 
           Device setting (Blocklist URL):
-          https://github.com/${{ github.repository }}/releases/download/blocklist/blocklist.bin"
+          https://github.com/${GITHUB_REPOSITORY}/releases/download/blocklist/blocklist.bin"
           if gh release view blocklist >/dev/null 2>&1; then
             gh release edit blocklist --notes "$notes"
           else

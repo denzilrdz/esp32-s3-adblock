@@ -1,49 +1,70 @@
 name: release
 
-# On a version tag (vX.Y.Z): build every board, attach binaries to a GitHub Release
-# with notes from CHANGELOG.md, and publish the browser installer to GitHub Pages.
+# On a version tag (vX.Y.Z): build every board, attach binaries with build-provenance
+# attestations to a GitHub Release (notes from CHANGELOG.md), and publish the browser
+# installer to GitHub Pages. No caches here: release artifacts never consume cache
+# entries another workflow could have poisoned.
 on:
   push:
     tags: ["v*"]
 
-permissions:
-  contents: read
+permissions: {}
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   firmware:
+    name: firmware (${{ matrix.env }})
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read # checkout
     strategy:
       matrix:
         env: [esp32s3, c3, esp32dev]
+    env:
+      PIO_ENV: ${{ matrix.env }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          enable-cache: false
       - run: uv sync --locked
       - name: Tag must match FW_VERSION in platformio.ini
         run: |
           want="${GITHUB_REF_NAME#v}"
           grep -q "FW_VERSION=\\\\\"${want}\\\\\"" platformio.ini || { echo "platformio.ini FW_VERSION != ${want}"; exit 1; }
       - run: cp src/secrets.example.h src/secrets.h
-      - run: .venv/bin/pio run -e ${{ matrix.env }}
+      - run: .venv/bin/pio run -e "$PIO_ENV"
       - name: Collect binaries
         run: |
           v="${GITHUB_REF_NAME}"
-          b=".pio/build/${{ matrix.env }}"
-          tools/make_factory.sh ${{ matrix.env }} "dist/factory-${{ matrix.env }}-${v}.bin"
-          cp "$b/firmware.bin" "dist/firmware-${{ matrix.env }}-${v}.bin"
-          cp "$b/firmware.elf" "dist/firmware-${{ matrix.env }}-${v}.elf"
+          b=".pio/build/${PIO_ENV}"
+          tools/make_factory.sh "$PIO_ENV" "dist/factory-${PIO_ENV}-${v}.bin"
+          cp "$b/firmware.bin" "dist/firmware-${PIO_ENV}-${v}.bin"
+          cp "$b/firmware.elf" "dist/firmware-${PIO_ENV}-${v}.elf"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: dist-${{ matrix.env }}
           path: dist/
 
   release:
+    name: release
     needs: firmware
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     permissions:
-      contents: write
+      contents: write # create the release and upload assets
+      id-token: write # sign build-provenance attestations (Sigstore)
+      attestations: write # store the attestations
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: dist-*
@@ -55,23 +76,31 @@ jobs:
           awk -v v="$v" '$0 ~ "^## \\[" v "\\]" {p=1; next} /^## \[/ {if (p) exit} p' CHANGELOG.md > notes.md
           test -s notes.md || { echo "CHANGELOG.md has no section for ${v}"; exit 1; }
       - name: Checksums
-        run: cd dist && sha256sum *.bin > SHA256SUMS
+        run: cd dist && sha256sum ./*.bin > SHA256SUMS
+      - name: Build-provenance attestations (verify with 'gh attestation verify <file> -R <owner/repo>')
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist/*.bin
       - name: Create release
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release create "$GITHUB_REF_NAME" dist/* --title "$GITHUB_REF_NAME" --notes-file notes.md --verify-tag
 
   installer:
+    name: installer
     needs: firmware
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     permissions:
-      pages: write
-      id-token: write
+      pages: write # deploy the installer site
+      id-token: write # authenticate the Pages deployment
     environment:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: dist-*

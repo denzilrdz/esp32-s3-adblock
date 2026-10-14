@@ -32,6 +32,10 @@ schema), MINOR (features), PATCH (fixes).
 - Builds `esp32s3`, `c3`, `esp32dev` (tools from `uv.lock`, placeholder `secrets.h`).
 - Attaches `firmware-<env>-vX.Y.Z.bin`, `factory-<env>-vX.Y.Z.bin` (flash at 0x0),
   `firmware-<env>-vX.Y.Z.elf` (for crash decoding) and `SHA256SUMS` to the release.
+- Creates Sigstore build-provenance attestations for every `.bin`. Users verify a
+  download with `gh attestation verify factory-esp32s3-vX.Y.Z.bin -R denzilrdz/esp32-s3-adblock`.
+- Uses no caches (a poisoned cache can't reach release artifacts) and never cancels
+  an in-progress release.
 - Deploys the browser installer to GitHub Pages: `installer/index.html` +
   `manifest.json` (all three chips) + esp-web-tools vendored from the npm tarball
   pinned in `installer/esp-web-tools.lock` (SHA-512 checked). Needs Pages set to
