@@ -5,8 +5,8 @@ sinkhole for the ESP32-S3 (WROOM-1-N16R8: 16 MB flash, 8 MB octal PSRAM). It is 
 fork of [M-Abozaid/esp32-c3-adblock](https://github.com/M-Abozaid/esp32-c3-adblock)
 (MIT). Read it before changing anything in `lib/core/` or `src/tasks/`.
 
-Status: **approved design (Checkpoint 2)**. Sections marked *(verify in Phase 4)*
-rest on an assumption that must be confirmed against the real toolchain or hardware.
+Status: **implemented in v0.1.0.** Items marked *(verify on hardware)* are confirmed
+against the toolchain and SDK sources but not yet measured on a real board.
 
 ---
 
@@ -82,40 +82,50 @@ and runs under `pio test -e native`) and a thin **platform layer** that implemen
 the core's interfaces on the ESP32.
 
 ```
-lib/core/                     portable C++17, unit-tested natively
+lib/core/                     portable C++17, unit-tested natively (pio test -e native)
   dns/        message.{h,cpp}     parse/validate queries, build replies, EDNS0,
                                   truncation, blocked/NODATA/SERVFAIL synthesis
-              name.{h,cpp}        wire-name <-> lowercase text, label walking
+              name.{h,cpp}        wire-name parsing/compare, bounds-checked
+              local_zones.{h,cpp} localhost, private reverse zones, canary domains
+              query_policy.h      IQueryPolicy: forward / block / ban
   blocklist/  hash.h              FNV-1a 64 -> 48-bit domain hash
-              format.{h,cpp}      on-flash header, validation, CRC
-              index.{h,cpp}       bucketed lookup over a memory or file source
-              domain_set.{h,cpp}  small custom block/allow sets
-              policy.{h,cpp}      decision: allow / block / ban / local-answer
+              format.{h,cpp}      v2 header, streaming + full-file validation, CRC
+              index.{h,cpp}       MemoryIndex, FileIndex, IndexHolder (lock-free swap)
+              matcher.{h,cpp}     custom allow/block sets + parent-domain matching
   cache/      response_cache.{h,cpp}  fixed-pool LRU + TTL, slab payloads
   upstream/   transport.h         ITransport (strategy interface)
               framing.{h,cpp}     DoT 2-byte length framing, DoH HTTP/1.1 codec
               health.{h,cpp}      per-upstream health state machine
               forwarder.{h,cpp}   ordered fallback chain, in-flight table, hedging
   sched/      daily_scheduler.{h,cpp}  02:00 local trigger, retry, dedupe
-  update/     updater.{h,cpp}     download -> validate -> swap state machine
-  config/     config.{h,cpp}      typed settings, validation, (de)serialisation
+  update/     updater.{h,cpp}     download -> validate -> swap, boot recovery
+  config/     config.{h,cpp}      settings, validation, NVS, upstream chain builder
+  auth/       auth.{h,cpp}        password hashing, setup code, lockout, Host/Origin
   hal/        clock.h, random.h, kv_store.h, file_system.h, http_client.h,
               logger.h            hardware-abstraction interfaces
-  util/       crc32, span, result<T>, ring buffer, fixed pool
+  util/       crc32, sha256 (+HMAC, PBKDF2), civil_time, bytes
 
 src/                          ESP32 only (Arduino core 2.0.17 / ESP-IDF 4.4)
   main.cpp                    composition root: builds objects, injects
                               dependencies, starts tasks
-  platform/   esp_clock, esp_random, nvs_kv_store, littlefs_fs,
-              arduino_http_client, dot_transport (esp_tls),
-              doh_transport (esp_tls), udp_transport (lwIP), psram_alloc,
-              rtos (Mutex/Queue/Task RAII wrappers)
-  tasks/      dns_io_task, upstream_task, tcp53_task, web_task, maintenance_task
-  web/        routes.cpp, page.h (dashboard), portal.cpp (Wi-Fi setup)
+  platform/   esp_clock.h, esp_random.h, serial_logger.h, rtos.h (Mutex),
+              psram.h, littlefs_fs.h, nvs_kv_store.h, esp_http.* (HTTPS client),
+              tls_stream.* (mbedTLS + lwIP), transports.* (DoT, DoH, UDP),
+              crt_bundle.h
+  tasks/      dns_service.*       dns_io, dns_tcp and dns_up tasks
+  app/        blocklist_manager.* list install/update, rules, status
+              clients.*           client table, bans, pause, MAC lookups
+              app_policy.h        the DNS policy used by the tasks
+  web/        dashboard.*         REST API + security checks
+              page.h              dashboard page
+              portal.*            Wi-Fi setup access point
 
 test/                         Unity tests, one folder per area (test_dns, ...)
-  fakes/                      FakeClock, FakeTransport, FakeHttp, MemFs, MemKv
-tools/                        build_blocklist.py (+ tests), sign_firmware.py
+  fakes/                      FakeClock, FakeRandom, FakeTransport, FakeHttpClient,
+                              MemFileSystem, MemKvStore, packet/list builders
+tools/                        build_blocklist.py (+ tests), make_factory.sh,
+                              setup-dev.sh, format.sh, lint.sh, coverage.sh
+installer/                    browser installer page (deployed by release CI)
 ```
 
 `lib/core` must never include `Arduino.h`, FreeRTOS, lwIP or ESP-IDF headers. CI
@@ -130,15 +140,15 @@ enforces this by building it in the `native` environment.
 ```mermaid
 flowchart LR
     C[LAN client] -- UDP/53 --> IO
-    C -- TCP/53 --> T53[tcp53_task]
+    C -- TCP/53 --> T53[dns_tcp]
     subgraph core1 [Core 1]
-      IO[dns_io_task<br/>prio 10] -->|validate + parse| P{policy}
+      IO[dns_io<br/>prio 10] -->|validate + parse| P{policy}
       P -- banned / blocked --> SYN[synthesize reply<br/>0.0.0.0 / :: / NODATA]
       P -- local name --> LOC[local answer<br/>localhost, PTR, canary]
       P -- allowed --> CA{cache hit?}
       CA -- yes --> RW[rewrite id + TTLs<br/>EDNS, truncate]
       CA -- no --> Q[(upstream queue<br/>fixed slots)]
-      Q --> UP[upstream_task<br/>prio 8]
+      Q --> UP[dns_up<br/>prio 8]
       UP --> CH[fallback chain]
       CH --> DOT1[DoT 1.1.1.1:853]
       CH --> DOT2[DoT 9.9.9.9:853]
@@ -154,7 +164,7 @@ flowchart LR
     T53 --> P
 ```
 
-1. `dns_io_task` owns the UDP/53 socket. It waits in `select()` on that socket and
+1. `dns_io` owns the UDP/53 socket. It waits in `select()` on that socket and
    on a loopback "wake" socket (self-pipe pattern), so it sleeps until there is
    work and never polls.
 2. Each datagram is validated (§5.1). Invalid → FORMERR/NOTIMP/drop.
@@ -164,12 +174,12 @@ flowchart LR
 5. Allowed names are looked up in the **response cache**. Hits are served
    immediately with the client's id, decremented TTLs and fresh EDNS.
 6. Misses are copied into a fixed slot of the **query pool** and the slot index is
-   posted to the **upstream queue**. `dns_io_task` returns to `select()` at once.
-7. `upstream_task` drains the queue, sends queries through the active transport
+   posted to the **upstream queue**. `dns_io` returns to `select()` at once.
+7. `dns_up` drains the queue, sends queries through the active transport
    (pipelined on DoT), matches replies via the **in-flight table**, inserts into the
    cache and posts the finished reply slot to the **reply queue**, then writes one
    byte to the wake socket.
-8. `dns_io_task` sends the reply from the UDP/53 socket (the only task that touches
+8. `dns_io` sends the reply from the UDP/53 socket (the only task that touches
    it — lwIP is built without `LWIP_NETCONN_FULLDUPLEX`, so a socket must not be
    used from two tasks at once).
 
@@ -183,8 +193,8 @@ do microsecond work.
 | Task | Core | Prio | Stack | Watchdog | Role |
 |---|---|---|---|---|---|
 | lwIP `tcpip` / Wi-Fi (IDF) | 0 | 18 / 23 | IDF | — | network stack |
-| `dns_io_task` | 1 | 10 | 6 KB | yes | UDP/53 receive, policy, cache, replies |
-| `upstream_task` | 1 | 8 | 10 KB | yes | transports, chain, health, cache insert |
+| `dns_io` | 1 | 10 | 6 KB | yes | UDP/53 receive, policy, cache, replies |
+| `dns_up` | 1 | 8 | 12 KB | yes | transports, chain, health, cache insert |
 | `dns_tcp` | 0 | 5 | 6 KB | yes | TCP/53, ≤ 2 connections, 10 s idle (PSRAM boards only) |
 | `web` | 0 | 3 | 8 KB | yes | dashboard, REST API, ArduinoOTA |
 | maintenance (Arduino `loopTask`) | 1 | 1 | 16 KB | yes | Wi-Fi supervision, scheduler, blocklist update (HTTPS), MAC lookups, resolver re-pointing, OTA health mark |
@@ -210,8 +220,8 @@ panic on, watching IDLE0. We do **not** call `esp_task_wdt_init()` again. Each o
 our tasks calls `esp_task_wdt_add(NULL)` and `esp_task_wdt_reset()` once per loop
 iteration (IDF 4.4 signatures; IDF 5 changed them). Every blocking call in a
 watched task has a timeout below 5 s; the updater resets the watchdog after each
-downloaded chunk. *(verify in Phase 4: whether IDF 4.4 allows raising the timeout
-at runtime.)*
+downloaded chunk, and long blocklist validations feed it through a progress callback.
+The 5 s timeout is kept as is.
 
 ---
 
@@ -390,8 +400,8 @@ stateDiagram-v2
   today. A reboot at 02:05 therefore runs once, and a reboot at 02:30 after a
   successful run does not run again.
 - **ETag:** we store the `ETag` from the last 200 response and send
-  `If-None-Match`. GitHub release downloads redirect to a CDN that returns an ETag.
-  *(verify in Phase 4 that the CDN answers 304)*. If it does not, the CRC in the
+  `If-None-Match`. GitHub release downloads redirect to a CDN that returns an ETag
+  *(verify on hardware that the CDN answers 304)*. If it does not, the CRC in the
   downloaded header is compared with the live list's, so an identical list is still
   not swapped.
 - **Flash space:** the temp file and the live file coexist. With about 7.9 MB of
@@ -402,12 +412,13 @@ stateDiagram-v2
   2. Rename the live file to `/blocklist.old`, then `/blocklist.tmp` → live, then
      delete `.old`. On boot, a leftover `.old` with a missing or invalid live file
      is restored.
-  3. Allocate a new PSRAM buffer, read the file into it and verify it again.
-  4. `blocklist_.store(newIndex, std::memory_order_release)`.
-  5. Wait for a grace period, then free the old buffer. `dns_io_task` and
-     `tcp53_task` each publish a "quiescent generation" counter after every query.
-     The old index is freed once every reader has passed the swap generation (an
-     RCU-style scheme with no lock on the read path).
+  3. Allocate a new PSRAM buffer and read the file into it.
+  4. `IndexHolder::publish()`: the holder has two slots and a reader count per slot.
+     A reader increments its slot's count, re-checks the current slot, reads, and
+     decrements. The writer fills the spare slot, switches `current`, waits until
+     the old slot's count is zero, then frees it. Readers never take a lock; the
+     handshake uses sequentially consistent atomics (a store-then-load pattern that
+     acquire/release alone does not make safe).
   6. If PSRAM cannot hold both buffers, the device temporarily switches to the
      file-backed index on the new file, frees the old buffer, loads the new one,
      then switches back. Blocking never stops.
@@ -449,10 +460,10 @@ timeout)`, `close()`, plus `pipelined()`. Implementations:
 - **Keep-alive:** Cloudflare and Quad9 close idle DoT connections after about 10 s
   (measured). We do not keep a connection warm with dummy queries: the session is
   reopened lazily on the next query, using **TLS session resumption**
-  (`mbedtls_ssl_get_session`/`set_session` on the `esp_tls` context, since
-  `esp_tls`'s own ticket API is not compiled into the prebuilt library). A
-  resumed handshake skips the ECDHE and certificate cost. *(verify in Phase 4:
-  handshake times on hardware.)*
+  (`TlsStream` drives mbedTLS directly on an lwIP socket and keeps the session with
+  `mbedtls_ssl_get_session`/`set_session`, because `esp_tls`'s ticket API is not
+  compiled into the prebuilt library). A resumed handshake skips the ECDHE and
+  certificate cost *(verify on hardware: handshake times)*.
 - **Deadlines:** a query has 2.5 s in total. If the active upstream does not answer
   within 1.2 s, the query is re-sent once to the next healthy upstream. At the
   deadline the client gets SERVFAIL (upstream sent nothing, W8).
@@ -584,11 +595,9 @@ automatically. This is a circuit-breaker with exponential backoff.
 - **Firmware OTA:**
   - Browser upload and ArduinoOTA require the dashboard password and OTA password
     respectively.
-  - **Optional signed images:** `tools/sign_firmware.py` appends an ECDSA-P256
-    signature of the SHA-256 of `firmware.bin`. If a public key is compiled in, the
-    device hashes the image while writing it and verifies it with mbedTLS
-    (`mbedtls_pk_verify`) before `Update.end()` marks the slot bootable; a bad
-    signature aborts the update. The private key stays offline or in a CI secret.
+  - **Signed images: not implemented yet** (see §15). Firmware uploads are protected
+    by the dashboard password and ArduinoOTA by `OTA_PASS` (disabled until set);
+    release binaries come with `SHA256SUMS`.
   - **Rollback:** the prebuilt bootloader has `CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE`.
     Arduino's `verifyRollbackLater()` hook is overridden, so a new image stays
     "pending verify" until it has had Wi-Fi and a running DNS service for 60 s; only
@@ -614,17 +623,17 @@ automatically. This is a circuit-breaker with exponential backoff.
 
 | Failure | Behaviour |
 |---|---|
-| **Wi-Fi drops** | `maintenance_task` reconnects with backoff (1 s → 30 s); `dns_io_task` keeps running (nothing to receive). After 10 min of failure the device reboots; a never-configured device opens the setup portal (upstream behaviour). DoT sessions are closed and lazily reopened. |
+| **Wi-Fi drops** | The Wi-Fi driver reconnects automatically; the maintenance task logs it and reboots after 10 min without Wi-Fi (a never-configured device opens the setup portal). `dns_io` keeps running (nothing to receive). DoT sessions fail and are lazily reopened. |
 | **One upstream fails** | Health FSM marks it Degraded → Down; the chain moves to the next one; backoff probes bring it back. |
 | **All encrypted upstreams fail** (e.g. port 853 and 443 blocked) | Plain-UDP fallback with a loud log and dashboard banner, or SERVFAIL in strict mode. The cache keeps serving hits either way. |
 | **All upstreams fail** (internet down) | Cache hits still served; misses get SERVFAIL after 2.5 s so clients fail fast instead of hanging. Blocked names are still blocked. |
 | **Blocklist download corrupt / truncated / wrong format** | Validation fails, temp file deleted, old list stays live, result shown on the dashboard, retry hourly (max 6), then next day. |
 | **Power loss during swap** | Boot-time recovery: valid live file → use it; else valid `.old` → restore it; else start with an empty list (fail open) and schedule an immediate download. |
-| **PSRAM missing / wrong memory_type** | Boot detects `psramFound() == false`, logs an error, and falls back to the file-backed lite index with a small internal-RAM cache. |
+| **PSRAM missing / wrong memory_type** | `havePsram()` is false, so the device uses the lite profile: file-backed index, 512-entry internal-RAM cache, UDP only. |
 | **Clock not synced** | DoT still works (validity dates are not checked; see §7.1); the scheduler does nothing until sync; the dashboard shows "time not synced". NTP uses `pool.ntp.org` plus hard-coded `time.cloudflare.com` IPs (162.159.200.1, 162.159.200.123), so it works even if the device's own DNS is not ready. |
 | **Task hangs** | TWDT panic → core dump to flash (`coredump` partition) → reboot. The dump is decoded on the Mac (see the `debugging` skill). |
 | **Bad firmware** | App rollback (§9). |
-| **Device's own lookups** (blocklist host, NTP pool) | Resolved through our own pipeline via the lwIP stub pointed at `127.0.0.1`, so they also go over DoT. *(verify in Phase 4: lwIP loopback support in the prebuilt libs; fallback is to point the stub at the active plain upstream, which leaks only those two hostnames.)* |
+| **Device's own lookups** (blocklist host, NTP pool) | The station interface's DNS server is set to `127.0.0.1` (re-applied every minute after DHCP renewals), so they go through our own pipeline and over DoT. `CONFIG_LWIP_NETIF_LOOPBACK` is enabled in the prebuilt libs. |
 
 ---
 
@@ -651,7 +660,7 @@ one DNS session is open.
 |---|---|
 | Blocklist index (one buffer; up to 2 during swap if free) | 1.9 MB at 400k names; cap 1M names (4.3 MB) |
 | Response cache: entry pool (16k × 48 B) + payload arena | 0.8 MB + 2 MB |
-| Query log ring (last 2 000 queries for the dashboard) | 0.2 MB |
+| Pending-query pool (32 slots × ~4.6 KB: query + reply buffer) | 0.15 MB |
 | Stats, client table (256 clients), custom sets | < 0.2 MB |
 | **Free** | ≥ 1 MB at a 1M-name list (more during swap via the file-backed bridge) |
 
@@ -702,11 +711,11 @@ coredump,  data, coredump, 0xFF0000,  0x10000    64 KB   crash dumps
 | **State machine** | upstream health (§7.2), updater (§6.3), Wi-Fi supervisor | Explicit states and transitions are easy to test and reason about; no tangled flags. |
 | **Circuit breaker with exponential backoff + jitter** | health FSM | Stops hammering a dead upstream; recovers automatically. |
 | **Double buffering + atomic pointer swap (RCU-style)** | blocklist index | Lock-free reads on the hot path; an update is all-or-nothing. |
-| **Producer/consumer with fixed-size queues** | `dns_io_task` ⇄ `upstream_task` | The receiver never blocks (only 6 datagrams of socket buffer); bounded memory; back-pressure → SERVFAIL when full instead of unbounded growth. |
+| **Producer/consumer with fixed-size queues** | `dns_io` ⇄ `dns_up` | The receiver never blocks (only 6 datagrams of socket buffer); bounded memory; back-pressure → SERVFAIL when full instead of unbounded growth. |
 | **Object pool / slab allocator** | query pool, cache entries and payload arena | No `malloc` in the DNS hot path; no fragmentation over weeks of uptime (s60sc needed weekly reboots for this). |
 | **RAII** | `Socket`, `TlsSession`, `PsramBuffer` (`unique_ptr` + `heap_caps_free`), `FsFile`, `MutexLock` | Every exit path releases sockets, TLS contexts and buffers; lwIP has only 16 sockets in total. |
-| **Self-pipe wake-up** | loopback UDP socket woken by `upstream_task` | Lets `dns_io_task` sleep in a single `select()` on both "client packet" and "reply ready". |
-| **Result types instead of exceptions** | `util/result.h` | Explicit error paths; no exception cost or surprises in embedded code. |
+| **Self-pipe wake-up** | loopback UDP socket woken by `dns_up` | Lets `dns_io` sleep in a single `select()` on both "client packet" and "reply ready". |
+| **Explicit status values instead of exceptions** | `ParseStatus`, `FormatError`, `UpdateReport`, `IoStatus` | Explicit error paths; no exception cost or surprises in embedded code. |
 
 ---
 
@@ -768,3 +777,26 @@ Hello, which is up to websites and browsers, or a VPN closes that gap.
   "secure DNS" in a browser bypass the blocker by design.
 - **Hard-coded DNS in apps/devices** (e.g. some smart TVs use 8.8.8.8) can only be
   stopped by router firewall rules, which is outside this device's control.
+
+---
+
+## 15. Platform notes and roadmap
+
+**Why Arduino-ESP32 2.0.17 (ESP-IDF 4.4).** It is the last core supported by the
+official PlatformIO `espressif32` platform, which keeps builds reproducible with stock
+tooling. Arduino-ESP32 3.x (ESP-IDF 5) is current upstream but on PlatformIO needs the
+community [pioarduino](https://github.com/pioarduino/platform-espressif32) platform.
+Moving there would bring a newer mbedTLS/CA bundle and IDF 5 APIs (watchdog config,
+`esp_tls` session tickets) and is the main planned platform change. Every place that
+depends on IDF 4.4 specifics is marked in the code and in the skills.
+
+**Planned (not in v0.1.0):**
+
+- Signed firmware images (ECDSA-P256 over the image hash, public key compiled in,
+  verified before `Update.end()`).
+- Answering DNS on IPv6 (needs more lwIP sockets; see the socket budget in §11).
+- An optional DHCP server so the device can hand itself out as DNS when the ISP router
+  locks the DNS fields.
+- Certificate validity-date checks once the clock is synced (the prebuilt mbedTLS has
+  `MBEDTLS_HAVE_TIME_DATE` off).
+- Per-query log ring in PSRAM for the dashboard.
