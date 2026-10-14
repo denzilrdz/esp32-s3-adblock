@@ -28,7 +28,7 @@ pio run -e esp32s3 -t uploadfs           # flash LittleFS image from data/
 pio device monitor -e esp32s3            # serial monitor (115200, exception decoder)
 pio test -e native                       # all native unit tests
 pio test -e native -f test_dns           # one test folder
-tools/setup-dev.sh                       # once: pinned dev tools into .venv + git hook
+tools/setup-dev.sh                       # once: uv sync (.venv from uv.lock) + git hooks
 tools/coverage.sh                        # native tests + coverage -> coverage/index.html
 tools/format.sh [--check]                # clang-format (C/C++) + black (Python)
 tools/lint.sh                            # clang-tidy on lib/core (.clang-tidy)
@@ -77,8 +77,8 @@ docs/          ARCHITECTURE.md (+ GitHub Pages web installer files)
 ## Testing rule
 
 Every feature or bug fix comes with native tests in `test/`. `pio test -e native`
-must pass before every commit (the pre-commit hook from `tools/setup-dev.sh` runs it,
-plus the format check and a guard against committing `src/secrets.h`). Use fakes behind the HAL interfaces; see skill
+must pass before every commit. Hooks from `tools/setup-dev.sh`: pre-commit = secrets
+guard, format check, native tests; pre-push = clang-tidy + esp32s3 firmware build. Use fakes behind the HAL interfaces; see skill
 `native-tests`.
 
 ## Git rules

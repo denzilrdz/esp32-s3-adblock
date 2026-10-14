@@ -1,5 +1,8 @@
-# Git pre-commit hooks (install: tools/setup-dev.sh). All hooks are local and use the
-# pinned tools in .venv, so nothing is downloaded at commit time.
+# Git hooks (install: tools/setup-dev.sh). All hooks are local and use the pinned tools
+# in .venv (uv.lock), so nothing is downloaded at commit/push time.
+#   pre-commit: fast checks (seconds)        pre-push: slower checks (lint + firmware build)
+default_install_hook_types: [pre-commit, pre-push]
+default_stages: [pre-commit]
 repos:
   - repo: local
     hooks:
@@ -15,14 +18,28 @@ repos:
         pass_filenames: false
         files: \.(c|cc|cpp|h|hpp|py)$
       - id: native-tests
-        name: native unit tests (pio test -e native)
-        entry: pio test -e native
+        name: native unit tests
+        entry: .venv/bin/pio test -e native
         language: system
         pass_filenames: false
         files: ^(lib/core/|test/|platformio\.ini)
       - id: tool-tests
         name: blocklist tool tests
-        entry: python3 -m unittest discover -s tools -p test_*.py
+        entry: .venv/bin/python -m unittest discover -s tools -p test_*.py
         language: system
         pass_filenames: false
         files: ^tools/.*\.py$
+      - id: lint
+        name: clang-tidy (lib/core)
+        entry: tools/lint.sh
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
+        files: ^lib/core/
+      - id: firmware-build
+        name: firmware build (esp32s3)
+        entry: .venv/bin/pio run -e esp32s3
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
+        files: ^(src/|lib/|platformio\.ini|partitions_)
