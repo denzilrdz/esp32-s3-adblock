@@ -11,6 +11,12 @@ A small board powered from your router's USB port, no Raspberry Pi needed.
 
 Based on [M-Abozaid/esp32-c3-adblock](https://github.com/M-Abozaid/esp32-c3-adblock).
 
+> [!NOTE]
+> **Project status: pre-release (v0.1.0 in progress).** The code builds and passes
+> its test suite in CI, but it has not been tested on real hardware yet. Expect rough
+> edges until the first tagged release. The web installer and release downloads appear
+> with that release.
+
 ```
 client query ──▶ dns_io task ──▶ local name? ─▶ answer on the device
                       │        └▶ blocked?    ─▶ 0.0.0.0 / :: / NODATA
@@ -20,6 +26,16 @@ client query ──▶ dns_io task ──▶ local name? ─▶ answer on the de
                                   └▶ DNS-over-HTTPS if port 853 is blocked
                                      └▶ plain DNS only if all encrypted upstreams are down
 ```
+
+## Why this project
+
+- **No Raspberry Pi to maintain:** a small board powered by the router, no SD card
+  to corrupt, no OS to patch.
+- **Your ISP stops seeing your lookups:** unlike a plain DNS sinkhole, allowed queries
+  leave your network encrypted.
+- **Compared with the original C3 version:** the blocklist and an answer cache live in
+  PSRAM (faster, up to 1M domains), upstream DNS is encrypted, the list updates itself,
+  and the dashboard is password-protected.
 
 ## Features
 
@@ -55,11 +71,21 @@ partition table needs 16 MB of flash.
 Cheap or loose cables can brown out the board during Wi-Fi transmission; if it reboots
 randomly, try another cable or charger. Keep the PCB antenna away from metal.
 
+## Requirements
+
+- An **ESP32-S3-DevKitC-1 (N16R8)** or another board with the same module, and a USB
+  data cable.
+- A **2.4 GHz Wi-Fi** network.
+- **Admin access to your router**, to set its DHCP DNS server (and ideally turn off
+  IPv6 DNS advertisement).
+- To build from source: [PlatformIO](https://platformio.org/) (CLI or the VS Code
+  extension) and Python 3.11+. To use the web installer: Chrome or Edge on a computer.
+
 ## Quick start
 
 ### 1. Flash
 
-**Option A: from the browser.** Open the
+**Option A: from the browser** (from the first release on). Open the
 [web installer](https://denzilrdz.github.io/esp32-s3-adblock/) in Chrome or Edge,
 plug the board in (DevKitC-1: the port marked **UART**), click *Install*.
 
@@ -96,12 +122,19 @@ Give the device a fixed IP (DHCP reservation in the router), then set the router
 > advertisement or IPv6 on the LAN. Airtel routers often lock the DNS fields; the guide
 > lists workarounds. Full walkthrough and checks: **[docs/ROUTER_SETUP.md](docs/ROUTER_SETUP.md)**.
 
-Check it works:
+### 5. Check it works
 
-```bash
-dig @<device-ip> doubleclick.net    # 0.0.0.0   (blocked)
-dig @<device-ip> example.com        # real answer (forwarded over DNS-over-TLS)
+From any computer on the network (replace `192.168.1.50` with the device's IP):
+
+```console
+$ dig @192.168.1.50 doubleclick.net +short
+0.0.0.0
+$ dig @192.168.1.50 example.com +short
+<one or more real IP addresses>
 ```
+
+The first name is blocked; the second gets a real answer, fetched over DNS-over-TLS. After the router change, the dashboard's client table should
+fill up with your devices and the "blocked" counter should start rising.
 
 ## How it works
 
@@ -120,7 +153,7 @@ those names instead (pick the order on the dashboard). If port 853 is blocked th
 device uses DNS-over-HTTPS (port 443). Only when every encrypted upstream is down does
 it fall back to plain DNS, and it says so loudly in the log and on the dashboard.
 Why not run a full recursive resolver like Unbound on the chip? See
-[ARCHITECTURE.md §13](docs/ARCHITECTURE.md): it's slow on this CPU and would actually
+[ARCHITECTURE.md §13](docs/ARCHITECTURE.md#13-is-an-unbound-style-recursive-resolver-feasible-here): it's slow on this CPU and would actually
 show the ISP *more*.
 
 **Cache.** Answers are cached in PSRAM with their real TTLs, so repeat lookups are
@@ -191,7 +224,7 @@ or doesn't get there within 5 minutes, the device rolls back to the previous ver
 
 | Symptom | Fix |
 |---|---|
-| Ads still show on some devices | They use another DNS (IPv6, private DNS, hard-coded). Check the client table and [ROUTER_SETUP.md §6](docs/ROUTER_SETUP.md). |
+| Ads still show on some devices | They use another DNS (IPv6, private DNS, hard-coded). Check the client table and [ROUTER_SETUP.md §6](docs/ROUTER_SETUP.md#6-check-that-it-works). |
 | Dashboard says **PLAIN DNS** | Ports 853 and 443 to 1.1.1.1/9.9.9.9 fail from your network. Check with `kdig @1.1.1.1 +tls example.com` from a computer. |
 | "clock not synced" stays | NTP (UDP 123) to 162.159.200.1 / pool.ntp.org is blocked; the daily update waits for the clock. |
 | Blocklist "invalid list" | The URL isn't a format-v2 file (`tools/build_blocklist.py` output), or the download was cut off. The old list stays active. |
@@ -199,7 +232,8 @@ or doesn't get there within 5 minutes, the device rolls back to the previous ver
 | Board boot-loops after flashing | Wrong memory type: N16R8 must use `qio_opi` (the `esp32s3` env does). |
 | Random reboots | Power: try another USB cable/port. Check the reset reason in the boot log. |
 
-More: `.claude/skills/debugging/SKILL.md` (serial logs, crash decoding, memory).
+More (serial logs, crash decoding, memory):
+[.claude/skills/debugging/SKILL.md](.claude/skills/debugging/SKILL.md).
 
 ## Development
 
@@ -210,7 +244,22 @@ tools/coverage.sh         # coverage report
 tools/format.sh; tools/lint.sh
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). Security reports: [SECURITY.md](SECURITY.md).
+Contributions are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md) and the
+[Code of Conduct](CODE_OF_CONDUCT.md). Changes are listed in
+[CHANGELOG.md](CHANGELOG.md).
+
+## Roadmap
+
+Planned (details in [ARCHITECTURE.md §15](docs/ARCHITECTURE.md#15-platform-notes-and-roadmap)): move to
+Arduino-ESP32 3.x / ESP-IDF 5, signed firmware images, DNS over IPv6, an optional
+DHCP server, and certificate date checks.
+
+## Support
+
+- **Questions and bugs:** [open an issue](https://github.com/denzilrdz/esp32-s3-adblock/issues/new/choose).
+  Include the boot log from the serial console and your firmware version.
+- **Security problems:** please don't open a public issue. Report them privately as
+  described in [SECURITY.md](SECURITY.md).
 
 ## Credits
 
