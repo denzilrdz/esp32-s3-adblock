@@ -329,10 +329,10 @@ DO bit echoed, and the extended RCODE recomputed. Upstream queries carry our own
   queried in memory, so the DNS hot path does no flash I/O. **On C3/ESP32 (no
   PSRAM)** the same format is queried straight from the file: two small reads per
   hash (the bucket bounds, then the bucket). This is the "lite" profile.
-- **Legacy input:** the device also accepts upstream's headerless 40-bit sorted
-  blob, but only for manual upload, and only if strictly ascending. It is converted
-  on load. `build_blocklist.py` can also emit the legacy format for an unmodified
-  upstream device.
+- **Legacy input is not accepted.** Upstream's headerless 40-bit blob cannot be
+  converted to 48-bit hashes (the names are not in the file), and supporting a
+  second hash scheme is not worth it. `build_blocklist.py --format legacy` still
+  writes it for devices running the original firmware.
 - **Matching:** for `a.b.ads.example.com` we check `a.b.ads.example.com`,
   `b.ads.example.com`, `ads.example.com` and `example.com` (never the bare TLD).
   Unlike upstream, **no `www.` stripping**: parent matching already covers

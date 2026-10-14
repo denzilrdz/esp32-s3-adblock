@@ -37,6 +37,8 @@ jobs:
         run: |
           printf '||ads.example.com^\n@@||ok.example.org^\n||ok.example.org^\n0.0.0.0 hosts.example.com\nplain.example.com\n/^regex$/\n' > t.txt
           python3 tools/build_blocklist.py t.bin t.txt
-          test "$(stat -c%s t.bin)" -eq 15   # 3 entries x 5 bytes
+          test "$(stat -c%s t.bin)" -eq $((32 + 4 * 65537 + 4 * 3))   # v2: header + buckets + 3 entries
+          python3 tools/build_blocklist.py --format legacy t-legacy.bin t.txt
+          test "$(stat -c%s t-legacy.bin)" -eq 15                       # legacy: 3 entries x 5 bytes
       - name: Unit tests
         run: python3 -m unittest discover -s tools -p 'test_*.py' -v

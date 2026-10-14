@@ -29,8 +29,9 @@ Design: [ARCHITECTURE.md §6](../../../docs/ARCHITECTURE.md).
   `uint32 suffix[N]`, sorted within each bucket.
 - **Matching:** the name and each parent down to two labels (never the bare TLD).
   No `www.` stripping.
-- **Legacy:** upstream's headerless 40-bit sorted blob is accepted on manual
-  upload only, if strictly ascending.
+- **Legacy:** upstream's headerless 40-bit blob is **not** accepted by the device
+  (48-bit hashes can't be derived from it). `--format legacy` only exists for
+  devices still running the original esp32-c3-adblock firmware.
 - **Rule:** the C++ (`lib/core/blocklist/hash.h`, `format.cpp`) and Python
   (`tools/build_blocklist.py`) must agree. A test checks golden hashes on both
   sides; change them together.

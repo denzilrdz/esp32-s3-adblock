@@ -1,30 +1,84 @@
 import pathlib
+import struct
 import subprocess
 import sys
 import tempfile
 import unittest
+import zlib
 
-from build_blocklist import HASH_BYTES, fnv
+from build_blocklist import HASH_BYTES, fnv, hash48
+
+SCRIPT = pathlib.Path(__file__).with_name('build_blocklist.py')
+
+
+def run_builder(root, text, *flags):
+    source = root / 'hosts'
+    output = root / 'blocklist.bin'
+    source.write_text(text, encoding='utf-8')
+    subprocess.run([sys.executable, str(SCRIPT), *flags, str(output), str(source)],
+                   check=True, capture_output=True, text=True)
+    return output.read_bytes()
+
+
+def parse_v2(data):
+    magic, version, bits, prefix, flags, count, crc, built = struct.unpack_from('<4sBBBBIIq', data)
+    starts = struct.unpack_from('<65537I', data, 32)
+    suffixes = struct.unpack_from('<%dI' % count, data, 32 + 4 * 65537)
+    hashes = set()
+    for bucket in range(65536):
+        for i in range(starts[bucket], starts[bucket + 1]):
+            hashes.add((bucket << 32) | suffixes[i])
+    return dict(magic=magic, version=version, bits=bits, prefix=prefix, flags=flags,
+                count=count, crc=crc, built=built, starts=starts, suffixes=suffixes,
+                hashes=hashes)
 
 
 class BuildBlocklistTests(unittest.TestCase):
-    def test_hosts_line_includes_every_domain(self):
+    def test_hash48_golden_values_match_firmware(self):
+        # Same values as test/test_blocklist/test_main.cpp: change both together.
+        self.assertEqual(hash48('ads.example.com'), 0x3158979aa55e)
+        self.assertEqual(hash48('doubleclick.net'), 0x04cd127775cd)
+        self.assertEqual(hash48('example.com'), 0x46634e2714c6)
+
+    def test_v2_file_layout_header_and_crc(self):
         with tempfile.TemporaryDirectory() as directory:
-            root = pathlib.Path(directory)
-            source = root / 'hosts'
-            output = root / 'blocklist.bin'
-            source.write_text('0.0.0.0 ads.example.com tracker.example.com # comment\n'
-                              '127.0.0.1 metrics.example.com\n', encoding='utf-8')
+            data = run_builder(pathlib.Path(directory),
+                               '0.0.0.0 ads.example.com tracker.example.com # comment\n'
+                               '127.0.0.1 metrics.example.com\n'
+                               '||adguard.example^\n@@||allowed.example^\n||allowed.example^\n'
+                               'www.keep-www.example\n')
+        f = parse_v2(data)
+        self.assertEqual(f['magic'], b'ADBL')
+        self.assertEqual((f['version'], f['bits'], f['prefix'], f['flags']), (2, 48, 16, 0))
+        self.assertEqual(len(data), 32 + 4 * 65537 + 4 * f['count'])
+        self.assertEqual(f['crc'], zlib.crc32(data[32:]) & 0xFFFFFFFF)
+        self.assertEqual(f['starts'][0], 0)
+        self.assertEqual(f['starts'][-1], f['count'])
+        expected = {hash48(d) for d in ('ads.example.com', 'tracker.example.com',
+                                        'metrics.example.com', 'adguard.example',
+                                        'www.keep-www.example')}
+        self.assertEqual(f['hashes'], expected)  # allow rule removed, www. kept in v2
 
-            subprocess.run([sys.executable, str(pathlib.Path(__file__).with_name('build_blocklist.py')),
-                            str(output), str(source)], check=True, capture_output=True, text=True)
+    def test_v2_suffixes_sorted_within_buckets(self):
+        names = '\n'.join('d%d.example%d.com' % (i, i % 7) for i in range(3000))
+        with tempfile.TemporaryDirectory() as directory:
+            f = parse_v2(run_builder(pathlib.Path(directory), names))
+        self.assertEqual(f['count'], 3000)
+        self.assertEqual(len(f['hashes']), 3000)
+        for bucket in range(65536):
+            run = f['suffixes'][f['starts'][bucket]:f['starts'][bucket + 1]]
+            self.assertTrue(all(a < b for a, b in zip(run, run[1:])), bucket)
 
-            data = output.read_bytes()
-            hashes = {int.from_bytes(data[i:i + HASH_BYTES], 'little')
-                      for i in range(0, len(data), HASH_BYTES)}
-            expected = {fnv(domain.encode()) for domain in
-                        ('ads.example.com', 'tracker.example.com', 'metrics.example.com')}
-            self.assertEqual(hashes, expected)
+    def test_legacy_hosts_line_includes_every_domain(self):
+        with tempfile.TemporaryDirectory() as directory:
+            data = run_builder(pathlib.Path(directory),
+                               '0.0.0.0 ads.example.com tracker.example.com # comment\n'
+                               '127.0.0.1 metrics.example.com\n', '--format', 'legacy')
+        hashes = {int.from_bytes(data[i:i + HASH_BYTES], 'little')
+                  for i in range(0, len(data), HASH_BYTES)}
+        expected = {fnv(domain.encode()) for domain in
+                    ('ads.example.com', 'tracker.example.com', 'metrics.example.com')}
+        self.assertEqual(hashes, expected)
 
 
 if __name__ == '__main__':
