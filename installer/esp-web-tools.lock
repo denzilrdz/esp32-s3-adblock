@@ -1,0 +1,5 @@
+# esp-web-tools is vendored into the installer site at release time (never loaded from
+# a CDN). CI downloads this exact npm tarball and refuses it unless the SHA-512 matches.
+# To upgrade: npm view esp-web-tools@<version> dist.integrity, then update both lines.
+version=10.4.0
+integrity=sha512-3pwkeFFm5Fj7UQo8SJNYK5RXrtNCpq6X9QoI6bMT4GBZWgrJqjn0YvM9ihG74BtMoSFYXfmDtkehuxe50PTMPQ==

@@ -77,10 +77,19 @@ jobs:
           pattern: dist-*
           path: dist
           merge-multiple: true
+      - name: Vendor esp-web-tools (pinned version + SHA-512 from installer/esp-web-tools.lock)
+        run: |
+          ver=$(sed -n 's/^version=//p' installer/esp-web-tools.lock)
+          want=$(sed -n 's/^integrity=sha512-//p' installer/esp-web-tools.lock)
+          curl -fsSL "https://registry.npmjs.org/esp-web-tools/-/esp-web-tools-${ver}.tgz" -o ewt.tgz
+          got=$(openssl dgst -sha512 -binary ewt.tgz | base64 -w0)
+          test "$got" = "$want" || { echo "esp-web-tools ${ver}: integrity mismatch"; exit 1; }
+          mkdir -p ewt site/vendor/esp-web-tools
+          tar -xzf ewt.tgz -C ewt
+          cp ewt/package/dist/web/*.js site/vendor/esp-web-tools/
       - name: Assemble installer site
         run: |
           v="${GITHUB_REF_NAME}"
-          mkdir -p site
           cp installer/index.html site/
           for e in esp32s3 c3 esp32dev; do cp "dist/factory-${e}-${v}.bin" "site/factory-${e}.bin"; done
           sed "s/__VERSION__/${v#v}/" installer/manifest.json > site/manifest.json
