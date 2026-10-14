@@ -50,17 +50,17 @@ On macOS, coverage uses Apple clang `--coverage` with gcovr and
 #include "sched/daily_scheduler.h"
 #include "../fakes/fake_clock.h"
 
-static FakeClock clock;
+static FakeClock fakeClock;
 
-void setUp() { clock = FakeClock{}; }
+void setUp() { fakeClock = FakeClock{}; }
 void tearDown() {}
 
 static void test_runs_once_at_2am_ist() {
-  clock.setSynced(true);
-  clock.setLocal(2026, 10, 15, 1, 59, 0);          // 01:59 IST
-  DailyScheduler s(clock, /*hour=*/2, /*minute=*/0);
+  fakeClock.setSynced(true);
+  fakeClock.setLocal(2026, 10, 15, 1, 59, 0);          // 01:59 IST
+  DailyScheduler s(fakeClock, /*hour=*/2, /*minute=*/0);
   TEST_ASSERT_FALSE(s.due());
-  clock.advanceSeconds(60);                         // 02:00
+  fakeClock.advanceSeconds(60);                         // 02:00
   TEST_ASSERT_TRUE(s.due());
   s.markSuccess();
   TEST_ASSERT_FALSE(s.due());                       // no double run
@@ -88,3 +88,7 @@ int main(int, char**) {
 - The native env compiles with `-Wall -Wextra -Werror`, so warnings fail the test.
 - If a test needs a static/global, reset it in `setUp()`; tests in one binary share
   state.
+- Don't name test globals `clock`, `time` or `random`: they collide with libc
+  functions on macOS. Use `fakeClock`, `fakeRandom`.
+- Native tests run under AddressSanitizer + UBSan. An out-of-bounds read shows up
+  as `ERRORED`; run `pio test -e native -f <test> -v` to see the ASan report.
