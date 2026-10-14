@@ -185,6 +185,7 @@ UpdateReport BlocklistUpdater::installFile(const char* path) {
 
 UpdateReport BlocklistUpdater::swapAndInstall(const char* from, const blocklist::Header& h, const char* etag) {
   // live -> old, new -> live, delete old. A crash in between is repaired by recover().
+  installer_.prepareSwap();
   fs_.remove(paths_.old);
   const bool hadLive = fs_.exists(paths_.live);
   if (hadLive && !fs_.rename(paths_.live, paths_.old)) return fail(UpdateStatus::kFsError, "rename live->old");

@@ -1,5 +1,7 @@
 #include "platform/tls_stream.h"
 
+#include "platform/crt_bundle.h"
+
 #include <esp_err.h>
 #include <esp_system.h>
 #include <esp_task_wdt.h>
@@ -12,10 +14,6 @@
 #include <cerrno>
 #include <cstring>
 
-// ESP-IDF's CA bundle hook (components/mbedtls/esp_crt_bundle). Declared here because
-// <esp_crt_bundle.h> resolves to the Arduino WiFiClientSecure copy of that header,
-// which declares differently named arduino_* functions instead.
-extern "C" esp_err_t esp_crt_bundle_attach(void* conf);
 
 namespace platform {
 

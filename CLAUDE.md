@@ -43,8 +43,9 @@ Details, OTA and port troubleshooting: skill `build-flash`.
 ```
 lib/core/      portable C++17 logic, NO Arduino/IDF headers (tested natively)
   dns/ blocklist/ cache/ upstream/ sched/ update/ config/ hal/ util/
-src/           ESP32-only: main.cpp (composition root), platform/ (HAL impls),
-               tasks/ (FreeRTOS tasks), web/ (dashboard, portal)
+src/           ESP32-only: main.cpp (composition root), platform/ (HAL impls:
+               TLS, transports, LittleFS, NVS, HTTP), tasks/ (DNS service tasks),
+               app/ (blocklist manager), page.h (dashboard)
 test/          Unity tests: test/test_<area>/test_main.cpp, fakes in test/fakes/
 tools/         blocklist builder, signing, coverage/format scripts
 docs/          ARCHITECTURE.md (+ GitHub Pages web installer files)

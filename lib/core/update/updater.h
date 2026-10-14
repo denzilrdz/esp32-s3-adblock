@@ -55,6 +55,10 @@ struct UpdateReport {
 class IListInstaller {
  public:
   virtual ~IListInstaller() = default;
+  // Called right before the live file is renamed. An installer that serves lookups
+  // straight from the live file (lite boards) must release it here, because
+  // LittleFS does not support renaming/removing a file that is still open.
+  virtual void prepareSwap() {}
   virtual bool install(const char* path, const blocklist::Header& header) = 0;
 };
 

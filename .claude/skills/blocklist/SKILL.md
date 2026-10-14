@@ -53,7 +53,10 @@ python3 -m unittest discover -s tools -p 'test_*.py'
 
 ## Daily update (maintenance task)
 
-Code: `lib/core/sched/daily_scheduler.*`, `lib/core/update/updater.*`.
+Code: `lib/core/sched/daily_scheduler.*`, `lib/core/update/updater.*`, wired up in
+`src/app/blocklist_manager.*` (PSRAM/file index install, custom rules, NVS settings
+`bl_url`, `bl_hour`, `bl_min`, `bl_etag`, `sch_last`). HTTPS client:
+`src/platform/esp_http.*` (esp_http_client + CA bundle, manual redirects, ETag).
 
 1. Wait for NTP sync (and a plausible year). Timezone `IST-5:30`.
 2. Due when local time ≥ 02:00 + jitter (0–10 min) and the last success date ≠

@@ -19,6 +19,7 @@ using testbl::Bytes;
 
 class RecordingInstaller final : public update::IListInstaller {
  public:
+  void prepareSwap() override { prepared++; }
   bool install(const char* path, const blocklist::Header& h) override {
     calls++;
     lastPath = path;
@@ -26,6 +27,7 @@ class RecordingInstaller final : public update::IListInstaller {
     return succeed;
   }
   int calls = 0;
+  int prepared = 0;
   std::string lastPath;
   uint32_t lastCount = 0;
   bool succeed = true;
@@ -82,6 +84,7 @@ static void test_successful_update_swaps_file_installs_and_stores_etag() {
   TEST_ASSERT_FALSE(fs->exists("/blocklist.tmp"));
   TEST_ASSERT_FALSE(fs->exists("/blocklist.old"));
   TEST_ASSERT_EQUAL(1, installer.calls);
+  TEST_ASSERT_EQUAL(1, installer.prepared);  // file index released before the rename
   TEST_ASSERT_EQUAL_STRING("/blocklist.bin", installer.lastPath.c_str());
   char etag[32];
   TEST_ASSERT_TRUE(kv.getString(BlocklistUpdater::kEtagKey, etag, sizeof(etag)));
