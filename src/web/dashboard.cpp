@@ -57,9 +57,9 @@ String macString(const uint8_t* m) {
   return s;
 }
 
-String formatTime(int64_t unix) {
-  if (unix <= 0) return "never";
-  const time_t t = static_cast<time_t>(unix);
+String formatTime(int64_t unixSeconds) {
+  if (unixSeconds <= 0) return "never";
+  const time_t t = static_cast<time_t>(unixSeconds);
   struct tm tmv;
   localtime_r(&t, &tmv);
   char buf[24];

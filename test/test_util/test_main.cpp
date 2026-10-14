@@ -52,8 +52,8 @@ static void test_civil_epoch_and_ist_offset() {
   TEST_ASSERT_EQUAL(1, t.month);
   TEST_ASSERT_EQUAL(1, t.day);
   // 2026-10-14 20:30:00 UTC == 2026-10-15 02:00:00 IST
-  const int64_t unix = 1792009800;
-  t = util::civilFromUnix(unix, 19800);
+  const int64_t unixSeconds = 1792009800;
+  t = util::civilFromUnix(unixSeconds, 19800);
   TEST_ASSERT_EQUAL(2026, t.year);
   TEST_ASSERT_EQUAL(10, t.month);
   TEST_ASSERT_EQUAL(15, t.day);

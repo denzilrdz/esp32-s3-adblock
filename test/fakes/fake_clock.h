@@ -14,7 +14,7 @@ class FakeClock final : public hal::IClock {
 
   void setSynced(bool synced) { synced_ = synced; }
   void setUtcOffset(int32_t seconds) { offset_ = seconds; }
-  void setUnix(int64_t unix) { unix_ = unix; }
+  void setUnix(int64_t unixSeconds) { unix_ = unixSeconds; }
 
   // Sets wall time from a local (IST by default) civil time.
   void setLocal(int year, int month, int day, int hour, int minute, int second = 0) {
