@@ -1,0 +1,740 @@
+# Architecture
+
+This document describes the design of **esp32-s3-adblock**, a Pi-hole-style DNS
+sinkhole for the ESP32-S3 (WROOM-1-N16R8: 16 MB flash, 8 MB octal PSRAM). It is a
+fork of [M-Abozaid/esp32-c3-adblock](https://github.com/M-Abozaid/esp32-c3-adblock)
+(MIT). Read it before changing anything in `lib/core/` or `src/tasks/`.
+
+Status: **approved design (Checkpoint 2)**. Sections marked *(verify in Phase 4)*
+rest on an assumption that must be confirmed against the real toolchain or hardware.
+
+---
+
+## 1. Goals and non-goals
+
+**Goals**
+
+1. Block ads/trackers for the whole LAN by answering blocked names locally.
+2. Hide DNS query names from the ISP (Airtel) by sending all upstream traffic over
+   DNS-over-TLS (DoT), with DNS-over-HTTPS (DoH) as a fallback.
+3. Never break the internet: a dead upstream, a bad blocklist, or a reboot must
+   degrade gracefully, not stop name resolution.
+4. Keep the blocklist current without user action (daily at 02:00 IST).
+5. Keep core logic testable on a Mac without hardware.
+
+**Non-goals**
+
+- Full recursive resolution / local DNSSEC validation (see §11).
+- Blocking ads served from the same domain as content (e.g. YouTube video ads).
+- DHCP server (possible later; not in this release).
+- TLS on the dashboard (no realistic budget; see §9).
+
+---
+
+## 2. What we keep, fix, and borrow
+
+### From upstream (esp32-c3-adblock) — keep
+
+- Truncated FNV-1a hashes of domains instead of strings (compact, no per-entry
+  allocation, deterministic).
+- Parent-domain matching: a listed `ads.example.com` also blocks `x.ads.example.com`.
+- Captive-portal Wi-Fi provisioning, BOOT-held-at-power-on reset, mDNS name.
+- Dashboard auth model (Basic Auth + custom-header CSRF guard) and HTML escaping.
+- Upstream reply matching from issue #10 (random txid, match txid + question +
+  source, restore client txid).
+- The weekly CI blocklist build (`tools/build_blocklist.py`), extended.
+
+### Upstream weak points we fix
+
+| # | Weak point (upstream `src/main.cpp`) | Fix here |
+|---|---|---|
+| W1 | `forwardUpstream()` blocks the single `loop()` for up to 1 s per query; one slow answer stalls every client, the dashboard and OTA (#40). | Separate DNS I/O and upstream tasks with a queue; pipelined DoT with an in-flight table (§4). |
+| W2 | `beginBlocklistSwap()` deletes the live list **before** the new one is downloaded/validated; a failed update leaves no blocking (#21). | Download to a temp file, validate, then atomic swap; old list stays live on any failure (§6). |
+| W3 | Blocklist validation is `size % 5 == 0` only (#20). | Versioned header, CRC-32, count/size and sortedness checks (§6.2). |
+| W4 | Remote fetch uses `setInsecure()`. | Certificate verification with the ESP-IDF CA bundle. |
+| W5 | Remote fetch runs inside `loop()`, freezing DNS for the whole download. | Runs in the low-priority maintenance task. |
+| W6 | `MAX_RANGE = 256` clamp in `inFlash()` silently produces **false negatives** once buckets exceed 256 entries (≈1M+ hashes). Harmless on 4 MB, a real bug at S3 scale. | New bucketed index with exact bucket bounds (§6.1). |
+| W7 | No response cache; every allowed query goes upstream. | TTL-respecting LRU cache in PSRAM (§5). |
+| W8 | Upstream timeout → client gets **no reply**. | SERVFAIL after the deadline so clients retry promptly. |
+| W9 | No query validation (QR/opcode/QDCOUNT/class); EDNS dropped from blocked replies; non-A types get an empty answer; no TCP. | Full validation, EDNS0, AAAA → `::`, NODATA+SOA for other types, TC + TCP/53 (§5). |
+| W10 | Plain UDP to hard-coded 9.9.9.9:53. | Configurable DoT/DoH/UDP chain with health tracking (§4). |
+| W11 | Firmware OTA has no signature check. | Optional ECDSA-P256 signed images + app rollback (§9). |
+
+### Borrowed as *ideas only* from s60sc/ESP32_AdBlocker (AGPL-3.0 — no code copied)
+
+- Daily update at a fixed local time driven by NTP.
+- Persist the last good list in flash so boot does not need the network.
+- Keep the old list when an update fails (their issue #20: a failed update took the
+  whole network's DNS down).
+- A "check this domain" tool on the dashboard.
+- Local handling of `localhost` / private reverse zones instead of leaking them.
+
+What we deliberately do **not** take from it: exact-match-only lookups, O(n²)
+sorted inserts, answers rebuilt with a fixed 60 s TTL, single-threaded forwarding,
+and forced weekly reboots.
+
+---
+
+## 3. Module breakdown
+
+The code is split into a **portable core** (no Arduino or ESP-IDF headers; builds
+and runs under `pio test -e native`) and a thin **platform layer** that implements
+the core's interfaces on the ESP32.
+
+```
+lib/core/                     portable C++17, unit-tested natively
+  dns/        message.{h,cpp}     parse/validate queries, build replies, EDNS0,
+                                  truncation, blocked/NODATA/SERVFAIL synthesis
+              name.{h,cpp}        wire-name <-> lowercase text, label walking
+  blocklist/  hash.h              FNV-1a 64 -> 48-bit domain hash
+              format.{h,cpp}      on-flash header, validation, CRC
+              index.{h,cpp}       bucketed lookup over a memory or file source
+              domain_set.{h,cpp}  small custom block/allow sets
+              policy.{h,cpp}      decision: allow / block / ban / local-answer
+  cache/      response_cache.{h,cpp}  fixed-pool LRU + TTL, slab payloads
+  upstream/   transport.h         ITransport (strategy interface)
+              framing.{h,cpp}     DoT 2-byte length framing, DoH HTTP/1.1 codec
+              health.{h,cpp}      per-upstream health state machine
+              chain.{h,cpp}       ordered fallback chain + in-flight table
+  sched/      daily_scheduler.{h,cpp}  02:00 local trigger, retry, dedupe
+  update/     updater.{h,cpp}     download -> validate -> swap state machine
+  config/     config.{h,cpp}      typed settings, validation, (de)serialisation
+  hal/        clock.h, random.h, kv_store.h, file_system.h, http_client.h,
+              logger.h            hardware-abstraction interfaces
+  util/       crc32, span, result<T>, ring buffer, fixed pool
+
+src/                          ESP32 only (Arduino core 2.0.17 / ESP-IDF 4.4)
+  main.cpp                    composition root: builds objects, injects
+                              dependencies, starts tasks
+  platform/   esp_clock, esp_random, nvs_kv_store, littlefs_fs,
+              arduino_http_client, dot_transport (esp_tls),
+              doh_transport (esp_tls), udp_transport (lwIP), psram_alloc,
+              rtos (Mutex/Queue/Task RAII wrappers)
+  tasks/      dns_io_task, upstream_task, tcp53_task, web_task, maintenance_task
+  web/        routes.cpp, page.h (dashboard), portal.cpp (Wi-Fi setup)
+
+test/                         Unity tests, one folder per area (test_dns, ...)
+  fakes/                      FakeClock, FakeTransport, FakeHttp, MemFs, MemKv
+tools/                        build_blocklist.py (+ tests), sign_firmware.py
+```
+
+`lib/core` must never include `Arduino.h`, FreeRTOS, lwIP or ESP-IDF headers. CI
+enforces this by building it in the `native` environment.
+
+---
+
+## 4. Data flow and tasks
+
+### 4.1 Query path
+
+```mermaid
+flowchart LR
+    C[LAN client] -- UDP/53 --> IO
+    C -- TCP/53 --> T53[tcp53_task]
+    subgraph core1 [Core 1]
+      IO[dns_io_task<br/>prio 10] -->|validate + parse| P{policy}
+      P -- banned / blocked --> SYN[synthesize reply<br/>0.0.0.0 / :: / NODATA]
+      P -- local name --> LOC[local answer<br/>localhost, PTR, canary]
+      P -- allowed --> CA{cache hit?}
+      CA -- yes --> RW[rewrite id + TTLs<br/>EDNS, truncate]
+      CA -- no --> Q[(upstream queue<br/>fixed slots)]
+      Q --> UP[upstream_task<br/>prio 8]
+      UP --> CH[fallback chain]
+      CH --> DOT1[DoT 1.1.1.1:853]
+      CH --> DOT2[DoT 9.9.9.9:853]
+      CH --> DOH[DoH 1.1.1.1:443]
+      CH --> UDP[plain UDP<br/>optional]
+      UP -->|answer| CW[cache insert]
+      UP --> RQ[(reply queue)] --> IO
+    end
+    SYN --> IO
+    LOC --> IO
+    RW --> IO
+    IO -- reply --> C
+    T53 --> P
+```
+
+1. `dns_io_task` owns the UDP/53 socket. It waits in `select()` on that socket and
+   on a loopback "wake" socket (self-pipe pattern), so it sleeps until there is
+   work and never polls.
+2. Each datagram is validated (§5.1). Invalid → FORMERR/NOTIMP/drop.
+3. The **policy** decides: banned client, blocking paused, allowlist, custom
+   blocklist, main blocklist, local names.
+4. Blocked/local replies are built in place and sent immediately.
+5. Allowed names are looked up in the **response cache**. Hits are served
+   immediately with the client's id, decremented TTLs and fresh EDNS.
+6. Misses are copied into a fixed slot of the **query pool** and the slot index is
+   posted to the **upstream queue**. `dns_io_task` returns to `select()` at once.
+7. `upstream_task` drains the queue, sends queries through the active transport
+   (pipelined on DoT), matches replies via the **in-flight table**, inserts into the
+   cache and posts the finished reply slot to the **reply queue**, then writes one
+   byte to the wake socket.
+8. `dns_io_task` sends the reply from the UDP/53 socket (the only task that touches
+   it — lwIP is built without `LWIP_NETCONN_FULLDUPLEX`, so a socket must not be
+   used from two tasks at once).
+
+Why a hand-off at all: the prebuilt lwIP has `CONFIG_LWIP_UDP_RECVMBOX_SIZE = 6`,
+so a UDP socket buffers only six datagrams. Anything that blocks the receiver
+(a TLS handshake, a 300 ms upstream RTT) drops bursts. The receiver must only ever
+do microsecond work.
+
+### 4.2 Task layout
+
+| Task | Core | Prio | Stack | Watchdog | Role |
+|---|---|---|---|---|---|
+| lwIP `tcpip` / Wi-Fi (IDF) | 0 | 18 / 23 | IDF | — | network stack |
+| `dns_io_task` | 1 | 10 | 6 KB | yes | UDP/53 receive, policy, cache, replies |
+| `upstream_task` | 1 | 8 | 10 KB | yes | transports, chain, health, cache insert |
+| `tcp53_task` | 0 | 5 | 6 KB | yes | TCP/53, ≤ 4 connections, 10 s idle |
+| `web_task` | 0 | 3 | 8 KB | yes | dashboard, REST API, ArduinoOTA |
+| `maintenance_task` (Arduino `loopTask`) | 1 | 1 | 12 KB | yes | Wi-Fi supervision, NTP, scheduler, blocklist update, stats, OTA health mark |
+
+- DNS work is pinned to **core 1**, away from Wi-Fi/lwIP on core 0, and runs above
+  everything we own. It stays well below `tcpip` (18) so it can never starve the
+  network stack.
+- The updater does long blocking HTTP and flash writes, so it lives in the
+  lowest-priority task.
+- **Flash writes stall both cores** (the cache is disabled during SPI-flash erase
+  and program), and PSRAM is reached through the same cache. DNS therefore pauses
+  for milliseconds during blocklist and NVS writes. Writes are chunked so no
+  single stall is long.
+
+### 4.3 Watchdog
+
+The IDF already starts the task watchdog (TWDT) with `CONFIG_ESP_TASK_WDT_TIMEOUT_S = 5`,
+panic on, watching IDLE0. We do **not** call `esp_task_wdt_init()` again. Each of
+our tasks calls `esp_task_wdt_add(NULL)` and `esp_task_wdt_reset()` once per loop
+iteration (IDF 4.4 signatures; IDF 5 changed them). Every blocking call in a
+watched task has a timeout below 5 s; the updater resets the watchdog after each
+downloaded chunk. *(verify in Phase 4: whether IDF 4.4 allows raising the timeout
+at runtime.)*
+
+---
+
+## 5. DNS message handling
+
+### 5.1 Validation of client queries
+
+- Shorter than 12 bytes, or QR = 1: drop silently (prevents reflection loops).
+- OPCODE ≠ QUERY → NOTIMP. QDCOUNT ≠ 1 → FORMERR.
+- Question name: labels ≤ 63, name ≤ 255, no compression pointers in the question,
+  stays inside the packet → otherwise FORMERR.
+- QCLASS ≠ IN → REFUSED (also covers `version.bind` CHAOS probes).
+- At most one OPT RR in the additional section. A malformed OPT → FORMERR. An OPT
+  with version > 0 → BADVERS.
+
+### 5.2 Blocked replies
+
+Modelled on Pi-hole's `NULL` mode and AdGuard Home's `null_ip` mode:
+
+| Query type | Reply |
+|---|---|
+| A | NOERROR, one A record `0.0.0.0`, TTL = `blocked_ttl` (default 10 s) |
+| AAAA | NOERROR, one AAAA record `::` |
+| HTTPS (65), SVCB (64), any other type | NOERROR with **no answer (NODATA)** plus a synthetic SOA in the authority section, so clients cache the negative answer for `blocked_ttl` |
+| ANY | NOTIMP (RFC 8482 permits a minimal reply; no amplification) |
+
+All blocked and local replies use RA = 1, AA = 0 and AD = 0, copy RD and the ID,
+and echo the question.
+
+**Why not NXDOMAIN?** RFC 8020 lets resolvers treat NXDOMAIN as "nothing exists
+below this name", which can poison unrelated subdomains. NODATA is also what
+AdGuard Home returns for HTTPS records. Answering HTTPS/SVCB with NODATA matters
+because modern browsers query them first, and a real HTTPS record could carry
+ECH or `ipv4hint` addresses that bypass the A-record block.
+
+When the query carried an OPT RR, the reply carries one too: payload size 1232, the
+client's DO bit echoed, and an **Extended DNS Error** option (RFC 8914) with code
+15 "Blocked" (17 "Filtered" for a banned client). Clients that do not understand
+EDE ignore it.
+
+### 5.3 EDNS0 (RFC 6891)
+
+OPT is hop-by-hop. We strip it from upstream answers before caching. On every
+reply we build our own: advertised UDP size 1232 (DNS Flag Day 2020), the client's
+DO bit echoed, and the extended RCODE recomputed. Upstream queries carry our own OPT
+(size 1232, plus padding — see §5.6).
+
+### 5.4 Truncation and TCP
+
+- UDP reply limit = the client's OPT size clamped to [512, 1232], or 512 without
+  EDNS.
+- If an answer exceeds the limit, we send header + question + OPT with **TC = 1**
+  and empty sections (RFC 2181 §9, RFC 6891 §7). The client retries over TCP.
+- `tcp53_task` serves TCP/53 (RFC 7766 says resolvers MUST support TCP) with 2-byte
+  length framing, at most 4 concurrent connections and a 10 s idle timeout. It
+  uses the same policy, cache and upstream queue as UDP.
+- Upstream DoT/DoH answers are never truncated (stream transports), so we always
+  hold the full answer to cache.
+
+### 5.5 Local answers (no upstream leak)
+
+- `localhost.` and `*.localhost.` → `127.0.0.1` / `::1`.
+- Reverse lookups for RFC 1918/6303 private ranges (`10.in-addr.arpa`,
+  `168.192.in-addr.arpa`, ...) → NXDOMAIN locally. Optionally they can go to the
+  router instead, for local hostnames.
+- `use-application-dns.net` → NXDOMAIN. This is Firefox's canary domain; it tells
+  Firefox not to enable its built-in DoH, which would otherwise bypass the
+  blocker. On by default.
+- `mask.icloud.com` / `mask-h2.icloud.com` → NXDOMAIN (disables iCloud Private
+  Relay on the network). **Off by default**, because it changes Apple-device
+  behaviour.
+
+### 5.6 Optional privacy features (proposed defaults)
+
+| Feature | Default | What it does |
+|---|---|---|
+| EDNS padding (RFC 7830 / RFC 8467) | **on** | Pads upstream DoT/DoH queries to a multiple of 128 bytes, so query length leaks less about the name. We do not pad replies to LAN clients (plain UDP; no value). |
+| DNSSEC AD-flag pass-through (RFC 6840 §5.7–5.8) | **on** | Upstream queries set AD = 1. AD from an upstream reached over a verified DoT/DoH session is trusted and passed on, but only to clients that set AD or DO in their query. The dashboard shows the share of validated answers. AD is cleared on plain-UDP fallback (unauthenticated channel), and on blocked/local answers. |
+| Strict mode (no plain fallback) | off | See §7. |
+
+---
+
+## 6. Blocklist
+
+### 6.1 Format and index
+
+- **Hash:** FNV-1a 64-bit over the lowercase name without a trailing dot,
+  truncated to **48 bits**. Upstream used 40 bits; 48 bits gives 256× fewer false
+  positives for the same 16-bit prefix layout, with an aligned 4-byte suffix.
+  - At 1M listed names, the chance that a random unlisted name collides is
+    1M / 2⁴⁸ ≈ 3.6 × 10⁻⁹ per hash check, versus ≈ 9 × 10⁻⁷ at 40 bits.
+  - A collision only over-blocks, and the allowlist fixes it.
+  - Collisions within the list itself are reported by `build_blocklist.py`.
+- **Bucketed prefix index** (the idea from upstream issue #3, adapted): the top 16
+  bits pick one of 65 536 buckets. A table `uint32 bucket_start[65 537]` gives each
+  bucket's range in a sorted array of 32-bit suffixes. A lookup is one table read
+  plus a short scan or binary search, averaging about 15 entries per bucket at 1M.
+  The bucket bounds are exact, which removes upstream's `MAX_RANGE` false-negative
+  bug (W6).
+- **File layout** (`/blocklist.bin` on LittleFS):
+
+  ```
+  offset size  field
+  0      4     magic "ADBL"
+  4      1     format version = 2
+  5      1     hash_bits = 48
+  6      1     prefix_bits = 16
+  7      1     flags (reserved, 0)
+  8      4     entry count N (LE)
+  12     4     CRC-32 of everything after the header (LE)
+  16     8     build time, unix seconds (LE)
+  24     8     reserved (0)
+  32     4*65537  bucket_start[] (LE, monotonic, last == N)
+  ...    4*N   suffixes (LE), sorted ascending within each bucket
+  ```
+
+  At 400k names the file is about 1.86 MB; at 1M names, about 4.26 MB.
+- **On the S3** the whole file is read into one PSRAM buffer (`ps_malloc`) and
+  queried in memory, so the DNS hot path does no flash I/O. **On C3/ESP32 (no
+  PSRAM)** the same format is queried straight from the file: two small reads per
+  hash (the bucket bounds, then the bucket). This is the "lite" profile.
+- **Legacy input:** the device also accepts upstream's headerless 40-bit sorted
+  blob, but only for manual upload, and only if strictly ascending. It is converted
+  on load. `build_blocklist.py` can also emit the legacy format for an unmodified
+  upstream device.
+- **Matching:** for `a.b.ads.example.com` we check `a.b.ads.example.com`,
+  `b.ads.example.com`, `ads.example.com` and `example.com` (never the bare TLD).
+  Unlike upstream, **no `www.` stripping**: parent matching already covers
+  `www.` subdomains, and stripping over-blocked listed `www.` hosts.
+- **Custom rules:** a block set and an allow set (≤ 1000 entries each, sorted
+  hashes in RAM plus the strings in LittleFS). The allow set is checked first.
+  Allowing `x.example.com` exempts that name and its subdomains even if a parent
+  is listed. This fixes upstream's limitation that `@@` cannot carve out a
+  subdomain.
+
+### 6.2 Validation (a download is rejected unless all pass)
+
+1. HTTP 200 with a body (304 → "unchanged", see §6.3), via HTTPS with a verified
+   certificate.
+2. Content-Length (when present) ≤ the free space limit, and the body is fully
+   received.
+3. Header magic, version, `hash_bits`, `prefix_bits` and flags are as expected.
+4. File size == 32 + 4·65 537 + 4·N, and N ≤ `max_entries` (fits the PSRAM budget).
+5. The CRC-32 of the payload matches.
+6. `bucket_start` is monotonic with last == N, and the suffixes are sorted within
+   each bucket. This is checked during load, at O(N) cost, on the new buffer before
+   it is swapped in.
+7. N ≥ `min_entries` (default 1 000), which catches a source that silently
+   shrank.
+
+### 6.3 Daily update flow (02:00 IST)
+
+```mermaid
+stateDiagram-v2
+    [*] --> WaitTimeSync
+    WaitTimeSync --> Idle: NTP synced
+    Idle --> Download: 02:00 local (+ random 0–10 min jitter)\nor "update now"
+    Download --> Unchanged: 304 Not Modified\n(If-None-Match: stored ETag)
+    Download --> Validate: 200, written to /blocklist.tmp
+    Download --> Failed: network / HTTP / size error
+    Validate --> Swap: all checks pass
+    Validate --> Failed: any check fails (tmp deleted)
+    Swap --> Done: rename tmp -> live, load into PSRAM,\natomic pointer swap, free old
+    Unchanged --> Done
+    Done --> Idle: record time + result + ETag in NVS
+    Failed --> RetryWait: record error
+    RetryWait --> Download: +1 h (max 6 retries, then next 02:00)
+```
+
+- **Time sync gating:** nothing is scheduled until SNTP reports a sync. The clock is
+  then also checked for plausibility: year ≥ 2026.
+- **Timezone:** `configTzTime("IST-5:30", ...)`. India has no DST.
+- **No double runs:** the scheduler stores the local date of the last successful
+  run in NVS. The trigger fires only if `now ≥ today 02:00` and the last run date ≠
+  today. A reboot at 02:05 therefore runs once, and a reboot at 02:30 after a
+  successful run does not run again.
+- **ETag:** we store the `ETag` from the last 200 response and send
+  `If-None-Match`. GitHub release downloads redirect to a CDN that returns an ETag.
+  *(verify in Phase 4 that the CDN answers 304)*. If it does not, the CRC in the
+  downloaded header is compared with the live list's, so an identical list is still
+  not swapped.
+- **Flash space:** the temp file and the live file coexist. With about 7.9 MB of
+  LittleFS, each may be up to about 3.9 MB (≈ 900k names). The updater checks free
+  space before downloading.
+- **The swap (double buffering + atomic pointer):**
+  1. Validate `/blocklist.tmp`.
+  2. Rename the live file to `/blocklist.old`, then `/blocklist.tmp` → live, then
+     delete `.old`. On boot, a leftover `.old` with a missing or invalid live file
+     is restored.
+  3. Allocate a new PSRAM buffer, read the file into it and verify it again.
+  4. `blocklist_.store(newIndex, std::memory_order_release)`.
+  5. Wait for a grace period, then free the old buffer. `dns_io_task` and
+     `tcp53_task` each publish a "quiescent generation" counter after every query.
+     The old index is freed once every reader has passed the swap generation (an
+     RCU-style scheme with no lock on the read path).
+  6. If PSRAM cannot hold both buffers, the device temporarily switches to the
+     file-backed index on the new file, frees the old buffer, loads the new one,
+     then switches back. Blocking never stops.
+- Any failure leaves the old list fully active. The dashboard shows the last
+  attempt time, result, entry count, list build date and next scheduled run.
+
+---
+
+## 7. Upstream resolvers
+
+### 7.1 Strategy and chain
+
+`ITransport` is the strategy interface: `connect()`, `send(query)`, `poll(reply,
+timeout)`, `close()`, plus `pipelined()`. Implementations:
+
+| Transport | Endpoint (hard-coded IPs, no bootstrap DNS) | Verify name | Notes |
+|---|---|---|---|
+| DoT (RFC 7858) | 1.1.1.1:853, then 1.0.0.1:853 | `cloudflare-dns.com` | primary; pipelined |
+| DoT | 9.9.9.9:853, then 149.112.112.112:853 | `dns.quad9.net` | backup; pipelined |
+| DoH (RFC 8484) | 1.1.1.1:443, then 1.0.0.1:443 | `cloudflare-dns.com` | fallback if port 853 is blocked; HTTP/1.1 POST `application/dns-message`, keep-alive; sequential |
+| Plain UDP | 9.9.9.9:53, 1.1.1.1:53 | — | last resort, only if `allow_plain_fallback` |
+
+- **Quad9 is not offered over DoH.** Live testing showed that Quad9's DoH
+  endpoint answers HTTP/1.1 with `505 HTTP Version Not Supported` (it requires
+  HTTP/2), and this platform has no HTTP/2 client.
+- **TLS via `esp_tls`**, not `WiFiClientSecure`:
+  - We connect to the IP and set `common_name` to the provider hostname, which
+    `esp_tls` uses for both SNI and certificate verification.
+  - Certificates are checked against the ESP-IDF CA bundle already linked into the
+    prebuilt mbedTLS (`crt_bundle_attach = esp_crt_bundle_attach`), with no extra
+    files.
+  - mbedTLS 2.28 does not match IP SANs, so the hostname is mandatory.
+  - `CONFIG_MBEDTLS_HAVE_TIME_DATE` is not set in the prebuilt libraries, so
+    certificate validity dates are not checked. This is why DoT works before NTP
+    has synced. We accept this; see §10.
+- **Pipelining:** each DoT query gets a fresh random ID and an entry in the
+  in-flight table (32 slots). Replies are matched by ID and question, and may
+  arrive out of order (RFC 7766 §6.2.1.1).
+- **Keep-alive:** Cloudflare and Quad9 close idle DoT connections after about 10 s
+  (measured). We do not keep a connection warm with dummy queries: the session is
+  reopened lazily on the next query, using **TLS session resumption**
+  (`mbedtls_ssl_get_session`/`set_session` on the `esp_tls` context, since
+  `esp_tls`'s own ticket API is not compiled into the prebuilt library). A
+  resumed handshake skips the ECDHE and certificate cost. *(verify in Phase 4:
+  handshake times on hardware.)*
+- **Deadlines:** a query has 2.5 s in total. If the active upstream does not answer
+  within 1.2 s, the query is re-sent once to the next healthy upstream. At the
+  deadline the client gets SERVFAIL (upstream sent nothing, W8).
+
+### 7.2 Health state machine (per upstream)
+
+```mermaid
+stateDiagram-v2
+    [*] --> Unknown
+    Unknown --> Connecting: query needs it
+    Connecting --> Up: handshake ok
+    Connecting --> Down: handshake/connect fail
+    Up --> Up: answer ok (reset failure count)
+    Up --> Degraded: timeout / error
+    Degraded --> Up: answer ok
+    Degraded --> Down: 3 consecutive failures
+    Down --> Probing: backoff elapsed (1s, 2s, 4s ... max 5 min, ±20% jitter)
+    Probing --> Up: probe answer ok
+    Probing --> Down: probe fails (backoff doubles)
+```
+
+The chain always uses the **first** upstream in priority order that is `Up`,
+`Degraded`, or `Unknown`. A `Down` upstream is retried only by a probe (a real
+client query, or `.` NS if idle), so recovery to the preferred upstream happens
+automatically. This is a circuit-breaker with exponential backoff.
+
+### 7.3 Plain fallback
+
+- If every encrypted upstream is `Down` and `allow_plain_fallback` is on (the
+  default, so the internet keeps working), queries go over plain UDP.
+- The device logs `[WARN] upstream: ALL encrypted upstreams down — using PLAIN DNS
+  (visible to ISP)` once per transition, and the dashboard shows a red banner.
+- Each encrypted upstream keeps probing, and the chain returns to DoT as soon as
+  one recovers.
+- With the option off (strict privacy), clients get SERVFAIL instead.
+
+### 7.4 Response cache (PSRAM)
+
+- **Key:** lowercase wire qname, qtype, qclass, and the DO bit.
+- **Structure:**
+  - an open-addressing hash index over a fixed pool of entries (default 16 384);
+  - an intrusive doubly-linked LRU list over the same pool;
+  - payloads in a PSRAM slab arena (default 2 MB, 128-byte blocks, chained).
+  - Everything is allocated once at boot, so the hot path does no `malloc`.
+- **TTL handling:**
+  - We store the insertion time and per-record TTL offsets.
+  - On a hit, every record's TTL is rewritten as `ttl - age`. An entry expires when
+    its minimum TTL reaches 0.
+  - TTLs are clamped to between `min_ttl` (default 0) and `max_ttl` (default
+    86 400 s).
+- **Negative caching** (RFC 2308): NXDOMAIN and NODATA are cached for
+  min(SOA TTL, SOA MINIMUM), capped at 3 h, or 30 s if there is no SOA.
+- **Never cached:** SERVFAIL, REFUSED, truncated answers, and answers from plain
+  fallback if strict caching is enabled.
+- Evicts the least-recently-used entry when the pool or arena is full.
+- Flushed when upstreams change, and from the dashboard.
+
+---
+
+## 8. Configuration
+
+- **`Config` struct** (core, validated):
+  - upstream list and order;
+  - `allow_plain_fallback`, EDNS padding, AD pass-through;
+  - `blocked_ttl`;
+  - blocklist URL, update hour/minute (default 02:00), timezone (default
+    `IST-5:30`);
+  - cache size, local-answer toggles, dashboard user and password hash.
+- **Storage:** stored in NVS through `IKeyValueStore` (namespace `cfg`, with a
+  `schema` version key for migrations).
+- **Dashboard updates:** `POST /api/config` takes JSON. The values are validated,
+  stored, and applied live where possible (upstreams, TTLs, schedule); otherwise
+  the device reboots.
+- **`secrets.h`** (gitignored; `secrets.example.h` is committed) only provides
+  first-boot defaults:
+  - optional Wi-Fi credentials;
+  - initial dashboard password;
+  - OTA password;
+  - optional firmware-signing public key.
+  - Values set on the dashboard override them.
+
+---
+
+## 9. Security model
+
+**Threats considered:**
+
+- Another device on the LAN calling the API.
+- A web page the admin visits making cross-site requests (CSRF).
+- An on-path attacker on the internet side tampering with blocklist or upstream
+  traffic.
+- A malicious firmware upload.
+
+**Accepted:**
+
+- An attacker who can sniff the LAN can read Basic-Auth credentials (the dashboard
+  is plain HTTP).
+- The setup access point is open during provisioning.
+
+**Controls:**
+
+- **Dashboard auth:**
+  - All state-changing endpoints require Basic Auth and are **POST-only**.
+  - The password is stored as a PBKDF2-HMAC-SHA256 hash with a salt in NVS
+    (`mbedtls_pkcs5_pbkdf2_hmac`). It is never stored or logged in plain text.
+  - While the default password is in use, the dashboard is read-only, apart from
+    the password-change form.
+  - After 5 failed logins, the client IP is locked out with backoff (up to 5 min).
+- **CSRF:**
+  - We keep upstream's custom `X-Requested-With` header check, which a plain
+    `<img>` or `<form>` cannot set.
+  - We also reject mutating requests whose `Origin` or `Referer` host is not the
+    device. This blocks DNS-rebinding attacks that reach the API through an
+    attacker's hostname.
+  - The `Host` header must be the device IP or `*.local`.
+- **Read-only endpoints** (`/`, `/api/stats`) stay open on the LAN, as upstream
+  does. They expose client IPs and MACs to the LAN, which is documented.
+- **Firmware OTA:**
+  - Browser upload and ArduinoOTA require the dashboard password and OTA password
+    respectively.
+  - **Optional signed images:** `tools/sign_firmware.py` appends an ECDSA-P256
+    signature of the SHA-256 of `firmware.bin`. If a public key is compiled in, the
+    device hashes the image while writing it and verifies it with mbedTLS
+    (`mbedtls_pk_verify`) before `Update.end()` marks the slot bootable; a bad
+    signature aborts the update. The private key stays offline or in a CI secret.
+  - **Rollback:** the prebuilt bootloader has `CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE`.
+    A new image calls `esp_ota_mark_app_valid_cancel_rollback()` only after Wi-Fi,
+    DNS and one successful upstream answer within 2 minutes. If it crashes or never
+    gets that far, the bootloader returns to the previous image.
+    *(verify in Phase 4: the Arduino `Update` flow and rollback interplay.)*
+- **Blocklist and upstream integrity:** HTTPS/DoT/DoH with certificate verification.
+  The blocklist also has a CRC check (integrity only; authenticity comes from TLS).
+- **Network input hardening:**
+  - Every DNS parser read is bounds-checked, and the parsers are fuzzed with the
+    malformed cases in the native tests.
+  - Upstream replies must match the in-flight ID and question.
+  - The UDP/53 server answers only private, link-local and loopback source
+    addresses (no open resolver if the device is ever exposed).
+- **Secrets:**
+  - `secrets.h` is gitignored, and CI uses `secrets.example.h`.
+  - Passwords are never logged or returned by the API.
+  - The repo's pre-commit config refuses commits containing `secrets.h`.
+
+---
+
+## 10. Failure handling
+
+| Failure | Behaviour |
+|---|---|
+| **Wi-Fi drops** | `maintenance_task` reconnects with backoff (1 s → 30 s); `dns_io_task` keeps running (nothing to receive). After 10 min of failure the device reboots; a never-configured device opens the setup portal (upstream behaviour). DoT sessions are closed and lazily reopened. |
+| **One upstream fails** | Health FSM marks it Degraded → Down; the chain moves to the next one; backoff probes bring it back. |
+| **All encrypted upstreams fail** (e.g. port 853 and 443 blocked) | Plain-UDP fallback with a loud log and dashboard banner, or SERVFAIL in strict mode. The cache keeps serving hits either way. |
+| **All upstreams fail** (internet down) | Cache hits still served; misses get SERVFAIL after 2.5 s so clients fail fast instead of hanging. Blocked names are still blocked. |
+| **Blocklist download corrupt / truncated / wrong format** | Validation fails, temp file deleted, old list stays live, result shown on the dashboard, retry hourly (max 6), then next day. |
+| **Power loss during swap** | Boot-time recovery: valid live file → use it; else valid `.old` → restore it; else start with an empty list (fail open) and schedule an immediate download. |
+| **PSRAM missing / wrong memory_type** | Boot detects `psramFound() == false`, logs an error, and falls back to the file-backed lite index with a small internal-RAM cache. |
+| **Clock not synced** | DoT still works (validity dates are not checked; see §7.1); the scheduler does nothing until sync; the dashboard shows "time not synced". NTP uses `pool.ntp.org` plus hard-coded `time.cloudflare.com` IPs (162.159.200.1, 162.159.200.123), so it works even if the device's own DNS is not ready. |
+| **Task hangs** | TWDT panic → core dump to flash (`coredump` partition) → reboot. The dump is decoded on the Mac (see the `debugging` skill). |
+| **Bad firmware** | App rollback (§9). |
+| **Device's own lookups** (blocklist host, NTP pool) | Resolved through our own pipeline via the lwIP stub pointed at `127.0.0.1`, so they also go over DoT. *(verify in Phase 4: lwIP loopback support in the prebuilt libs; fallback is to point the stub at the active plain upstream, which leaks only those two hostnames.)* |
+
+---
+
+## 11. Memory budget
+
+### Internal SRAM (512 KB; ≈ 300 KB heap free after Wi-Fi start — *measure on hardware*)
+
+| Item | Estimate |
+|---|---|
+| Wi-Fi + lwIP buffers (part offloaded to PSRAM by `SPIRAM_TRY_ALLOCATE_WIFI_LWIP`) | 60–90 KB |
+| Active TLS session (mbedTLS buffers are internal-only in the prebuilt libs, 16 KB in + 16 KB out + context) | ≈ 45 KB |
+| Transient second TLS session (failover, or the HTTPS blocklist download) | ≈ 45 KB |
+| Task stacks (6 + 10 + 6 + 8 + 12 KB) | 42 KB |
+| Query pool (32 × 512 B) + queues + in-flight table | ≈ 20 KB |
+| Web server, mDNS, ArduinoOTA, misc | ≈ 30 KB |
+| **Headroom** | ≈ 60–100 KB |
+
+At most two TLS sessions may exist at once. The updater downloads only while at most
+one DNS session is open.
+
+### PSRAM (8 MB)
+
+| Item | Default |
+|---|---|
+| Blocklist index (one buffer; up to 2 during swap if free) | 1.9 MB at 400k names; cap 1M names (4.3 MB) |
+| Response cache: entry pool (16k × 48 B) + payload arena | 0.8 MB + 2 MB |
+| Query log ring (last 2 000 queries for the dashboard) | 0.2 MB |
+| Stats, client table (256 clients), custom sets | < 0.2 MB |
+| **Free** | ≥ 1 MB at a 1M-name list (more during swap via the file-backed bridge) |
+
+### Flash (16 MB)
+
+```
+# Name,    Type, SubType,  Offset,    Size       (partitions_16MB.csv)
+nvs,       data, nvs,      0x9000,    0x5000     20 KB   settings, Wi-Fi, ETag
+otadata,   data, ota,      0xe000,    0x2000      8 KB
+app0,      app,  ota_0,    0x10000,   0x400000    4 MB   firmware slot A
+app1,      app,  ota_1,    0x410000,  0x400000    4 MB   firmware slot B
+spiffs,    data, spiffs,   0x810000,  0x7E0000  ~7.9 MB  LittleFS: blocklists, custom rules
+coredump,  data, coredump, 0xFF0000,  0x10000    64 KB   crash dumps
+```
+
+- **App slots:** the current firmware is about 1.1 MB, so a 4 MB slot is
+  comfortable.
+- **Filesystem partition:** it keeps the label `spiffs` and subtype `spiffs`.
+  IDF 4.4 has no `littlefs` subtype, and Arduino's `LittleFS.begin()` looks for the
+  `spiffs` label by default.
+- **Build flags:** the S3 env uses `board_build.arduino.memory_type = qio_opi`
+  (quad flash, octal PSRAM); `opi_opi` would boot-loop an N16R8. GPIO 35–37 are
+  used by the octal PSRAM and must not be used.
+
+---
+
+## 12. Design patterns and why
+
+| Pattern | Where | Why |
+|---|---|---|
+| **Hardware-abstraction interfaces** | `lib/core/hal/*.h` (`IClock`, `IRandom`, `IKeyValueStore`, `IFileSystem`, `IHttpClient`, `ITransport`, `ILogger`) | Core logic compiles and is tested on macOS with fakes; time, randomness and I/O become deterministic in tests. |
+| **Dependency injection** (constructor) | every core class; wired in `src/main.cpp` (composition root) | No hidden globals; tests swap in fakes; ownership and lifetimes are explicit. |
+| **Strategy** | `ITransport`: DoT / DoH / UDP | Add a provider or transport without touching the chain logic. |
+| **Chain of responsibility / fallback chain** | `upstream/chain` | Ordered failover DoT → DoT → DoH → UDP with per-link health. |
+| **State machine** | upstream health (§7.2), updater (§6.3), Wi-Fi supervisor | Explicit states and transitions are easy to test and reason about; no tangled flags. |
+| **Circuit breaker with exponential backoff + jitter** | health FSM | Stops hammering a dead upstream; recovers automatically. |
+| **Double buffering + atomic pointer swap (RCU-style)** | blocklist index | Lock-free reads on the hot path; an update is all-or-nothing. |
+| **Producer/consumer with fixed-size queues** | `dns_io_task` ⇄ `upstream_task` | The receiver never blocks (only 6 datagrams of socket buffer); bounded memory; back-pressure → SERVFAIL when full instead of unbounded growth. |
+| **Object pool / slab allocator** | query pool, cache entries and payload arena | No `malloc` in the DNS hot path; no fragmentation over weeks of uptime (s60sc needed weekly reboots for this). |
+| **RAII** | `Socket`, `TlsSession`, `PsramBuffer` (`unique_ptr` + `heap_caps_free`), `FsFile`, `MutexLock` | Every exit path releases sockets, TLS contexts and buffers; lwIP has only 16 sockets in total. |
+| **Self-pipe wake-up** | loopback UDP socket woken by `upstream_task` | Lets `dns_io_task` sleep in a single `select()` on both "client packet" and "reply ready". |
+| **Result types instead of exceptions** | `util/result.h` | Explicit error paths; no exception cost or surprises in embedded code. |
+
+---
+
+## 13. Is an Unbound-style recursive resolver feasible here?
+
+**Verdict: technically possible in memory, not practical. We do not build it.**
+
+| Aspect | Finding |
+|---|---|
+| RAM | A trimmed Unbound-like cache (RRset ~0.5–1 MB, key cache ~0.2–0.5 MB, infrastructure ~50 KB) is about 1–2 MB. It fits in 8 MB PSRAM, so **RAM is not the blocker**. |
+| CPU for DNSSEC | ECDSA-P256 (algorithm 13: the root's zone keys excepted, most TLDs and large zones such as Cloudflare-hosted ones) verify takes **about 0.5 s or more per signature** on ESP32-class chips with mbedTLS (no ECC acceleration benefit; reports range 0.5–2 s). RSA-2048 verify is about 50–65 ms. A cold validated lookup needs about 3–6 verifications, so **1.5–4 s of CPU per new name**, during which the task cannot do other work. |
+| Network | A cold name needs root → TLD → authoritative referrals plus DS/DNSKEY fetches: about 6–15 round trips (0.3–1.5 s) before any crypto. |
+| Trust anchors | Needs RFC 5011 automated root-key rollover with persistent state and correct time. A device offline across a KSK rollover stops validating everything. |
+| Prior art | No maintained Unbound/Knot port to ESP-IDF; lwIP ships only a stub resolver. Porting is a large, risky project. |
+| **Privacy** | **Recursion does not hide queries from the ISP.** The resolver talks to root, TLD and authoritative servers in plaintext UDP/53 from your Airtel IP. QNAME minimisation hides the full name from the root and TLD servers, but every query still crosses Airtel's network in the clear. |
+
+**How our design meets the same goal.** The goal is to keep Airtel from seeing
+which names we look up.
+
+- DoT/DoH encrypts every query between the device and the resolver.
+- Airtel sees only a TLS connection to 1.1.1.1:853 or 9.9.9.9:853 (the SNI shows
+  "cloudflare-dns.com", not the names inside).
+- Padding (§5.6) further hides query sizes.
+
+**The trade-off.** You move trust from Airtel to Cloudflare or Quad9, which see your
+public IP and every name you look up.
+
+- Cloudflare's 1.1.1.1 policy: no selling of data, IP logs purged within 25 h,
+  independently audited.
+- Quad9 is a Swiss non-profit that does not log client IPs and adds malware
+  blocking.
+- You choose the order on the dashboard; choosing Quad9 first is the more private
+  default.
+
+**What this does not hide from Airtel:** the IP addresses you then connect to, and
+the server name (SNI) in your browser's own TLS connections. Only Encrypted Client
+Hello, which is up to websites and browsers, or a VPN closes that gap.
+
+**The light parts that are realistic, and adopted as optional features (§5.6):**
+
+- Trusting and passing through the upstream's **AD bit** over an authenticated
+  channel. This gives clients a "DNSSEC validated" signal without local crypto.
+- **EDNS padding** of upstream queries (RFC 7830/8467).
+
+---
+
+## 14. IPv6 and other bypasses (documented for users in README)
+
+- **IPv6 DNS from the router:** Airtel routers advertise the ISP's IPv6 DNS
+  servers through router advertisements (RDNSS) or DHCPv6. Dual-stack clients may
+  use those and bypass the blocker entirely (upstream issues #40/#41). The README
+  gives Airtel-specific options:
+  - set a custom IPv6 DNS in the router, if the firmware allows it;
+  - otherwise disable IPv6 on the LAN;
+  - or set DNS per device.
+- **Browser secure DNS:** Chrome and Edge upgrade to DoH only when the system
+  resolver is a known DoH provider, which our device is not, so they keep using
+  it. Firefox is handled by the canary domain (§5.5). Users who manually enable
+  "secure DNS" in a browser bypass the blocker by design.
+- **Hard-coded DNS in apps/devices** (e.g. some smart TVs use 8.8.8.8) can only be
+  stopped by router firewall rules, which is outside this device's control.
