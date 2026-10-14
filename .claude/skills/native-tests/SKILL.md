@@ -1,0 +1,90 @@
+---
+name: native-tests
+description: Write and run host-side unit tests. Use when adding or fixing any feature or bug (tests are mandatory), creating a fake for a hardware-abstraction interface, running `pio test -e native`, checking coverage, or debugging a failing Unity test.
+---
+
+# Native tests (PlatformIO + Unity, runs on macOS)
+
+## Rules
+
+- Every feature and bug fix needs a test. `pio test -e native` must be green before
+  committing.
+- Only `lib/core/` is testable natively. If logic you need to test lives in `src/`,
+  move it into `lib/core/` behind an interface first.
+- No real time, randomness, network or filesystem in tests: use the fakes.
+
+## Layout
+
+```
+test/
+  fakes/                 header-only fakes (FakeClock, FakeRandom, FakeTransport,
+                         FakeHttpClient, MemFileSystem, MemKvStore, CapturingLogger)
+  test_dns/test_main.cpp         parser/builder, EDNS0, malformed, blocked replies
+  test_blocklist/test_main.cpp   hash, index, parent matching, collisions, format
+  test_cache/test_main.cpp       TTL decrement/expiry, LRU eviction, negative caching
+  test_scheduler/test_main.cpp   02:00 IST trigger, dedupe, retry, no-sync gating
+  test_upstream/test_main.cpp    fallback chain, health FSM, pipelining, timeouts
+  test_updater/test_main.cpp     ETag, validation, atomic swap, corrupt download
+  test_config/test_main.cpp      validation, NVS round-trip, migrations
+```
+
+Each `test_<area>` folder is a separate binary. Only folders starting `test_` are run.
+`test_build_src = no`, so `src/` is never compiled for native.
+
+## Run
+
+```bash
+pio test -e native                    # everything
+pio test -e native -f test_cache      # one folder
+pio test -e native -f test_dns -v     # verbose (shows each assertion)
+tools/coverage.sh                     # tests + coverage -> coverage/index.html
+```
+
+On macOS, coverage uses Apple clang `--coverage` with gcovr and
+`--gcov-executable "xcrun llvm-cov gcov"` (wrapped in `tools/coverage.sh`).
+
+## Writing a test
+
+```cpp
+#include <unity.h>
+#include "sched/daily_scheduler.h"
+#include "../fakes/fake_clock.h"
+
+static FakeClock clock;
+
+void setUp() { clock = FakeClock{}; }
+void tearDown() {}
+
+static void test_runs_once_at_2am_ist() {
+  clock.setSynced(true);
+  clock.setLocal(2026, 10, 15, 1, 59, 0);          // 01:59 IST
+  DailyScheduler s(clock, /*hour=*/2, /*minute=*/0);
+  TEST_ASSERT_FALSE(s.due());
+  clock.advanceSeconds(60);                         // 02:00
+  TEST_ASSERT_TRUE(s.due());
+  s.markSuccess();
+  TEST_ASSERT_FALSE(s.due());                       // no double run
+}
+
+int main(int, char**) {
+  UNITY_BEGIN();
+  RUN_TEST(test_runs_once_at_2am_ist);
+  return UNITY_END();
+}
+```
+
+## Adding a fake
+
+1. Find the interface in `lib/core/hal/` (e.g. `IHttpClient`).
+2. Add `test/fakes/fake_<thing>.h`: header-only, records calls, returns scripted
+   results (queue of responses, injectable errors).
+3. Keep fakes dumb. Logic under test belongs in `lib/core`.
+
+## Pitfalls
+
+- Use `TEST_ASSERT_EQUAL_HEX8_ARRAY` for packet bytes, so failures show a diff.
+- Build DNS test packets with helpers in `test/fakes/dns_builder.h`, not hand-typed
+  hex, except for deliberately malformed packets.
+- The native env compiles with `-Wall -Wextra -Werror`, so warnings fail the test.
+- If a test needs a static/global, reset it in `setUp()`; tests in one binary share
+  state.
