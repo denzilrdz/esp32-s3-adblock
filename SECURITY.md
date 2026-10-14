@@ -32,3 +32,16 @@ Known, documented limits (see [docs/ARCHITECTURE.md §9](docs/ARCHITECTURE.md)):
 - Read-only status (`/api/stats`) is visible to everyone on the LAN.
 - Blocklists are integrity-checked (CRC) and fetched over verified HTTPS only; they are
   not signed.
+- Firmware images are not signed. OTA updates need the dashboard password (or
+  `OTA_PASS`), and release files come with SHA-256 checksums and build-provenance
+  attestations, but the device itself does not verify a signature.
+- TLS certificates (upstream DNS, blocklist download) are checked against the CA bundle
+  and the server name, but not their validity dates: the prebuilt mbedTLS is built
+  without `MBEDTLS_HAVE_TIME_DATE`. An expired or not-yet-valid certificate from a
+  trusted CA would be accepted.
+- The firmware is built on Arduino-ESP32 2.0.17 / ESP-IDF 4.4, which Espressif no
+  longer maintains (ESP-IDF 4.4 reached end of life in July 2024). Moving to
+  Arduino-ESP32 3.x / ESP-IDF 5 is the main planned platform change.
+
+Signed firmware, certificate date checks and the platform upgrade are planned
+([docs/ARCHITECTURE.md §15](docs/ARCHITECTURE.md#15-platform-notes-and-roadmap)).

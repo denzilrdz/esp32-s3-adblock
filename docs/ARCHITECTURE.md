@@ -659,7 +659,7 @@ one DNS session is open.
 | Response cache: entry pool (16k × 48 B) + payload arena | 0.8 MB + 2 MB |
 | Pending-query pool (32 slots × ~4.6 KB: query + reply buffer) | 0.15 MB |
 | Stats, client table (256 clients), custom sets | < 0.2 MB |
-| **Free** | ≥ 1 MB at a 1M-name list (more during swap via the file-backed bridge) |
+| **Free** | about 0.8 MB at a 1M-name list (4.06 MiB list + 2.75 MiB cache + pools), before Wi-Fi/lwIP buffers offloaded to PSRAM. Two 1M lists never fit: the update swaps through the file-backed bridge (§6) |
 
 ### Sockets (lwIP: `CONFIG_LWIP_MAX_SOCKETS = 16`, fixed in the prebuilt libs)
 
