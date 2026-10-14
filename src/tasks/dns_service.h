@@ -121,7 +121,9 @@ class DnsService : private upstream::IForwarderSink {
   // 0 if the query was dropped or handed to the upstream task.
   size_t processQuery(const uint8_t* pkt, size_t len, const ClientRef& client, uint8_t* scratch,
                       size_t scratchCap, uint8_t* out, size_t outCap, bool* forwarded = nullptr);
-  uint8_t tcpInFlightTotal() const;
+  // Pool slots held by TCP queries until their reply is dequeued, including queries
+  // from connections that have since closed (dns_tcp task only).
+  uint8_t tcpPending_ = 0;
   bool createWakePair(int& rxFd, struct sockaddr_in& addr);
   void tcpAccept();
   void tcpRead(uint8_t i);

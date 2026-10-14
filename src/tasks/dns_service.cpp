@@ -234,12 +234,6 @@ size_t DnsService::processQuery(const uint8_t* pkt, size_t len, const ClientRef&
   return 0;
 }
 
-uint8_t DnsService::tcpInFlightTotal() const {
-  uint8_t n = 0;
-  for (uint8_t i = 0; i < cfg_.tcpMaxConns; i++)
-    if (tcp_[i].fd >= 0) n += tcp_[i].inFlight;
-  return n;
-}
 
 // --------------------------------------------------------------------------------
 // dns_io task: UDP/53
@@ -315,16 +309,24 @@ void DnsService::tcpAccept() {
   socklen_t len = sizeof(peer);
   const int fd = accept(tcpListenFd_, reinterpret_cast<struct sockaddr*>(&peer), &len);
   if (fd < 0) return;
+  if (!isPrivateSource(peer)) {
+    close(fd);
+    stats_.dropped++;
+    return;
+  }
   uint8_t slot = 0xFF;
   for (uint8_t i = 0; i < cfg_.tcpMaxConns; i++)
     if (tcp_[i].fd < 0) {
       slot = i;
       break;
     }
-  if (slot == 0xFF || !isPrivateSource(peer)) {
-    close(fd);  // full, or not from the LAN
-    stats_.dropped++;
-    return;
+  if (slot == 0xFF) {
+    // Full: evict the least recently active connection rather than refusing, so no
+    // client can hold every slot by sending a query just before the idle timeout.
+    slot = 0;
+    for (uint8_t i = 1; i < cfg_.tcpMaxConns; i++)
+      if (tcp_[i].lastMs < tcp_[slot].lastMs) slot = i;
+    tcpClose(slot);
   }
   struct timeval tv = {kTcpWriteTimeoutMs / 1000, (kTcpWriteTimeoutMs % 1000) * 1000};
   setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
@@ -350,7 +352,7 @@ void DnsService::tcpRead(uint8_t i) {
 void DnsService::tcpProcessBuffered(uint8_t i) {
   TcpConn& c = tcp_[i];
   while (c.fd >= 0 && c.rxLen >= 2) {
-    if (c.inFlight >= kTcpMaxInFlightPerConn || tcpInFlightTotal() >= kTcpMaxInFlightTotal)
+    if (c.inFlight >= kTcpMaxInFlightPerConn || tcpPending_ >= kTcpMaxInFlightTotal)
       break;  // stop until replies drain (the connection is not selected meanwhile)
     const size_t msgLen = util::readU16Be(c.rx);
     if (msgLen < dns::kHeaderSize || msgLen + 2 > sizeof(c.rx)) {
@@ -370,7 +372,10 @@ void DnsService::tcpProcessBuffered(uint8_t i) {
     memmove(c.rx, c.rx + 2 + msgLen, c.rxLen - 2 - msgLen);
     c.rxLen -= 2 + msgLen;
     c.lastMs = clock_.monotonicMs();  // only complete queries count as activity
-    if (forwarded) c.inFlight++;
+    if (forwarded) {
+      c.inFlight++;
+      tcpPending_++;
+    }
     if (r) tcpWrite(i, tcpOut_ + 2, r);
   }
   if (c.fd >= 0) c.partialSince = c.rxLen ? (c.partialSince ? c.partialSince : clock_.monotonicMs()) : 0;
@@ -384,7 +389,7 @@ void DnsService::tcpLoop() {
     FD_SET(tcpListenFd_, &rfds);
     FD_SET(tcpWakeRxFd_, &rfds);
     int maxFd = tcpListenFd_ > tcpWakeRxFd_ ? tcpListenFd_ : tcpWakeRxFd_;
-    const bool poolFull = tcpInFlightTotal() >= kTcpMaxInFlightTotal;
+    const bool poolFull = tcpPending_ >= kTcpMaxInFlightTotal;
     for (uint8_t i = 0; i < cfg_.tcpMaxConns; i++)
       if (tcp_[i].fd >= 0 && !poolFull && tcp_[i].inFlight < kTcpMaxInFlightPerConn) {
         FD_SET(tcp_[i].fd, &rfds);
@@ -400,6 +405,7 @@ void DnsService::tcpLoop() {
     while (xQueueReceive(tcpReplyQ_, &idx, 0) == pdTRUE) {
       Pending& p = pool_[idx];
       const uint8_t i = p.client.conn;
+      if (tcpPending_) tcpPending_--;  // counted until dequeued, even if the connection closed
       if (tcp_[i].fd >= 0 && tcp_[i].gen == p.client.connGen) {
         if (tcp_[i].inFlight) tcp_[i].inFlight--;
         if (p.replyLen) tcpWrite(i, p.reply, p.replyLen);
@@ -415,7 +421,9 @@ void DnsService::tcpLoop() {
 
     const uint64_t now = clock_.monotonicMs();
     for (uint8_t i = 0; i < cfg_.tcpMaxConns; i++) {
-      if (tcp_[i].fd < 0 || tcp_[i].inFlight) continue;  // waiting on upstream is not idle
+      // Upstream answers (or SERVFAILs) within 2.5 s, far below the idle limit, so
+      // in-flight queries never need to exempt a connection from these deadlines.
+      if (tcp_[i].fd < 0) continue;
       if (now - tcp_[i].lastMs >= cfg_.tcpIdleMs ||
           (tcp_[i].partialSince && now - tcp_[i].partialSince >= kTcpPartialFrameMs))
         tcpClose(i);
