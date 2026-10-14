@@ -89,6 +89,7 @@ class BlocklistUpdater {
   UpdateReport fail(UpdateStatus s, const char* detail, int http = 0);
   UpdateReport swapAndInstall(const char* from, const blocklist::Header& h, const char* etag);
   bool liveCrc(uint32_t& crc);
+  void reinstallLive();  // after a failed swap: make the live file serve lookups again
 
   blocklist::Limits limits_;
   hal::IFileSystem& fs_;

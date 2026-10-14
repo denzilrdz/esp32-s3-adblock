@@ -185,13 +185,19 @@ UpdateReport BlocklistUpdater::installFile(const char* path) {
 
 UpdateReport BlocklistUpdater::swapAndInstall(const char* from, const blocklist::Header& h, const char* etag) {
   // live -> old, new -> live, delete old. A crash in between is repaired by recover().
+  // prepareSwap() may have released the live index (file-backed lite boards), so
+  // every failure below must reinstall the list that is live on disk afterwards.
   installer_.prepareSwap();
   fs_.remove(paths_.old);
   const bool hadLive = fs_.exists(paths_.live);
-  if (hadLive && !fs_.rename(paths_.live, paths_.old)) return fail(UpdateStatus::kFsError, "rename live->old");
+  if (hadLive && !fs_.rename(paths_.live, paths_.old)) {
+    reinstallLive();
+    return fail(UpdateStatus::kFsError, "rename live->old");
+  }
   if (!fs_.rename(from, paths_.live)) {
     if (hadLive) fs_.rename(paths_.old, paths_.live);  // put the old list back
     fs_.remove(from);
+    reinstallLive();
     return fail(UpdateStatus::kFsError, "rename new->live");
   }
   fs_.remove(paths_.old);
@@ -212,6 +218,13 @@ UpdateReport BlocklistUpdater::swapAndInstall(const char* from, const blocklist:
   snprintf(r.detail, sizeof(r.detail), "%u domains", static_cast<unsigned>(h.count));
   log_.log(LogLevel::kInfo, kTag, "blocklist updated: %u domains", static_cast<unsigned>(h.count));
   return r;
+}
+
+void BlocklistUpdater::reinstallLive() {
+  blocklist::Header h;
+  if (blocklist::validateFile(fs_, paths_.live, limits_, &h) == FormatError::kNone && installer_.install(paths_.live, h))
+    return;
+  log_.log(LogLevel::kError, kTag, "could not reload the previous list after a failed swap");
 }
 
 RecoveryResult BlocklistUpdater::recover(hal::IFileSystem& fs, const blocklist::Limits& limits, Paths paths) {

@@ -5,6 +5,7 @@
 #include <strings.h>
 
 #include <cstdio>
+#include <cstring>
 
 #include "platform/crt_bundle.h"
 
@@ -35,6 +36,10 @@ bool isRedirect(int status) {
 
 hal::HttpGetResult EspHttpClient::get(const hal::HttpGetRequest& req, hal::IHttpBodySink& sink) {
   hal::HttpGetResult result;
+  if (!req.url || strncmp(req.url, "https://", 8) != 0) {  // HTTPS only, by design
+    result.error = hal::HttpError::kConnect;
+    return result;
+  }
   Context ctx = {};
 
   esp_http_client_config_t cfg = {};
@@ -68,6 +73,15 @@ hal::HttpGetResult EspHttpClient::get(const hal::HttpGetRequest& req, hal::IHttp
     int discarded = 0;
     esp_http_client_flush_response(client, &discarded);
     if (esp_http_client_set_redirection(client) != ESP_OK) break;
+    // Never follow a redirect to plain http: the list's CRC only detects
+    // corruption, so authenticity depends on TLS for every hop.
+    char next[512] = {0};
+    if (esp_http_client_get_url(client, next, sizeof(next)) != ESP_OK || strncmp(next, "https://", 8) != 0) {
+      result.error = hal::HttpError::kConnect;
+      esp_http_client_close(client);
+      esp_http_client_cleanup(client);
+      return result;
+    }
   }
   result.status = status;
   snprintf(result.etag, sizeof(result.etag), "%s", ctx.etag);

@@ -68,6 +68,7 @@ void tearDown() {}
 
 static void assertLiveIsOld() {
   TEST_ASSERT_NOT_NULL(fs->get("/blocklist.bin"));
+  TEST_ASSERT_EQUAL(0, installer.prepared);  // failure before the swap: index untouched
   TEST_ASSERT_TRUE(*fs->get("/blocklist.bin") == oldList);
   TEST_ASSERT_FALSE(fs->exists("/blocklist.tmp"));
   TEST_ASSERT_FALSE(fs->exists("/blocklist.old"));
@@ -165,13 +166,17 @@ static void test_identical_content_without_etag_support_is_unchanged() {
   assertLiveIsOld();
 }
 
-static void test_rename_failure_restores_old_list() {
+static void test_rename_failure_restores_old_list_and_reloads_it() {
   http.next.body = newList;
   fs->failRename = true;
   const auto r = run();
   TEST_ASSERT_EQUAL_STRING("filesystem error", update::updateStatusName(r.status));
   TEST_ASSERT_TRUE(*fs->get("/blocklist.bin") == oldList);
-  TEST_ASSERT_EQUAL(0, installer.calls);
+  // prepareSwap() released the index, so the old list must be installed again,
+  // otherwise a file-backed board would stop blocking (fail-open).
+  TEST_ASSERT_EQUAL(1, installer.prepared);
+  TEST_ASSERT_EQUAL(1, installer.calls);
+  TEST_ASSERT_EQUAL_UINT32(1000, installer.lastCount);
 }
 
 static void test_install_failure_is_reported() {
@@ -243,7 +248,7 @@ int main(int, char**) {
   RUN_TEST(test_network_and_http_errors_keep_old_list);
   RUN_TEST(test_list_too_big_for_flash_is_refused);
   RUN_TEST(test_identical_content_without_etag_support_is_unchanged);
-  RUN_TEST(test_rename_failure_restores_old_list);
+  RUN_TEST(test_rename_failure_restores_old_list_and_reloads_it);
   RUN_TEST(test_install_failure_is_reported);
   RUN_TEST(test_rejects_non_https_and_empty_urls);
   RUN_TEST(test_manual_upload_install_and_rejection);
