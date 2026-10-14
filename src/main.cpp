@@ -1,5 +1,7 @@
-// C3 AdBlock — DNS sinkhole + web dashboard for the ESP32-C3 (no PSRAM).
-// Blocklist = sorted 40-bit FNV-1a hashes in flash, binary-searched.
+// ESP32-S3 AdBlock — DNS sinkhole + web dashboard (fork of esp32-c3-adblock).
+// DNS runs in its own FreeRTOS tasks (src/tasks/dns_service.*) and forwards over
+// DNS-over-TLS/DoH (src/platform/transports.*). The legacy blocklist below (sorted
+// 40-bit FNV-1a hashes in flash) is replaced by lib/core/blocklist in a later step.
 // Dashboard at http://c3adblock.local : per-client stats, system info,
 // ban clients, add custom block domains. All control state persisted to flash.
 
@@ -17,18 +19,17 @@
 #include <Preferences.h>       // NVS store for provisioned WiFi creds
 #include "lwip/etharp.h"
 #include "lwip/netif.h"
+#include "platform/esp_clock.h"
+#include "platform/esp_random.h"
+#include "platform/psram.h"
+#include "platform/rtos.h"
+#include "platform/serial_logger.h"
+#include "platform/transports.h"
+#include "tasks/dns_service.h"
 #include "secrets.h"   // WIFI_SSID / WIFI_PASS — used only as a FALLBACK if no creds
                        // have been provisioned via the captive portal (copy secrets.example.h)
 
 // ---- config ----
-#ifndef UPSTREAM_IP
-#define UPSTREAM_IP 9, 9, 9, 9                    // Quad9
-#endif
-#ifndef UPSTREAM_PORT
-#define UPSTREAM_PORT 53
-#endif
-static const IPAddress UPSTREAM(UPSTREAM_IP);
-static const uint16_t DNS_PORT = 53;
 static const char* BLOCKLIST_PATH = "/blocklist.bin";
 static const int HASH_BYTES = 5;
 static const uint64_t HASH_MASK = (1ULL << (HASH_BYTES * 8)) - 1;
@@ -37,11 +38,19 @@ static const int CACHE_SIZE = 256;       // must be power of 2
 static const int MAX_RANGE = 256;        // max hashes per index bucket (fine up to ~1M hashes; flash holds far fewer)
 
 // ---- globals ----
-WiFiUDP dnsServer, upstreamCli;
 WebServer web(80);
 File blocklist;
 uint32_t numHashes = 0, totalBlocked = 0, totalAllowed = 0;
-uint8_t buf[1536];   // fits any non-fragmented UDP reply (EDNS answers can exceed 512)
+
+// Guards the legacy blocklist/client/custom-domain state below: the DNS task reads
+// it through LegacyPolicy while web handlers in loop() modify it.
+static platform::RecursiveMutex gState;
+using StateLock = platform::RecursiveLockGuard;
+
+static platform::EspClock gClock;
+static platform::EspRandom gRandom;
+static platform::SerialLogger gLog;
+static app::DnsService* gDns = nullptr;
 
 // first-level flash index (sorted sample hashes) + small direct-mapped cache
 static uint8_t blIndex[INDEX_ENTRIES][HASH_BYTES];
@@ -180,12 +189,14 @@ static void loadCustom() {
 }
 static void saveCustom() { File f = LittleFS.open("/custom.txt", "w"); if (!f) return; for (int i = 0; i < numCustom; i++) f.println(customDom[i]); f.close(); }
 static bool addCustom(String d) {
+  StateLock lock(gState);
   d.trim(); d.toLowerCase(); if (d.startsWith("www.")) d = d.substring(4);
   if (!d.length() || d.indexOf('.') < 0 || numCustom >= MAX_CUSTOM) return false;
   for (int i = 0; i < numCustom; i++) if (customDom[i] == d) return false;
   customDom[numCustom] = d; customHash[numCustom] = fnv40(d.c_str(), d.length()); numCustom++; saveCustom(); return true;
 }
 static void removeCustom(String d) {
+  StateLock lock(gState);
   d.toLowerCase();
   for (int i = 0; i < numCustom; i++) if (customDom[i] == d) {
     for (int j = i; j < numCustom - 1; j++) { customDom[j] = customDom[j+1]; customHash[j] = customHash[j+1]; }
@@ -223,73 +234,24 @@ static Dev* getClient(uint32_t ip) {
   return nullptr;
 }
 
-// ---------- DNS ----------
-static size_t parseQuery(const uint8_t* pkt, int len, char* out, uint16_t* qtype, int* qend) {
-  if (len < 13) return 0; int i = 12; size_t o = 0;
-  while (i < len) { uint8_t l = pkt[i++]; if (l == 0) break; if (l & 0xC0) return 0;
-    if (o + l + 1 >= 250 || i + l > len) return 0; if (o) out[o++] = '.';
-    for (uint8_t k = 0; k < l; k++) out[o++] = tolower(pkt[i++]); }
-  out[o] = 0; if (i + 4 > len) return 0; *qtype = (pkt[i] << 8) | pkt[i + 1]; *qend = i + 4;
-  if (o > 4 && strncmp(out, "www.", 4) == 0) { memmove(out, out + 4, o - 3); o -= 4; }
-  return o;
-}
-static int buildBlocked(int qend, uint16_t qtype) {
-  buf[2] = 0x81; buf[3] = 0x80; buf[6] = 0; buf[7] = (qtype == 1) ? 1 : 0; buf[8] = 0; buf[9] = 0; buf[10] = 0; buf[11] = 0;
-  if (qtype != 1) return qend;
-  const uint8_t ans[] = {0xC0,0x0C, 0,1, 0,1, 0,0,1,0x2C, 0,4, 0,0,0,0};
-  memcpy(buf + qend, ans, sizeof(ans)); return qend + sizeof(ans);
-}
-// Forward to upstream and wait for the reply that actually belongs to THIS query.
-// Issue #10: after one timeout the late reply used to sit in the socket and get relayed
-// to the next client (every answer shifted by one). Now: drain stale datagrams first,
-// send with a fresh random txid, and only accept a reply whose txid, question section,
-// and source address/port match. The client's own txid is restored on the way back.
-static int forwardUpstream(int qlen, int qend) {
-  upstreamCli.flush();                                   // release any half-read buffer
-  while (upstreamCli.parsePacket() > 0) upstreamCli.flush();   // drop stale late replies
-  const uint8_t cid0 = buf[0], cid1 = buf[1];
-  const uint16_t wid = (uint16_t)esp_random();
-  uint8_t q[260]; int ql = qend - 12;
-  const bool haveQ = ql > 0 && ql <= (int)sizeof(q) && qend <= qlen;
-  if (haveQ) memcpy(q, buf + 12, ql);
-  buf[0] = wid >> 8; buf[1] = wid & 0xFF;
-  upstreamCli.beginPacket(UPSTREAM, UPSTREAM_PORT); upstreamCli.write(buf, qlen); upstreamCli.endPacket();
-  const uint32_t t0 = millis();
-  while (millis() - t0 < 1000) {                         // deadline, not a retry count
-    int sz = upstreamCli.parsePacket();
-    if (sz <= 0) { delay(1); continue; }
-    const bool fromUp = upstreamCli.remoteIP() == UPSTREAM && upstreamCli.remotePort() == UPSTREAM_PORT;
-    int n = upstreamCli.read(buf, sizeof(buf));
-    upstreamCli.flush();                                 // oversized datagram can't strand rx_buffer
-    if (!fromUp || n < 12 || sz > (int)sizeof(buf)) continue;
-    if (buf[0] != (wid >> 8) || buf[1] != (wid & 0xFF)) continue;
-    if (haveQ && (n < 12 + ql || memcmp(buf + 12, q, ql) != 0)) continue;
-    buf[0] = cid0; buf[1] = cid1;
-    return n;
+// ---------- DNS policy (legacy blocklist adapter) ----------
+// Called from the DNS task for every valid query. Keeps upstream's matching rules
+// (leading "www." stripped, parent domains checked) until the new blocklist lands.
+class LegacyPolicy final : public dns::IQueryPolicy {
+ public:
+  dns::PolicyAction decide(const dns::Query& q, uint32_t clientIpv4) override {
+    StateLock g(gState);
+    Dev* c = getClient(clientIpv4);
+    if (c && c->banned) { c->blocked++; totalBlocked++; return dns::PolicyAction::kBan; }
+    const char* name = q.qname;
+    if (q.qnameLen > 4 && strncmp(name, "www.", 4) == 0) name += 4;
+    const bool blocked = blockingOn && q.qnameLen && numHashes && isBlocked(name);
+    if (blocked) { totalBlocked++; if (c) c->blocked++; return dns::PolicyAction::kBlock; }
+    totalAllowed++; if (c) c->allowed++;
+    return dns::PolicyAction::kForward;
   }
-  return 0;
-}
-// Drain a whole RX burst per call (capped, so web/OTA still get a turn) instead of
-// one packet per loop iteration. Returns true if any query was handled this call.
-static bool handleDns() {
-  bool did = false;
-  for (int budget = 0; budget < 16; budget++) {
-    int sz = dnsServer.parsePacket(); if (sz <= 0) break;
-    did = true;
-    IPAddress cip = dnsServer.remoteIP(); uint16_t cport = dnsServer.remotePort();
-    int qlen = dnsServer.read(buf, sizeof(buf)); if (qlen < 13) continue;
-    char domain[256]; uint16_t qtype = 0; int qend = qlen;
-    size_t dl = parseQuery(buf, qlen, domain, &qtype, &qend);
-    Dev* c = getClient((uint32_t)cip);
-    bool ban = c && c->banned;
-    bool blocked = ban || (blockingOn && dl && numHashes && isBlocked(domain));
-    int rlen;
-    if (blocked) { rlen = buildBlocked(qend, qtype); totalBlocked++; if (c) c->blocked++; }
-    else         { rlen = forwardUpstream(qlen, qend);     totalAllowed++; if (c) c->allowed++; }
-    if (rlen > 0) { dnsServer.beginPacket(cip, cport); dnsServer.write(buf, rlen); dnsServer.endPacket(); }
-  }
-  return did;
-}
+};
+static LegacyPolicy gPolicy;
 
 // ---------- web ----------
 static String macStr(const uint8_t* m) { char s[18]; snprintf(s, sizeof(s), "%02x:%02x:%02x:%02x:%02x:%02x", m[0],m[1],m[2],m[3],m[4],m[5]); return String(s); }
@@ -318,6 +280,7 @@ static String htmlEscape(const String& s) {
 #include "page.h"   // dashboard HTML (PROGMEM) — see issue #6
 
 static void handleStats() {
+  StateLock lock(gState);
   uint32_t up = millis() / 1000;
   char ut[24]; snprintf(ut, sizeof(ut), "%lud %luh %lum", up/86400, (up%86400)/3600, (up%3600)/60);
   String j = "{\"ip\":\"" + WiFi.localIP().toString() + "\",\"blocked\":" + totalBlocked + ",\"allowed\":" + totalAllowed +
@@ -332,7 +295,25 @@ static void handleStats() {
     j += (i ? "," : ""); j += "{\"ip\":\"" + ip.toString() + "\",\"mac\":\"" + macStr(c.mac) + "\",\"blocked\":" + c.blocked + ",\"allowed\":" + c.allowed + ",\"banned\":" + (c.banned?"true":"false") + "}"; }
   j += "],\"custom\":[";
   for (int i = 0; i < numCustom; i++) { j += (i ? "," : ""); j += "\"" + jesc(customDom[i]) + "\""; }
-  j += "]}";
+  j += "]";
+  if (gDns) {                                  // DNS service + encrypted upstream status
+    const app::DnsStats d = gDns->stats();
+    const cache::CacheStats cs = gDns->cacheStats();
+    const app::UpstreamSnapshot us = gDns->upstreams();
+    j += ",\"dns\":{\"queries\":" + String(d.queries) + ",\"blocked\":" + d.blocked +
+         ",\"local\":" + d.local + ",\"cacheHits\":" + d.cacheHits + ",\"forwarded\":" + d.forwarded +
+         ",\"servfail\":" + d.servfail + ",\"cacheEntries\":" + cs.entries + "}";
+    j += ",\"plainFallback\":" + String(us.plainFallback ? "true" : "false") + ",\"upstreams\":[";
+    for (size_t i = 0; i < us.count; i++) {
+      const upstream::UpstreamStatus& u = us.status[i];
+      j += (i ? "," : "");
+      j += "{\"name\":\"" + jesc(u.name) + "\",\"encrypted\":" + (u.authenticated ? "true" : "false") +
+           ",\"state\":\"" + upstream::healthStateName(u.state) + "\",\"ok\":" + u.stats.ok +
+           ",\"failed\":" + u.stats.failed + ",\"latencyMs\":" + u.stats.lastLatencyMs + "}";
+    }
+    j += "]";
+  }
+  j += "}";
   web.send(200, "application/json", j);
 }
 // Upstream shipped every state-changing/OTA endpoint with zero authentication —
@@ -358,6 +339,7 @@ static bool requireAuth() {
 }
 static void handleBan() {
   if (!requireAuth()) return;
+  StateLock lock(gState);
   IPAddress ip; if (ip.fromString(web.arg("ip"))) { Dev* c = getClient((uint32_t)ip); if (c) { c->banned = !c->banned; saveBanned(); } }
   web.send(200, "text/plain", "ok");
 }
@@ -366,17 +348,20 @@ static void handleBan() {
 // The partition holds one list, so we free the old one before writing the new.
 // While swapping, numHashes=0 -> device fail-opens (forwards, no blocking).
 static void reopenBlocklist() {
+  StateLock lock(gState);
   blocklist = LittleFS.open(BLOCKLIST_PATH, "r");
   numHashes = blocklist ? blocklist.size() / HASH_BYTES : 0;
   buildFlashIndex();
 }
 static void beginBlocklistSwap() {
+  StateLock lock(gState);
   if (blocklist) blocklist.close();
   numHashes = 0;
   LittleFS.remove(BLOCKLIST_PATH);
   LittleFS.remove("/blocklist.new");
 }
 static bool commitNewBlocklist() {                  // /blocklist.new -> live (validated)
+  StateLock lock(gState);
   File f = LittleFS.open("/blocklist.new", "r");
   size_t sz = f ? f.size() : 0; if (f) f.close();
   bool ok = sz > 0 && (sz % HASH_BYTES) == 0;       // sorted hash blob -> 5-byte multiple
@@ -565,6 +550,29 @@ static void startConfigPortal() {
   }
 }
 
+// Encrypted upstream chain, in priority order (ARCHITECTURE.md §7.1). Hard-coded IPs:
+// no plaintext bootstrap lookup. Plain UDP is only used if every encrypted one is Down.
+static void startDnsService() {
+  static upstream::ITransport* chain[] = {
+      new platform::DotTransport("cloudflare-dot", "1.1.1.1", "cloudflare-dns.com"),
+      new platform::DotTransport("cloudflare-dot-2", "1.0.0.1", "cloudflare-dns.com"),
+      new platform::DotTransport("quad9-dot", "9.9.9.9", "dns.quad9.net"),
+      new platform::DotTransport("quad9-dot-2", "149.112.112.112", "dns.quad9.net"),
+      new platform::DohTransport("cloudflare-doh", "1.1.1.1", "cloudflare-dns.com"),
+      new platform::DohTransport("cloudflare-doh-2", "1.0.0.1", "cloudflare-dns.com"),
+      new platform::UdpTransport("quad9-udp", "9.9.9.9"),
+      new platform::UdpTransport("cloudflare-udp", "1.1.1.1"),
+  };
+  app::DnsServiceConfig cfg;
+  if (!platform::havePsram()) {        // lite profile (C3 / classic ESP32): small cache
+    cfg.cache.maxEntries = 512;
+    cfg.cache.arenaBytes = 64 * 1024;
+    cfg.pendingSlots = 16;
+  }
+  gDns = new app::DnsService(cfg, gPolicy, gClock, gRandom, gLog, chain, sizeof(chain) / sizeof(chain[0]));
+  if (!gDns->start()) Serial.println("[ERROR] DNS service failed to start");
+}
+
 void setup() {
   Serial.begin(115200); delay(300);
   Serial.println("\n[c3-adblock] booting");
@@ -598,7 +606,7 @@ void setup() {
                     "(they're in the repo's example file). Set real values before trusting this "
                     "device on a network you don't fully control.");
 
-  dnsServer.begin(DNS_PORT); upstreamCli.begin(0);
+  startDnsService();
   { const char* hdrs[] = { CSRF_HEADER }; web.collectHeaders(hdrs, 1); }  // needed for requireAuth()'s CSRF check
   web.on("/", []() { web.send_P(200, "text/html", PAGE); });
   web.on("/stats.json", handleStats);
@@ -608,10 +616,11 @@ void setup() {
   web.on("/pause", []() {                    // /pause?s=300  (0 or absent = indefinite)
     if (!requireAuth()) return;
     long s = web.hasArg("s") ? web.arg("s").toInt() : 0;
+    StateLock lock(gState);
     blockingOn = false; resumeAt = (s > 0) ? millis() + (uint32_t)s * 1000UL : 0;
     web.send(200, "text/plain", "paused");
   });
-  web.on("/resume", []() { if (!requireAuth()) return; blockingOn = true; resumeAt = 0; web.send(200, "text/plain", "resumed"); });
+  web.on("/resume", []() { if (!requireAuth()) return; { StateLock lock(gState); blockingOn = true; resumeAt = 0; } web.send(200, "text/plain", "resumed"); });
   web.on("/forgetwifi", []() { if (!requireAuth()) return; web.send(200, "text/plain", "cleared — rebooting into setup portal");
     prefs.begin("wifi", false); prefs.clear(); prefs.end(); delay(500); ESP.restart(); });
   web.on("/upload", HTTP_POST, handleUploadDone, handleUpload);      // blocklist OTA (auth inside handleUpload)
@@ -627,18 +636,20 @@ void setup() {
   ArduinoOTA.setHostname("c3adblock");   // pio run -t upload --upload-port c3adblock.local
   ArduinoOTA.setPassword(OTA_PASS);      // network OTA was unauthenticated upstream
   ArduinoOTA.begin();
-  Serial.println("DNS :53 + dashboard :80 + OTA up");
+  Serial.println("DNS :53 (DoT/DoH upstream) + dashboard :80 + OTA up");
 }
 
 void loop() {
   ArduinoOTA.handle();
   web.handleClient();
-  bool busy = handleDns();
-  if (!blockingOn && resumeAt && (int32_t)(millis() - resumeAt) >= 0) { blockingOn = true; resumeAt = 0; }
+  if (!blockingOn && resumeAt && (int32_t)(millis() - resumeAt) >= 0) {
+    StateLock lock(gState);
+    blockingOn = true; resumeAt = 0;
+  }
   if (updateUrl.length()) {               // periodic remote blocklist auto-update
     uint32_t now = millis();
     if (lastCheckMs == 0) lastCheckMs = now;   // skip an immediate fetch on boot
     else if (now - lastCheckMs >= updateIntervalH * 3600000UL) { lastCheckMs = now; fetchBlocklist(updateUrl); }
   }
-  if (!busy) delay(1);   // sleep only when idle: full speed under load, cool when quiet
+  delay(2);   // DNS no longer runs here; the loop only serves the dashboard and OTA
 }
