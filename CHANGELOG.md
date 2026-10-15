@@ -13,6 +13,13 @@ All notable changes to this project are documented here. The format follows
   the web installer, since v0.1.0 can't update itself from the dashboard.
 - Boot no longer logs dozens of `task_wdt: esp_task_wdt_reset: task not found` errors
   (ESP-IDF 5 reports watchdog feeds from tasks that aren't subscribed).
+- When the primary upstream stopped answering (blocked port or dead address), the
+  board restarted every ~18 s (task watchdog) and DNS stopped working. It now marks
+  that upstream down and keeps answering through the next one.
+- Failover from an unreachable upstream is fast: the TCP connect stage is capped at
+  1 s, and an upstream is no longer marked down for a query that reached it too late
+  to answer (this had taken the healthy Quad9 down too, for ~30 s of SERVFAIL).
+- Settings pasted with spaces around them (e.g. a custom DoT IP) are accepted.
 
 ## [0.1.0] - 2026-10-15
 
