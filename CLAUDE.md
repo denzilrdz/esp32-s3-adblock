@@ -9,11 +9,11 @@ before changing core logic or tasks.** User docs: README.md, docs/ROUTER_SETUP.m
 
 ## Hardware and environments
 
-| Env | Board | Notes |
-|---|---|---|
-| `esp32s3` | esp32-s3-devkitc-1, N16R8 | **the only firmware target**; `qio_opi`, 16 MB, PSRAM |
-| `native` | host (macOS/Linux) | Unity tests for `lib/core`, ASan + UBSan |
-| `coverage` | host | like `native` with `--coverage` (used by `tools/coverage.sh`) |
+| Env        | Board                     | Notes                                                         |
+| ---------- | ------------------------- | ------------------------------------------------------------- |
+| `esp32s3`  | esp32-s3-devkitc-1, N16R8 | **the only firmware target**; `qio_opi`, 16 MB, PSRAM         |
+| `native`   | host (macOS/Linux)        | Unity tests for `lib/core`, ASan + UBSan                      |
+| `coverage` | host                      | like `native` with `--coverage` (used by `tools/coverage.sh`) |
 
 Framework: Arduino-ESP32 **3.3.12** on **ESP-IDF 5.5.5** with mbedTLS 3.6, from the
 community [pioarduino](https://github.com/pioarduino/platform-espressif32) platform
@@ -32,6 +32,8 @@ pio test -e native                       # all native unit tests
 pio test -e native -f test_dns           # one test folder
 tools/coverage.sh                        # native tests + coverage -> coverage/index.html
 tools/format.sh [--check]                # clang-format (C/C++) + black (Python)
+npx --yes prettier@3.6.2 --write "**/*.{md,yml,yaml,json,html}"   # docs, workflows, JSON, installer
+uvx --from shfmt-py==3.12.0.2 shfmt -w tools/*.sh                   # shell scripts (.editorconfig)
 tools/lint.sh                            # clang-tidy on lib/core (.clang-tidy)
 .venv/bin/zizmor --persona=auditor .github/ && .venv/bin/actionlint   # workflow lint
 tools/make_factory.sh                    # merged image flashable at 0x0 (after a build)

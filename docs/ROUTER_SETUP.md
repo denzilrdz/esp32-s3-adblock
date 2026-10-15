@@ -26,14 +26,13 @@ Best: tell the router's DHCP server to give clients the blocker as their DNS ser
 - Some ISP routers lock these fields. On an Airtel "GPON Home Gateway" (checked
   2026-10-15) the customer login shows LAN DNS, the DHCP on/off switch, static DHCP
   leases, IPv6 LAN DNS (set to the router itself, "HGWProxy") and the WAN settings
-  all greyed out, so steps 1–3 can't be done there. Options if yours does:
-  0. **Put your own router behind it** (what works on the Airtel box above): see
-     [§2a](#2a-your-own-router-behind-a-locked-isp-router).
+  all greyed out, so steps 1–3 can't be done there. Options if yours does: 0. **Put your own router behind it** (what works on the Airtel box above): see
+  [§2a](#2a-your-own-router-behind-a-locked-isp-router).
   1. Set DNS per device (Wi-Fi settings → IP/DNS → manual) on the devices you care
      about.
   2. Turn off the router's DHCP server and run DHCP elsewhere (another router in
-     access-point mode, or a small server). *(The device does not run a DHCP server
-     yet; see the roadmap.)*
+     access-point mode, or a small server). _(The device does not run a DHCP server
+     yet; see the roadmap.)_
   3. Point only the router's **WAN/Internet DNS** at the blocker. Clients then still
      ask the router, which forwards to the blocker. This works, but every query
      appears to come from the router, so per-client stats and bans show one client.
@@ -44,7 +43,7 @@ Leave the ISP router as it is and plug a second router's **WAN/Internet** port i
 one of its LAN ports. The second router runs its own network, which you fully control:
 
 1. Second router: **Router** mode (not access point), internet type **Dynamic IP**.
-2. Join the blocker to the second router's Wi-Fi (dashboard *Forget Wi-Fi*, or hold
+2. Join the blocker to the second router's Wi-Fi (dashboard _Forget Wi-Fi_, or hold
    BOOT while powering on, then pick the new network on its setup page).
 3. Reserve the blocker's IP (by its MAC) in the second router's DHCP settings.
 4. Make that router hand out the blocker as DNS, with no secondary DNS.
@@ -54,12 +53,12 @@ one of its LAN ports. The second router runs its own network, which you fully co
 
 Checked on a **TP-Link TL-WR850N** behind the Airtel box (2026-10-15): its DHCP page
 has no DNS fields, but it passes its own internet DNS to clients, so step 4 is
-*Network → Internet → Advanced → Use the Following DNS Addresses* = the blocker's IP.
-Address reservation is under *Network → LAN Settings*, and IPv6 is the *IPv6 Enable*
+_Network → Internet → Advanced → Use the Following DNS Addresses_ = the blocker's IP.
+Address reservation is under _Network → LAN Settings_, and IPv6 is the _IPv6 Enable_
 switch on the Internet page. `s3adblock.local` only resolves on the network the
 blocker is on; from elsewhere use its IP. Mesh systems work the same way if they let
-you set the DNS their DHCP hands out (TP-Link Deco: *More → Advanced → DHCP Server →
-Primary DNS*).
+you set the DNS their DHCP hands out (TP-Link Deco: _More → Advanced → DHCP Server →
+Primary DNS_).
 
 ## 3. IPv6: the most common bypass
 
@@ -71,11 +70,11 @@ even though IPv4 DNS points at the blocker.
 The blocker answers DNS over IPv4 only (it blocks AAAA lookups that reach it, but it
 cannot stop clients from asking a different IPv6 server). Pick one of these:
 
-| Option | How | Trade-off |
-|---|---|---|
-| **A. Stop advertising IPv6 DNS** (preferred if available) | In the router's IPv6/LAN settings, disable "DNS server" / "RDNSS" / "DHCPv6 DNS", or set the IPv6 DNS to none. | Keeps IPv6 connectivity; not every router offers it. |
-| **B. Disable IPv6 on the LAN** | **IPv6 → LAN** (or **Network → IPv6**) → disable, or set the WAN connection to IPv4 only. | Simple and reliable; loses IPv6 (most sites work fine over IPv4). |
-| **C. Per device** | Turn off IPv6 on the device, or set its IPv6 DNS manually to nothing / a blocked address. | Only covers the devices you change. |
+| Option                                                    | How                                                                                                            | Trade-off                                                         |
+| --------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| **A. Stop advertising IPv6 DNS** (preferred if available) | In the router's IPv6/LAN settings, disable "DNS server" / "RDNSS" / "DHCPv6 DNS", or set the IPv6 DNS to none. | Keeps IPv6 connectivity; not every router offers it.              |
+| **B. Disable IPv6 on the LAN**                            | **IPv6 → LAN** (or **Network → IPv6**) → disable, or set the WAN connection to IPv4 only.                      | Simple and reliable; loses IPv6 (most sites work fine over IPv4). |
+| **C. Per device**                                         | Turn off IPv6 on the device, or set its IPv6 DNS manually to nothing / a blocked address.                      | Only covers the devices you change.                               |
 
 Airtel's installer sometimes re-applies settings after a firmware update or reset:
 re-check after any router change.
@@ -95,7 +94,7 @@ skipping your network's DNS.
 - **Android:** Settings → Network → **Private DNS** must be **Off** or **Automatic**.
   A hostname there (e.g. `dns.google`) bypasses the blocker.
 - **Apple devices:** iCloud Private Relay bypasses local DNS for Safari. The
-  dashboard option *Disable iCloud Private Relay on this network* answers Apple's
+  dashboard option _Disable iCloud Private Relay on this network_ answers Apple's
   opt-out domains so devices fall back to normal DNS (off by default).
 
 ## 5. Devices with hard-coded DNS

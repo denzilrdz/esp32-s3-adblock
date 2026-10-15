@@ -40,6 +40,7 @@ pio device monitor -e esp32s3                # 115200 baud, esp32_exception_deco
 ```
 
 The DevKitC-1 has **two USB-C ports**:
+
 - `UART` (CP210x/CH343 bridge): **the firmware log (setup code, PSRAM, Wi-Fi, DNS)
   only appears here.** With macOS's built-in driver a CH343 shows up as
   `/dev/cu.usbmodem<serial>` (e.g. `usbmodem5CE60447761`, or `usbmodem1234561` when
@@ -72,7 +73,7 @@ downloads it itself).
 
 ## OTA
 
-- Dashboard: *Device → Flash firmware* with `.pio/build/esp32s3/firmware.bin`.
+- Dashboard: _Device → Flash firmware_ with `.pio/build/esp32s3/firmware.bin`.
 - Network: `pio run -e esp32s3 -t upload --upload-port s3adblock.local --upload-protocol espota --upload-flags="--auth=<OTA_PASS>"`.
 
 A new image must be healthy (Wi-Fi + DNS running 60 s) within 5 minutes or the
@@ -80,13 +81,13 @@ bootloader rolls back (`maintainOtaHealth()` in `src/main.cpp`).
 
 ## Common errors
 
-| Symptom | Fix |
-|---|---|
+| Symptom                                                  | Fix                                                                                                |
+| -------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
 | `Failed to connect to ESP32-S3: No serial data received` | Hold **BOOT**, tap **RST**, release BOOT, retry. Try the other USB-C port or a data-capable cable. |
-| `Could not open port ... Resource busy` | Close `pio device monitor` or other apps using the port. |
-| Port not listed on macOS | Use a data cable. For CH343 boards, install the WCH driver only if no `cu.wchusbserial*` appears. |
-| Boot loop, `PSRAM ID read error` | `memory_type` must be `qio_opi` for N16R8, never `opi_opi`. |
-| `[ERROR] No PSRAM found` in the boot log | Same as above, or `-DBOARD_HAS_PSRAM` missing, or not an N16R8 module. |
-| `program size ... greater than maximum allowed` | Check `board_build.partitions` for the env. |
-| espota auth failed / OTA not listening | `OTA_PASS` must be 10+ chars (and match `--auth`); check the boot log. |
-| `AttributeError: ... 'resultcallback'` | PlatformIO too old: use `.venv/bin/pio` (pinned 6.2.0). |
+| `Could not open port ... Resource busy`                  | Close `pio device monitor` or other apps using the port.                                           |
+| Port not listed on macOS                                 | Use a data cable. For CH343 boards, install the WCH driver only if no `cu.wchusbserial*` appears.  |
+| Boot loop, `PSRAM ID read error`                         | `memory_type` must be `qio_opi` for N16R8, never `opi_opi`.                                        |
+| `[ERROR] No PSRAM found` in the boot log                 | Same as above, or `-DBOARD_HAS_PSRAM` missing, or not an N16R8 module.                             |
+| `program size ... greater than maximum allowed`          | Check `board_build.partitions` for the env.                                                        |
+| espota auth failed / OTA not listening                   | `OTA_PASS` must be 10+ chars (and match `--auth`); check the boot log.                             |
+| `AttributeError: ... 'resultcallback'`                   | PlatformIO too old: use `.venv/bin/pio` (pinned 6.2.0).                                            |

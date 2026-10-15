@@ -13,17 +13,17 @@ Design: [ARCHITECTURE.md §5](../../../docs/ARCHITECTURE.md).
 
 ## Incoming query validation (in order)
 
-| Condition | Action |
-|---|---|
-| len < 12, or QR = 1 | drop silently |
-| OPCODE ≠ 0 | NOTIMP |
-| QDCOUNT ≠ 1, or ANCOUNT/NSCOUNT ≠ 0 | FORMERR |
-| bad name (label > 63, name > 255, compression in question, overruns packet, label byte not printable ASCII or a `.`) | FORMERR |
-| QCLASS ≠ IN | REFUSED |
-| > 1 OPT, or malformed OPT | FORMERR |
-| OPT version > 0 | BADVERS (extended RCODE 16) |
-| QTYPE = ANY (255) | NOTIMP (in `processQuery`) |
-| source IP not private/link-local/loopback | drop (in `processQuery`; not an open resolver) |
+| Condition                                                                                                            | Action                                         |
+| -------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| len < 12, or QR = 1                                                                                                  | drop silently                                  |
+| OPCODE ≠ 0                                                                                                           | NOTIMP                                         |
+| QDCOUNT ≠ 1, or ANCOUNT/NSCOUNT ≠ 0                                                                                  | FORMERR                                        |
+| bad name (label > 63, name > 255, compression in question, overruns packet, label byte not printable ASCII or a `.`) | FORMERR                                        |
+| QCLASS ≠ IN                                                                                                          | REFUSED                                        |
+| > 1 OPT, or malformed OPT                                                                                            | FORMERR                                        |
+| OPT version > 0                                                                                                      | BADVERS (extended RCODE 16)                    |
+| QTYPE = ANY (255)                                                                                                    | NOTIMP (in `processQuery`)                     |
+| source IP not private/link-local/loopback                                                                            | drop (in `processQuery`; not an open resolver) |
 
 ## Replies we synthesize
 

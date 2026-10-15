@@ -13,17 +13,17 @@ Design: [ARCHITECTURE.md §6](../../../docs/ARCHITECTURE.md).
   The top 16 of those bits are the bucket; the low 32 bits are the stored suffix.
 - **Header (32 bytes, LE):**
 
-  | Bytes | Field |
-  |---|---|
-  | 0–3 | magic `ADBL` |
-  | 4 | version 2 |
-  | 5 | hash_bits 48 |
-  | 6 | prefix_bits 16 |
-  | 7 | flags 0 |
-  | 8–11 | count N |
+  | Bytes | Field                 |
+  | ----- | --------------------- |
+  | 0–3   | magic `ADBL`          |
+  | 4     | version 2             |
+  | 5     | hash_bits 48          |
+  | 6     | prefix_bits 16        |
+  | 7     | flags 0               |
+  | 8–11  | count N               |
   | 12–15 | CRC-32 of the payload |
-  | 16–23 | build time (unix s) |
-  | 24–31 | reserved 0 |
+  | 16–23 | build time (unix s)   |
+  | 24–31 | reserved 0            |
 
 - **Payload:** `uint32 bucket_start[65537]` (monotonic, last == N), then
   `uint32 suffix[N]`, sorted within each bucket.
@@ -95,6 +95,6 @@ list + immediate download.
   problem or a wrong file at the URL; the old list stays. `bad magic` → not a v2
   file (e.g. an HTML error page or an old 40-bit list).
 - `0 domains` after boot → no valid list and no `.old` file; it downloads as soon as
-  the clock syncs. Or *Update now* / upload a file on the dashboard.
+  the clock syncs. Or _Update now_ / upload a file on the dashboard.
 - `too many entries` → the limit is 1M entries, set in
   `BlocklistManager`'s constructor; raise only if the budget (ARCHITECTURE §11) allows.

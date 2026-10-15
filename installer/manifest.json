@@ -2,7 +2,5 @@
   "name": "ESP32-S3 AdBlock",
   "version": "__VERSION__",
   "new_install_prompt_erase": true,
-  "builds": [
-    { "chipFamily": "ESP32-S3", "parts": [{ "path": "factory-esp32s3.bin", "offset": 0 }] }
-  ]
+  "builds": [{ "chipFamily": "ESP32-S3", "parts": [{ "path": "factory-esp32s3.bin", "offset": 0 }] }]
 }

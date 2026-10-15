@@ -12,7 +12,7 @@ Only the latest release (and `main`) receives security fixes.
 **Please do not open a public issue for security problems.**
 
 - Email **denzil.rdz@gmail.com** with the subject `esp32-s3-adblock security`, or
-- use GitHub's private reporting: *Security → Report a vulnerability* on this repository.
+- use GitHub's private reporting: _Security → Report a vulnerability_ on this repository.
 
 Include the affected version or commit, the board, steps to
 reproduce, and the impact you expect. You'll get an acknowledgement within 7 days; a

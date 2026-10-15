@@ -1,0 +1,5 @@
+# Generated or third-party: never reformat.
+.pio/
+.venv/
+coverage/
+uv.lock

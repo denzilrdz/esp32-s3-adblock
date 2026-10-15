@@ -13,6 +13,7 @@ failover with a blackholed or impersonated server, plain-DNS fallback on and off
 
 **Upgrading from v0.1.0:** v0.1.0 can't install updates from its dashboard (first fix
 below), so flash this release once over USB:
+
 - from source with PlatformIO (`pio run -e esp32s3 -t upload`): settings, Wi-Fi and
   the dashboard password are kept;
 - or with the [web installer](https://denzilrdz.github.io/esp32-s3-adblock/): its
@@ -22,6 +23,7 @@ below), so flash this release once over USB:
 From v0.1.1 on, updates from the dashboard work and keep everything.
 
 ### Fixed
+
 - Firmware updates from the dashboard crashed the board mid-upload (task watchdog in
   the web task) and never installed; the old firmware kept running. Uploads of
   firmware and blocklists now keep the watchdog fed. Verified on hardware, including
@@ -49,6 +51,7 @@ blocklist download and blocking, the response cache, DNS over TCP and the dashbo
 password setup.
 
 ### Added
+
 - Built on Arduino-ESP32 3.3.12 / ESP-IDF 5.5.5 (mbedTLS 3.6) through the pioarduino
   PlatformIO platform, pinned to release 55.03.312-1 (ESP-IDF 4.4, used upstream, no
   longer gets security fixes).
@@ -75,11 +78,13 @@ password setup.
 - Documentation: architecture, router/IPv6 setup guide, Claude Code skills.
 
 ### Changed
+
 - Blocking replies: AAAA returns `::`, HTTPS/SVCB return NODATA with an SOA, and
   EDNS clients get Extended DNS Error 15.
 - Blocklist builder writes format v2 only; `www.` is no longer stripped.
 
 ### Fixed (compared with upstream)
+
 - A failed or corrupt blocklist download no longer leaves the device without a list.
 - Large blocklists no longer miss entries in crowded index buckets.
 - A slow upstream no longer stalls every other query, the dashboard and OTA.
@@ -87,6 +92,7 @@ password setup.
   and follow GitHub's long (~900-character) release-asset redirect.
 
 ### Security
+
 - GitHub Actions hardening: workflows audited with zizmor (auditor persona) and
   actionlint in CI and pre-commit; checkout credentials not persisted; per-job
   least-privilege permissions; job timeouts; no template expansion in scripts;
@@ -95,6 +101,7 @@ password setup.
   paths.
 
 ### Removed
+
 - ESP32-C3 and classic ESP32 support (this fork is ESP32-S3 only: PSRAM and 16 MB
   flash are required), upstream's 40-bit blocklist format, the Japanese README,
   the C3 web-installer binaries and the C3 SuperMini enclosure.

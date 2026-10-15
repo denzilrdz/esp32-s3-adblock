@@ -9,29 +9,29 @@ Design: [ARCHITECTURE.md §7](../../../docs/ARCHITECTURE.md).
 
 ## Code
 
-| Piece | File |
-|---|---|
-| Transport interface (strategy) | `lib/core/upstream/transport.h` |
-| DoT framing, DoH HTTP/1.1 codec (Content-Length only, no chunked) | `lib/core/upstream/framing.{h,cpp}` |
-| Health state machine | `lib/core/upstream/health.{h,cpp}` |
-| Forwarder: chain, in-flight table, hedging, deadlines | `lib/core/upstream/forwarder.{h,cpp}` |
-| Response cache | `lib/core/cache/response_cache.{h,cpp}` |
-| Provider table + chain order from settings | `lib/core/config/config.cpp` (`buildChain`) |
-| ESP32 transports (DoT, DoH, UDP) | `src/platform/transports.{h,cpp}` on `src/platform/tls_stream.{h,cpp}` |
-| Task (`dns_up`) and cache wiring | `src/tasks/dns_service.{h,cpp}` |
-| Tests | `test/test_upstream`, `test/test_cache`, `test/test_config` |
+| Piece                                                             | File                                                                   |
+| ----------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| Transport interface (strategy)                                    | `lib/core/upstream/transport.h`                                        |
+| DoT framing, DoH HTTP/1.1 codec (Content-Length only, no chunked) | `lib/core/upstream/framing.{h,cpp}`                                    |
+| Health state machine                                              | `lib/core/upstream/health.{h,cpp}`                                     |
+| Forwarder: chain, in-flight table, hedging, deadlines             | `lib/core/upstream/forwarder.{h,cpp}`                                  |
+| Response cache                                                    | `lib/core/cache/response_cache.{h,cpp}`                                |
+| Provider table + chain order from settings                        | `lib/core/config/config.cpp` (`buildChain`)                            |
+| ESP32 transports (DoT, DoH, UDP)                                  | `src/platform/transports.{h,cpp}` on `src/platform/tls_stream.{h,cpp}` |
+| Task (`dns_up`) and cache wiring                                  | `src/tasks/dns_service.{h,cpp}`                                        |
+| Tests                                                             | `test/test_upstream`, `test/test_cache`, `test/test_config`            |
 
 ## Defaults
 
 Built by `config::buildChain()` from the settings (primary = Cloudflare, secondary =
 Quad9 by default):
 
-| Order | Transport | IP:port | Verify name |
-|---|---|---|---|
-| 1–2 | DoT (primary) | 1.1.1.1:853, 1.0.0.1:853 | `cloudflare-dns.com` |
-| 3–4 | DoT (secondary) | 9.9.9.9:853, 149.112.112.112:853 | `dns.quad9.net` |
-| 5–6 | DoH (POST, HTTP/1.1), if `up_doh` | 1.1.1.1:443, 1.0.0.1:443 | `cloudflare-dns.com` |
-| 7–8 | plain UDP, if `up_plain` | 1.1.1.1:53, 9.9.9.9:53 | — |
+| Order | Transport                         | IP:port                          | Verify name          |
+| ----- | --------------------------------- | -------------------------------- | -------------------- |
+| 1–2   | DoT (primary)                     | 1.1.1.1:853, 1.0.0.1:853         | `cloudflare-dns.com` |
+| 3–4   | DoT (secondary)                   | 9.9.9.9:853, 149.112.112.112:853 | `dns.quad9.net`      |
+| 5–6   | DoH (POST, HTTP/1.1), if `up_doh` | 1.1.1.1:443, 1.0.0.1:443         | `cloudflare-dns.com` |
+| 7–8   | plain UDP, if `up_plain`          | 1.1.1.1:53, 9.9.9.9:53           | —                    |
 
 Changing upstream settings on the dashboard restarts the device (transports are
 created at boot in `startDnsService()`).
@@ -57,6 +57,7 @@ created at boot in `startDnsService()`).
 ## Health state machine
 
 `Unknown → Up ⇄ Degraded → Down → Probing → Up/Down` (a failed connect is just a failure).
+
 - 3 consecutive failures → Down.
 - Probe backoff: 1 s, 2 s, 4 s … max 300 s, ±20 % jitter.
 - The forwarder uses the first encrypted upstream that is not Down (or Down with its
@@ -111,7 +112,7 @@ dashboard shows a red banner. Clear AD on these answers. Strict mode
      --data-binary @q.bin https://<ip>/dns-query -o /dev/null   # must be 200
    ```
 2. Check its certificate chains to a root in the IDF bundle (`openssl s_client
-   -connect <ip>:853 -servername <name> -showcerts`).
+-connect <ip>:853 -servername <name> -showcerts`).
 3. Users can already use any DoT provider via the **custom** upstream setting
    (IP, second IP, TLS name, optional DoH). To make it a built-in choice: add a
    `Provider` value + `ProviderInfo` in `lib/core/config/config.{h,cpp}`

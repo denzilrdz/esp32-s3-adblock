@@ -6,7 +6,7 @@ fork of [M-Abozaid/esp32-c3-adblock](https://github.com/M-Abozaid/esp32-c3-adblo
 (MIT). Read it before changing anything in `lib/core/` or `src/tasks/`.
 
 Status: **implemented in v0.1.1, running on an ESP32-S3-DevKitC-1 (N16R8).** Items
-marked *(verify on hardware)* are confirmed against the toolchain and SDK sources but
+marked _(verify on hardware)_ are confirmed against the toolchain and SDK sources but
 not yet measured on the board.
 
 ---
@@ -47,21 +47,21 @@ not yet measured on the board.
 
 ### Upstream weak points we fix
 
-| # | Weak point (upstream `src/main.cpp`) | Fix here |
-|---|---|---|
-| W1 | `forwardUpstream()` blocks the single `loop()` for up to 1 s per query; one slow answer stalls every client, the dashboard and OTA (#40). | Separate DNS I/O and upstream tasks with a queue; pipelined DoT with an in-flight table (§4). |
-| W2 | `beginBlocklistSwap()` deletes the live list **before** the new one is downloaded/validated; a failed update leaves no blocking (#21). | Download to a temp file, validate, then atomic swap; old list stays live on any failure (§6). |
-| W3 | Blocklist validation is `size % 5 == 0` only (#20). | Versioned header, CRC-32, count/size and sortedness checks (§6.2). |
-| W4 | Remote fetch uses `setInsecure()`. | Certificate verification with the ESP-IDF CA bundle. |
-| W5 | Remote fetch runs inside `loop()`, freezing DNS for the whole download. | Runs in the low-priority maintenance task. |
-| W6 | `MAX_RANGE = 256` clamp in `inFlash()` silently produces **false negatives** once buckets exceed 256 entries (≈1M+ hashes). Harmless on 4 MB, a real bug at S3 scale. | New bucketed index with exact bucket bounds (§6.1). |
-| W7 | No response cache; every allowed query goes upstream. | TTL-respecting LRU cache in PSRAM (§5). |
-| W8 | Upstream timeout → client gets **no reply**. | SERVFAIL after the deadline so clients retry promptly. |
-| W9 | No query validation (QR/opcode/QDCOUNT/class); EDNS dropped from blocked replies; non-A types get an empty answer; no TCP. | Full validation, EDNS0, AAAA → `::`, NODATA+SOA for other types, TC + TCP/53 (§5). |
-| W10 | Plain UDP to hard-coded 9.9.9.9:53. | Configurable DoT/DoH/UDP chain with health tracking (§4). |
-| W11 | Firmware OTA has no signature check. | Optional ECDSA-P256 signed images + app rollback (§9). |
+| #   | Weak point (upstream `src/main.cpp`)                                                                                                                                  | Fix here                                                                                      |
+| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| W1  | `forwardUpstream()` blocks the single `loop()` for up to 1 s per query; one slow answer stalls every client, the dashboard and OTA (#40).                             | Separate DNS I/O and upstream tasks with a queue; pipelined DoT with an in-flight table (§4). |
+| W2  | `beginBlocklistSwap()` deletes the live list **before** the new one is downloaded/validated; a failed update leaves no blocking (#21).                                | Download to a temp file, validate, then atomic swap; old list stays live on any failure (§6). |
+| W3  | Blocklist validation is `size % 5 == 0` only (#20).                                                                                                                   | Versioned header, CRC-32, count/size and sortedness checks (§6.2).                            |
+| W4  | Remote fetch uses `setInsecure()`.                                                                                                                                    | Certificate verification with the ESP-IDF CA bundle.                                          |
+| W5  | Remote fetch runs inside `loop()`, freezing DNS for the whole download.                                                                                               | Runs in the low-priority maintenance task.                                                    |
+| W6  | `MAX_RANGE = 256` clamp in `inFlash()` silently produces **false negatives** once buckets exceed 256 entries (≈1M+ hashes). Harmless on 4 MB, a real bug at S3 scale. | New bucketed index with exact bucket bounds (§6.1).                                           |
+| W7  | No response cache; every allowed query goes upstream.                                                                                                                 | TTL-respecting LRU cache in PSRAM (§5).                                                       |
+| W8  | Upstream timeout → client gets **no reply**.                                                                                                                          | SERVFAIL after the deadline so clients retry promptly.                                        |
+| W9  | No query validation (QR/opcode/QDCOUNT/class); EDNS dropped from blocked replies; non-A types get an empty answer; no TCP.                                            | Full validation, EDNS0, AAAA → `::`, NODATA+SOA for other types, TC + TCP/53 (§5).            |
+| W10 | Plain UDP to hard-coded 9.9.9.9:53.                                                                                                                                   | Configurable DoT/DoH/UDP chain with health tracking (§4).                                     |
+| W11 | Firmware OTA has no signature check.                                                                                                                                  | Optional ECDSA-P256 signed images + app rollback (§9).                                        |
 
-### Borrowed as *ideas only* from s60sc/ESP32_AdBlocker (AGPL-3.0 — no code copied)
+### Borrowed as _ideas only_ from s60sc/ESP32_AdBlocker (AGPL-3.0 — no code copied)
 
 - Daily update at a fixed local time driven by NTP.
 - Persist the last good list in flash so boot does not need the network.
@@ -190,14 +190,14 @@ do microsecond work.
 
 ### 4.2 Task layout
 
-| Task | Core | Prio | Stack | Watchdog | Role |
-|---|---|---|---|---|---|
-| lwIP `tcpip` / Wi-Fi (IDF) | 0 | 18 / 23 | IDF | — | network stack |
-| `dns_io` | 1 | 10 | 6 KB | yes | UDP/53 receive, policy, cache, replies |
-| `dns_up` | 1 | 8 | 12 KB | yes | transports, chain, health, cache insert |
-| `dns_tcp` | 0 | 5 | 6 KB | yes | TCP/53, ≤ 2 connections, 10 s idle (PSRAM boards only) |
-| `web` | 0 | 3 | 8 KB | yes | dashboard, REST API, ArduinoOTA |
-| maintenance (Arduino `loopTask`) | 1 | 1 | 16 KB | yes | Wi-Fi supervision, scheduler, blocklist update (HTTPS), MAC lookups, resolver re-pointing, OTA health mark |
+| Task                             | Core | Prio    | Stack | Watchdog | Role                                                                                                       |
+| -------------------------------- | ---- | ------- | ----- | -------- | ---------------------------------------------------------------------------------------------------------- |
+| lwIP `tcpip` / Wi-Fi (IDF)       | 0    | 18 / 23 | IDF   | —        | network stack                                                                                              |
+| `dns_io`                         | 1    | 10      | 6 KB  | yes      | UDP/53 receive, policy, cache, replies                                                                     |
+| `dns_up`                         | 1    | 8       | 12 KB | yes      | transports, chain, health, cache insert                                                                    |
+| `dns_tcp`                        | 0    | 5       | 6 KB  | yes      | TCP/53, ≤ 2 connections, 10 s idle (PSRAM boards only)                                                     |
+| `web`                            | 0    | 3       | 8 KB  | yes      | dashboard, REST API, ArduinoOTA                                                                            |
+| maintenance (Arduino `loopTask`) | 1    | 1       | 16 KB | yes      | Wi-Fi supervision, scheduler, blocklist update (HTTPS), MAC lookups, resolver re-pointing, OTA health mark |
 
 The DNS tasks are named `dns_io` and `dns_up` in code (`src/tasks/dns_service.*`).
 MAC addresses for the client table are read from the ARP table inside lwIP's own
@@ -244,12 +244,12 @@ subscribed: ESP-IDF 5 logs an error for those. Dashboard uploads run inside a si
 
 Modelled on Pi-hole's `NULL` mode and AdGuard Home's `null_ip` mode:
 
-| Query type | Reply |
-|---|---|
-| A | NOERROR, one A record `0.0.0.0`, TTL = `blocked_ttl` (default 10 s) |
-| AAAA | NOERROR, one AAAA record `::` |
+| Query type                            | Reply                                                                                                                                     |
+| ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| A                                     | NOERROR, one A record `0.0.0.0`, TTL = `blocked_ttl` (default 10 s)                                                                       |
+| AAAA                                  | NOERROR, one AAAA record `::`                                                                                                             |
 | HTTPS (65), SVCB (64), any other type | NOERROR with **no answer (NODATA)** plus a synthetic SOA in the authority section, so clients cache the negative answer for `blocked_ttl` |
-| ANY | NOTIMP (RFC 8482 permits a minimal reply; no amplification) |
+| ANY                                   | NOTIMP (RFC 8482 permits a minimal reply; no amplification)                                                                               |
 
 All blocked and local replies use RA = 1, AA = 0 and AD = 0, copy RD and the ID,
 and echo the question.
@@ -299,11 +299,11 @@ DO bit echoed, and the extended RCODE recomputed. Upstream queries carry our own
 
 ### 5.6 Optional privacy features (proposed defaults)
 
-| Feature | Default | What it does |
-|---|---|---|
-| EDNS padding (RFC 7830 / RFC 8467) | **on** | Pads upstream DoT/DoH queries to a multiple of 128 bytes, so query length leaks less about the name. We do not pad replies to LAN clients (plain UDP; no value). |
-| DNSSEC AD-flag pass-through (RFC 6840 §5.7–5.8) | **on** | Upstream queries set AD = 1. AD from an upstream reached over a verified DoT/DoH session is trusted and passed on, but only to clients that set AD or DO in their query. The dashboard shows the share of validated answers. AD is cleared on plain-UDP fallback (unauthenticated channel), and on blocked/local answers. |
-| Strict mode (no plain fallback) | off | See §7. |
+| Feature                                         | Default | What it does                                                                                                                                                                                                                                                                                                              |
+| ----------------------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| EDNS padding (RFC 7830 / RFC 8467)              | **on**  | Pads upstream DoT/DoH queries to a multiple of 128 bytes, so query length leaks less about the name. We do not pad replies to LAN clients (plain UDP; no value).                                                                                                                                                          |
+| DNSSEC AD-flag pass-through (RFC 6840 §5.7–5.8) | **on**  | Upstream queries set AD = 1. AD from an upstream reached over a verified DoT/DoH session is trusted and passed on, but only to clients that set AD or DO in their query. The dashboard shows the share of validated answers. AD is cleared on plain-UDP fallback (unauthenticated channel), and on blocked/local answers. |
+| Strict mode (no plain fallback)                 | off     | See §7.                                                                                                                                                                                                                                                                                                                   |
 
 ---
 
@@ -342,6 +342,7 @@ DO bit echoed, and the extended RCODE recomputed. Upstream queries carry our own
   ```
 
   At 400k names the file is about 1.86 MB; at 1M names, about 4.26 MB.
+
 - The whole file is read into one PSRAM buffer and queried in memory, so the DNS hot
   path does no flash I/O. The same format can also be queried straight from the file
   (`FileIndex`: two small reads per hash); that is only used as a bridge during a
@@ -421,7 +422,7 @@ stateDiagram-v2
      the old slot's count is zero, then frees it. Readers never take a lock; the
      handshake uses sequentially consistent atomics (a store-then-load pattern that
      acquire/release alone does not make safe).
-  6. If PSRAM cannot hold both buffers, the device temporarily switches to the
+  5. If PSRAM cannot hold both buffers, the device temporarily switches to the
      file-backed index on the new file, frees the old buffer, loads the new one,
      then switches back. Blocking never stops.
 - Any failure leaves the old list fully active. The dashboard shows the last
@@ -436,12 +437,12 @@ stateDiagram-v2
 `ITransport` is the strategy interface: `connect()`, `send(query)`, `poll(reply,
 timeout)`, `close()`, plus `pipelined()`. Implementations:
 
-| Transport | Endpoint (hard-coded IPs, no bootstrap DNS) | Verify name | Notes |
-|---|---|---|---|
-| DoT (RFC 7858) | 1.1.1.1:853, then 1.0.0.1:853 | `cloudflare-dns.com` | primary; pipelined |
-| DoT | 9.9.9.9:853, then 149.112.112.112:853 | `dns.quad9.net` | backup; pipelined |
-| DoH (RFC 8484) | 1.1.1.1:443, then 1.0.0.1:443 | `cloudflare-dns.com` | fallback if port 853 is blocked; HTTP/1.1 POST `application/dns-message`, keep-alive; sequential |
-| Plain UDP | 9.9.9.9:53, 1.1.1.1:53 | — | last resort, only if `allow_plain_fallback` |
+| Transport      | Endpoint (hard-coded IPs, no bootstrap DNS) | Verify name          | Notes                                                                                            |
+| -------------- | ------------------------------------------- | -------------------- | ------------------------------------------------------------------------------------------------ |
+| DoT (RFC 7858) | 1.1.1.1:853, then 1.0.0.1:853               | `cloudflare-dns.com` | primary; pipelined                                                                               |
+| DoT            | 9.9.9.9:853, then 149.112.112.112:853       | `dns.quad9.net`      | backup; pipelined                                                                                |
+| DoH (RFC 8484) | 1.1.1.1:443, then 1.0.0.1:443               | `cloudflare-dns.com` | fallback if port 853 is blocked; HTTP/1.1 POST `application/dns-message`, keep-alive; sequential |
+| Plain UDP      | 9.9.9.9:53, 1.1.1.1:53                      | —                    | last resort, only if `allow_plain_fallback`                                                      |
 
 - **Quad9 is not offered over DoH.** Live testing showed that Quad9's DoH
   endpoint answers HTTP/1.1 with `505 HTTP Version Not Supported` (it requires
@@ -467,7 +468,7 @@ timeout)`, `close()`, plus `pipelined()`. Implementations:
   `mbedtls_ssl_get_session`/`set_session`, because `esp_tls`'s ticket API is not
   compiled into the prebuilt library). A full handshake (ECDHE + certificate chain)
   measured **~1.5 s** on the DevKitC-1 (9.9.9.9, 2026-10-15); a resumed one skips the
-  ECDHE and certificate cost *(verify on hardware: resumed handshake time)*.
+  ECDHE and certificate cost _(verify on hardware: resumed handshake time)_.
 - **Deadlines:** a query has 2.5 s in total. If the active upstream does not answer
   within 1.2 s, the query is re-sent once to the next healthy upstream. At the
   deadline the client gets SERVFAIL (upstream sent nothing, W8).
@@ -511,7 +512,7 @@ automatically. This is a circuit-breaker with exponential backoff.
 - If every encrypted upstream is `Down` and `allow_plain_fallback` is on (the
   default, so the internet keeps working), queries go over plain UDP.
 - The device logs `[WARN] upstream: ALL encrypted upstreams down — using PLAIN DNS
-  (visible to ISP)` once per transition, and the dashboard shows a red banner.
+(visible to ISP)` once per transition, and the dashboard shows a red banner.
 - Each encrypted upstream keeps probing, and the chain returns to DoT as soon as
   one recovers.
 - With the option off (strict privacy), clients get SERVFAIL instead.
@@ -636,59 +637,59 @@ automatically. This is a circuit-breaker with exponential backoff.
 
 ## 10. Failure handling
 
-| Failure | Behaviour |
-|---|---|
-| **Wi-Fi drops** | The Wi-Fi driver reconnects automatically; the maintenance task logs it and reboots after 10 min without Wi-Fi (a never-configured device opens the setup portal). `dns_io` keeps running (nothing to receive). DoT sessions fail and are lazily reopened. |
-| **One upstream fails** | Health FSM marks it Degraded → Down; the chain moves to the next one; backoff probes bring it back. |
-| **All encrypted upstreams fail** (e.g. port 853 and 443 blocked) | Plain-UDP fallback with a loud log and dashboard banner, or SERVFAIL in strict mode. The cache keeps serving hits either way. |
-| **All upstreams fail** (internet down) | Cache hits still served; misses get SERVFAIL after 2.5 s so clients fail fast instead of hanging. Blocked names are still blocked. |
-| **Blocklist download corrupt / truncated / wrong format** | Validation fails, temp file deleted, old list stays live, result shown on the dashboard, retry hourly (max 6), then next day. |
-| **Power loss during swap** | Boot-time recovery: valid live file → use it; else valid `.old` → restore it; else start with an empty list (fail open) and schedule an immediate download. |
-| **PSRAM missing / wrong memory_type** | The boot log prints an error (check `qio_opi`); the DNS service can't allocate its cache and does not start. The firmware requires the N16R8's PSRAM. |
-| **Clock not synced** | DoT still works (validity dates are not checked; see §7.1); the scheduler does nothing until sync; the dashboard shows "time not synced". NTP uses `pool.ntp.org` plus hard-coded `time.cloudflare.com` IPs (162.159.200.1, 162.159.200.123), so it works even if the device's own DNS is not ready. |
-| **Task hangs** | TWDT panic → core dump to flash (`coredump` partition) → reboot. The dump is decoded on the Mac (see the `debugging` skill). |
-| **Bad firmware** | App rollback (§9). |
-| **Device's own lookups** (blocklist host, NTP pool) | The station interface's DNS server is set to `127.0.0.1` (re-applied every minute after DHCP renewals), so they go through our own pipeline and over DoT. `CONFIG_LWIP_NETIF_LOOPBACK` is enabled in the prebuilt libs. |
+| Failure                                                          | Behaviour                                                                                                                                                                                                                                                                                            |
+| ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Wi-Fi drops**                                                  | The Wi-Fi driver reconnects automatically; the maintenance task logs it and reboots after 10 min without Wi-Fi (a never-configured device opens the setup portal). `dns_io` keeps running (nothing to receive). DoT sessions fail and are lazily reopened.                                           |
+| **One upstream fails**                                           | Health FSM marks it Degraded → Down; the chain moves to the next one; backoff probes bring it back.                                                                                                                                                                                                  |
+| **All encrypted upstreams fail** (e.g. port 853 and 443 blocked) | Plain-UDP fallback with a loud log and dashboard banner, or SERVFAIL in strict mode. The cache keeps serving hits either way.                                                                                                                                                                        |
+| **All upstreams fail** (internet down)                           | Cache hits still served; misses get SERVFAIL after 2.5 s so clients fail fast instead of hanging. Blocked names are still blocked.                                                                                                                                                                   |
+| **Blocklist download corrupt / truncated / wrong format**        | Validation fails, temp file deleted, old list stays live, result shown on the dashboard, retry hourly (max 6), then next day.                                                                                                                                                                        |
+| **Power loss during swap**                                       | Boot-time recovery: valid live file → use it; else valid `.old` → restore it; else start with an empty list (fail open) and schedule an immediate download.                                                                                                                                          |
+| **PSRAM missing / wrong memory_type**                            | The boot log prints an error (check `qio_opi`); the DNS service can't allocate its cache and does not start. The firmware requires the N16R8's PSRAM.                                                                                                                                                |
+| **Clock not synced**                                             | DoT still works (validity dates are not checked; see §7.1); the scheduler does nothing until sync; the dashboard shows "time not synced". NTP uses `pool.ntp.org` plus hard-coded `time.cloudflare.com` IPs (162.159.200.1, 162.159.200.123), so it works even if the device's own DNS is not ready. |
+| **Task hangs**                                                   | TWDT panic → core dump to flash (`coredump` partition) → reboot. The dump is decoded on the Mac (see the `debugging` skill).                                                                                                                                                                         |
+| **Bad firmware**                                                 | App rollback (§9).                                                                                                                                                                                                                                                                                   |
+| **Device's own lookups** (blocklist host, NTP pool)              | The station interface's DNS server is set to `127.0.0.1` (re-applied every minute after DHCP renewals), so they go through our own pipeline and over DoT. `CONFIG_LWIP_NETIF_LOOPBACK` is enabled in the prebuilt libs.                                                                              |
 
 ---
 
 ## 11. Memory budget
 
-### Internal SRAM (512 KB; ≈ 300 KB heap free after Wi-Fi start — *measure on hardware*)
+### Internal SRAM (512 KB; ≈ 300 KB heap free after Wi-Fi start — _measure on hardware_)
 
-| Item | Estimate |
-|---|---|
-| Wi-Fi + lwIP buffers (part offloaded to PSRAM by `SPIRAM_TRY_ALLOCATE_WIFI_LWIP`) | 60–90 KB |
-| Active TLS session (mbedTLS buffers are internal-only in the prebuilt libs, 16 KB in + 16 KB out + context) | ≈ 45 KB |
-| Transient second TLS session (failover, or the HTTPS blocklist download) | ≈ 45 KB |
-| Task stacks (6 + 10 + 6 + 8 + 12 KB) | 42 KB |
-| Query pool (32 × 512 B) + queues + in-flight table | ≈ 20 KB |
-| Web server, mDNS, ArduinoOTA, misc | ≈ 30 KB |
-| **Headroom** | ≈ 60–100 KB |
+| Item                                                                                                        | Estimate    |
+| ----------------------------------------------------------------------------------------------------------- | ----------- |
+| Wi-Fi + lwIP buffers (part offloaded to PSRAM by `SPIRAM_TRY_ALLOCATE_WIFI_LWIP`)                           | 60–90 KB    |
+| Active TLS session (mbedTLS buffers are internal-only in the prebuilt libs, 16 KB in + 16 KB out + context) | ≈ 45 KB     |
+| Transient second TLS session (failover, or the HTTPS blocklist download)                                    | ≈ 45 KB     |
+| Task stacks (6 + 10 + 6 + 8 + 12 KB)                                                                        | 42 KB       |
+| Query pool (32 × 512 B) + queues + in-flight table                                                          | ≈ 20 KB     |
+| Web server, mDNS, ArduinoOTA, misc                                                                          | ≈ 30 KB     |
+| **Headroom**                                                                                                | ≈ 60–100 KB |
 
 At most two TLS sessions may exist at once. The updater downloads only while at most
 one DNS session is open.
 
 ### PSRAM (8 MB)
 
-| Item | Default |
-|---|---|
-| Blocklist index (one buffer; up to 2 during swap if free) | 1.9 MB at 400k names; cap 1M names (4.3 MB) |
-| Response cache: entry pool (16k × 48 B) + payload arena | 0.8 MB + 2 MB |
-| Pending-query pool (32 slots × ~4.6 KB: query + reply buffer) | 0.15 MB |
-| Stats, client table (256 clients), custom sets | < 0.2 MB |
-| **Free** | about 0.8 MB at a 1M-name list (4.06 MiB list + 2.75 MiB cache + pools), before Wi-Fi/lwIP buffers offloaded to PSRAM. Two 1M lists never fit: the update swaps through the file-backed bridge (§6) |
+| Item                                                          | Default                                                                                                                                                                                             |
+| ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Blocklist index (one buffer; up to 2 during swap if free)     | 1.9 MB at 400k names; cap 1M names (4.3 MB)                                                                                                                                                         |
+| Response cache: entry pool (16k × 48 B) + payload arena       | 0.8 MB + 2 MB                                                                                                                                                                                       |
+| Pending-query pool (32 slots × ~4.6 KB: query + reply buffer) | 0.15 MB                                                                                                                                                                                             |
+| Stats, client table (256 clients), custom sets                | < 0.2 MB                                                                                                                                                                                            |
+| **Free**                                                      | about 0.8 MB at a 1M-name list (4.06 MiB list + 2.75 MiB cache + pools), before Wi-Fi/lwIP buffers offloaded to PSRAM. Two 1M lists never fit: the update swaps through the file-backed bridge (§6) |
 
 ### Sockets (lwIP: `CONFIG_LWIP_MAX_SOCKETS = 16`, fixed in the prebuilt libs)
 
-| User | Sockets |
-|---|---|
-| DNS: UDP/53, TCP/53 listener + 2 connections, 2 wake sockets + 1 sender | 7 |
-| Upstream: active DoT/DoH (+1 transient on failover), plain UDP when used | 1–3 |
-| Web server listener + client | 2 |
-| ArduinoOTA | 1 |
-| Blocklist download (esp_http_client) | 1 |
-| **Total** | **12–14** |
+| User                                                                     | Sockets   |
+| ------------------------------------------------------------------------ | --------- |
+| DNS: UDP/53, TCP/53 listener + 2 connections, 2 wake sockets + 1 sender  | 7         |
+| Upstream: active DoT/DoH (+1 transient on failover), plain UDP when used | 1–3       |
+| Web server listener + client                                             | 2         |
+| ArduinoOTA                                                               | 1         |
+| Blocklist download (esp_http_client)                                     | 1         |
+| **Total**                                                                | **12–14** |
 
 This is why TCP/53 is limited to 2 concurrent connections.
 
@@ -717,20 +718,20 @@ coredump,  data, coredump, 0xFF0000,  0x10000    64 KB   crash dumps
 
 ## 12. Design patterns and why
 
-| Pattern | Where | Why |
-|---|---|---|
-| **Hardware-abstraction interfaces** | `lib/core/hal/*.h` (`IClock`, `IRandom`, `IKeyValueStore`, `IFileSystem`, `IHttpClient`, `ITransport`, `ILogger`) | Core logic compiles and is tested on macOS with fakes; time, randomness and I/O become deterministic in tests. |
-| **Dependency injection** (constructor) | every core class; wired in `src/main.cpp` (composition root) | No hidden globals; tests swap in fakes; ownership and lifetimes are explicit. |
-| **Strategy** | `ITransport`: DoT / DoH / UDP | Add a provider or transport without touching the chain logic. |
-| **Chain of responsibility / fallback chain** | `upstream/forwarder` | Ordered failover DoT → DoT → DoH → UDP with per-link health. |
-| **State machine** | upstream health (§7.2), updater (§6.3), Wi-Fi supervisor | Explicit states and transitions are easy to test and reason about; no tangled flags. |
-| **Circuit breaker with exponential backoff + jitter** | health FSM | Stops hammering a dead upstream; recovers automatically. |
-| **Double buffering + atomic pointer swap (RCU-style)** | blocklist index | Lock-free reads on the hot path; an update is all-or-nothing. |
-| **Producer/consumer with fixed-size queues** | `dns_io` ⇄ `dns_up` | The receiver never blocks (only 6 datagrams of socket buffer); bounded memory; back-pressure → SERVFAIL when full instead of unbounded growth. |
-| **Object pool / slab allocator** | query pool, cache entries and payload arena | No `malloc` in the DNS hot path; no fragmentation over weeks of uptime (s60sc needed weekly reboots for this). |
-| **RAII** | `Socket`, `TlsSession`, `PsramBuffer` (`unique_ptr` + `heap_caps_free`), `FsFile`, `MutexLock` | Every exit path releases sockets, TLS contexts and buffers; lwIP has only 16 sockets in total. |
-| **Self-pipe wake-up** | loopback UDP socket woken by `dns_up` | Lets `dns_io` sleep in a single `select()` on both "client packet" and "reply ready". |
-| **Explicit status values instead of exceptions** | `ParseStatus`, `FormatError`, `UpdateReport`, `IoStatus` | Explicit error paths; no exception cost or surprises in embedded code. |
+| Pattern                                                | Where                                                                                                             | Why                                                                                                                                            |
+| ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Hardware-abstraction interfaces**                    | `lib/core/hal/*.h` (`IClock`, `IRandom`, `IKeyValueStore`, `IFileSystem`, `IHttpClient`, `ITransport`, `ILogger`) | Core logic compiles and is tested on macOS with fakes; time, randomness and I/O become deterministic in tests.                                 |
+| **Dependency injection** (constructor)                 | every core class; wired in `src/main.cpp` (composition root)                                                      | No hidden globals; tests swap in fakes; ownership and lifetimes are explicit.                                                                  |
+| **Strategy**                                           | `ITransport`: DoT / DoH / UDP                                                                                     | Add a provider or transport without touching the chain logic.                                                                                  |
+| **Chain of responsibility / fallback chain**           | `upstream/forwarder`                                                                                              | Ordered failover DoT → DoT → DoH → UDP with per-link health.                                                                                   |
+| **State machine**                                      | upstream health (§7.2), updater (§6.3), Wi-Fi supervisor                                                          | Explicit states and transitions are easy to test and reason about; no tangled flags.                                                           |
+| **Circuit breaker with exponential backoff + jitter**  | health FSM                                                                                                        | Stops hammering a dead upstream; recovers automatically.                                                                                       |
+| **Double buffering + atomic pointer swap (RCU-style)** | blocklist index                                                                                                   | Lock-free reads on the hot path; an update is all-or-nothing.                                                                                  |
+| **Producer/consumer with fixed-size queues**           | `dns_io` ⇄ `dns_up`                                                                                               | The receiver never blocks (only 6 datagrams of socket buffer); bounded memory; back-pressure → SERVFAIL when full instead of unbounded growth. |
+| **Object pool / slab allocator**                       | query pool, cache entries and payload arena                                                                       | No `malloc` in the DNS hot path; no fragmentation over weeks of uptime (s60sc needed weekly reboots for this).                                 |
+| **RAII**                                               | `Socket`, `TlsSession`, `PsramBuffer` (`unique_ptr` + `heap_caps_free`), `FsFile`, `MutexLock`                    | Every exit path releases sockets, TLS contexts and buffers; lwIP has only 16 sockets in total.                                                 |
+| **Self-pipe wake-up**                                  | loopback UDP socket woken by `dns_up`                                                                             | Lets `dns_io` sleep in a single `select()` on both "client packet" and "reply ready".                                                          |
+| **Explicit status values instead of exceptions**       | `ParseStatus`, `FormatError`, `UpdateReport`, `IoStatus`                                                          | Explicit error paths; no exception cost or surprises in embedded code.                                                                         |
 
 ---
 
@@ -738,14 +739,14 @@ coredump,  data, coredump, 0xFF0000,  0x10000    64 KB   crash dumps
 
 **Verdict: technically possible in memory, not practical. We do not build it.**
 
-| Aspect | Finding |
-|---|---|
-| RAM | A trimmed Unbound-like cache (RRset ~0.5–1 MB, key cache ~0.2–0.5 MB, infrastructure ~50 KB) is about 1–2 MB. It fits in 8 MB PSRAM, so **RAM is not the blocker**. |
+| Aspect         | Finding                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| RAM            | A trimmed Unbound-like cache (RRset ~0.5–1 MB, key cache ~0.2–0.5 MB, infrastructure ~50 KB) is about 1–2 MB. It fits in 8 MB PSRAM, so **RAM is not the blocker**.                                                                                                                                                                                                                                                                     |
 | CPU for DNSSEC | ECDSA-P256 (algorithm 13: the root's zone keys excepted, most TLDs and large zones such as Cloudflare-hosted ones) verify takes **about 0.5 s or more per signature** on ESP32-class chips with mbedTLS (no ECC acceleration benefit; reports range 0.5–2 s). RSA-2048 verify is about 50–65 ms. A cold validated lookup needs about 3–6 verifications, so **1.5–4 s of CPU per new name**, during which the task cannot do other work. |
-| Network | A cold name needs root → TLD → authoritative referrals plus DS/DNSKEY fetches: about 6–15 round trips (0.3–1.5 s) before any crypto. |
-| Trust anchors | Needs RFC 5011 automated root-key rollover with persistent state and correct time. A device offline across a KSK rollover stops validating everything. |
-| Prior art | No maintained Unbound/Knot port to ESP-IDF; lwIP ships only a stub resolver. Porting is a large, risky project. |
-| **Privacy** | **Recursion does not hide queries from the ISP.** The resolver talks to root, TLD and authoritative servers in plaintext UDP/53 from your Airtel IP. QNAME minimisation hides the full name from the root and TLD servers, but every query still crosses Airtel's network in the clear. |
+| Network        | A cold name needs root → TLD → authoritative referrals plus DS/DNSKEY fetches: about 6–15 round trips (0.3–1.5 s) before any crypto.                                                                                                                                                                                                                                                                                                    |
+| Trust anchors  | Needs RFC 5011 automated root-key rollover with persistent state and correct time. A device offline across a KSK rollover stops validating everything.                                                                                                                                                                                                                                                                                  |
+| Prior art      | No maintained Unbound/Knot port to ESP-IDF; lwIP ships only a stub resolver. Porting is a large, risky project.                                                                                                                                                                                                                                                                                                                         |
+| **Privacy**    | **Recursion does not hide queries from the ISP.** The resolver talks to root, TLD and authoritative servers in plaintext UDP/53 from your Airtel IP. QNAME minimisation hides the full name from the root and TLD servers, but every query still crosses Airtel's network in the clear.                                                                                                                                                 |
 
 **How our design meets the same goal.** The goal is to keep Airtel from seeing
 which names we look up.

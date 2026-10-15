@@ -59,9 +59,9 @@ client query ──▶ dns_io task ──▶ local name? ─▶ answer on the de
 
 ## Hardware
 
-| Board | Status | Notes |
-|---|---|---|
-| **ESP32-S3-DevKitC-1, WROOM-1-N16R8** | Supported | 16 MB flash, 8 MB octal PSRAM. |
+| Board                                      | Status      | Notes                                                   |
+| ------------------------------------------ | ----------- | ------------------------------------------------------- |
+| **ESP32-S3-DevKitC-1, WROOM-1-N16R8**      | Supported   | 16 MB flash, 8 MB octal PSRAM.                          |
 | Other ESP32-S3 boards with an N16R8 module | Should work | Needs 16 MB flash and 8 MB **octal** PSRAM (`qio_opi`). |
 
 Only the ESP32-S3 is supported: the blocklist and DNS cache live in PSRAM, and the
@@ -87,7 +87,7 @@ randomly, try another cable or charger. Keep the PCB antenna away from metal.
 
 **Option A: from the browser.** Open the
 [web installer](https://denzilrdz.github.io/esp32-s3-adblock/) in Chrome or Edge,
-plug the board in (DevKitC-1: the port marked **UART**), click *Install*.
+plug the board in (DevKitC-1: the port marked **UART**), click _Install_.
 
 **Option B: from source** (macOS/Linux/Windows with [PlatformIO](https://platformio.org/)):
 
@@ -107,7 +107,7 @@ restarts and joins it. (Or put `WIFI_SSID`/`WIFI_PASS` in `src/secrets.h`.) Hold
 
 ### 3. Dashboard password
 
-The serial console (`pio device monitor`, or the web installer's *Logs*) prints a
+The serial console (`pio device monitor`, or the web installer's _Logs_) prints a
 **one-time setup code**. Open `http://s3adblock.local` (or the device IP), log in with
 user `admin` and the setup code, and set a real password (10+ characters). Until you
 do, nothing can be changed, so nobody else on your network can claim the device.
@@ -154,7 +154,7 @@ device uses DNS-over-HTTPS (port 443). Only when every encrypted upstream is dow
 it fall back to plain DNS, and it says so loudly in the log and on the dashboard.
 Why not run a full recursive resolver like Unbound on the chip? See
 [ARCHITECTURE.md §13](docs/ARCHITECTURE.md#13-is-an-unbound-style-recursive-resolver-feasible-here): it's slow on this CPU and would actually
-show the ISP *more*.
+show the ISP _more_.
 
 **Cache.** Answers are cached in PSRAM with their real TTLs, so repeat lookups are
 answered locally in milliseconds.
@@ -173,16 +173,16 @@ Design details, memory budget and threading: [docs/ARCHITECTURE.md](docs/ARCHITE
 
 Everything is on the dashboard (stored in flash/NVS, survives updates):
 
-| Setting | Default |
-|---|---|
-| Primary / secondary upstream | Cloudflare / Quad9 (or a custom DoT server: IP + TLS name) |
-| DoH fallback / plain-DNS fallback | on / on |
-| Query padding, DNSSEC AD pass-through | on |
-| Blocked answer TTL | 10 s |
-| Firefox DoH canary / iCloud Private Relay opt-out / local private reverse lookups | on / off / on |
-| Blocklist URL and daily update time | this repo's weekly list, 02:00 |
-| Time zone | `IST-5:30` (POSIX TZ string, e.g. `UTC0`) |
-| Custom block / allow rules, banned clients, pause | |
+| Setting                                                                           | Default                                                    |
+| --------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| Primary / secondary upstream                                                      | Cloudflare / Quad9 (or a custom DoT server: IP + TLS name) |
+| DoH fallback / plain-DNS fallback                                                 | on / on                                                    |
+| Query padding, DNSSEC AD pass-through                                             | on                                                         |
+| Blocked answer TTL                                                                | 10 s                                                       |
+| Firefox DoH canary / iCloud Private Relay opt-out / local private reverse lookups | on / off / on                                              |
+| Blocklist URL and daily update time                                               | this repo's weekly list, 02:00                             |
+| Time zone                                                                         | `IST-5:30` (POSIX TZ string, e.g. `UTC0`)                  |
+| Custom block / allow rules, banned clients, pause                                 |                                                            |
 
 `src/secrets.h` only holds first-boot defaults (Wi-Fi, initial dashboard password, the
 network OTA password). It is gitignored.
@@ -199,7 +199,7 @@ bigger list, Hagezi's `pro-onlydomains.txt` (~370k) fits easily on the S3.
 
 ## Updating firmware
 
-- **Dashboard:** *Device → Flash firmware* with **`firmware-esp32s3-vX.Y.Z.bin`** from a
+- **Dashboard:** _Device → Flash firmware_ with **`firmware-esp32s3-vX.Y.Z.bin`** from a
   [release](https://github.com/denzilrdz/esp32-s3-adblock/releases) (not the larger
   `factory-…` image, which is for first installs; the board rejects it). Settings, Wi-Fi
   and the blocklist are kept. v0.1.0 can't update itself this way: install v0.1.1 or
@@ -225,15 +225,15 @@ or doesn't get there within 5 minutes, the device rolls back to the previous ver
 
 ## Troubleshooting
 
-| Symptom | Fix |
-|---|---|
-| Ads still show on some devices | They use another DNS (IPv6, private DNS, hard-coded). Check the client table and [ROUTER_SETUP.md §6](docs/ROUTER_SETUP.md#6-check-that-it-works). |
-| Dashboard says **PLAIN DNS** | Ports 853 and 443 to 1.1.1.1/9.9.9.9 fail from your network. Check with `kdig @1.1.1.1 +tls example.com` from a computer. |
-| "clock not synced" stays | NTP (UDP 123) to 162.159.200.1 / pool.ntp.org is blocked; the daily update waits for the clock. |
-| Blocklist "invalid list" | The URL isn't a format-v2 file (`tools/build_blocklist.py` output), or the download was cut off. The old list stays active. |
-| Can't log in, "too many failed logins" | Wait (30 s to 5 min) or use another device. Forgot the password: erase flash (`pio run -e esp32s3 -t erase`) and flash again. |
-| Board boot-loops after flashing | Wrong memory type: N16R8 must use `qio_opi` (the `esp32s3` env does). |
-| Random reboots | Power: try another USB cable/port. Check the reset reason in the boot log. |
+| Symptom                                | Fix                                                                                                                                                |
+| -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Ads still show on some devices         | They use another DNS (IPv6, private DNS, hard-coded). Check the client table and [ROUTER_SETUP.md §6](docs/ROUTER_SETUP.md#6-check-that-it-works). |
+| Dashboard says **PLAIN DNS**           | Ports 853 and 443 to 1.1.1.1/9.9.9.9 fail from your network. Check with `kdig @1.1.1.1 +tls example.com` from a computer.                          |
+| "clock not synced" stays               | NTP (UDP 123) to 162.159.200.1 / pool.ntp.org is blocked; the daily update waits for the clock.                                                    |
+| Blocklist "invalid list"               | The URL isn't a format-v2 file (`tools/build_blocklist.py` output), or the download was cut off. The old list stays active.                        |
+| Can't log in, "too many failed logins" | Wait (30 s to 5 min) or use another device. Forgot the password: erase flash (`pio run -e esp32s3 -t erase`) and flash again.                      |
+| Board boot-loops after flashing        | Wrong memory type: N16R8 must use `qio_opi` (the `esp32s3` env does).                                                                              |
+| Random reboots                         | Power: try another USB cable/port. Check the reset reason in the boot log.                                                                         |
 
 More (serial logs, crash decoding, memory):
 [.claude/skills/debugging/SKILL.md](.claude/skills/debugging/SKILL.md).

@@ -14,7 +14,7 @@ pio device monitor -e esp32s3        # 115200 baud, filters: esp32_exception_dec
 - **Reading the log without restarting the board** (e.g. a stability check): open
   the port with pyserial (`~/.platformio/penv/bin/python`) and leave DTR and RTS at
   their default (both asserted). On the DevKitC-1 auto-reset circuit only RTS
-  asserted alone pulls EN low; pulsing RTS on purpose is how to *get* a boot log.
+  asserted alone pulls EN low; pulsing RTS on purpose is how to _get_ a boot log.
   Opening `pio device monitor` may reset the board.
 - Logs can contain binary bytes (ROM boot noise): use `grep -a`, otherwise grep
   silently treats the file as binary and matches nothing.
@@ -26,7 +26,7 @@ pio device monitor -e esp32s3        # 115200 baud, filters: esp32_exception_dec
 
 - Lines look like `[I][up] cloudflare-dot: unknown -> up (180 ms)`. Tags: `dns`, `up`
   (upstream), `bl` (blocklist), `time`, `wifi`, `web`, `ota`, `boot`.
-- Log level: dashboard *Settings → Log* (error/warn/info/debug), stored in NVS and
+- Log level: dashboard _Settings → Log_ (error/warn/info/debug), stored in NVS and
   applied live. Use debug only temporarily.
 - Boot banner: `[adblock] v<version> booting (<hostname>, PSRAM <n> KB)`, then the
   setup code (if no password is set), list size and `ready`.
@@ -50,7 +50,7 @@ pio device monitor -e esp32s3        # 115200 baud, filters: esp32_exception_dec
 
 ## Memory
 
-- `/api/stats` (and the dashboard *Device* card) reports `heap` (internal free),
+- `/api/stats` (and the dashboard _Device_ card) reports `heap` (internal free),
   `heapMin` (lowest since boot) and `psram` (free PSRAM).
 - Warning signs:
   - **heapMin < 40 KB**: TLS handshakes will fail (each session needs ~45 KB of
