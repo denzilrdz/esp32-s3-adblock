@@ -495,6 +495,42 @@ static void test_slow_failing_connects_respect_the_blocking_budget() {
   TEST_ASSERT_FALSE(sink.results[0].ok);
 }
 
+static void test_deadline_does_not_blame_an_upstream_that_had_no_time_to_answer() {
+  // Found on hardware: a blackholed primary used up most of each query's 2.5 s budget
+  // in its connect timeout, the query then reached the healthy secondary with ~0.1 s
+  // left, and the expired deadline was blamed on the secondary, marking it down too
+  // (about 30 s of SERVFAIL). Only blame an upstream given at least hedgeAfterMs.
+  downAll(*dot1);
+  dot1->onConnect = [] { fakeClock.advanceMs(2400); };
+  dot2->holdReplies = true;  // healthy, but its reply has not arrived yet
+  fwd->submit(1, query("late.example"));
+  fwd->poll(0);                             // the retry waits for the next call (blocking budget)
+  TEST_ASSERT_EQUAL(1, dot2->sent.size());  // rerouted after the failed connect
+  fakeClock.advanceMs(200);                 // past the deadline, 0.2 s after sending
+  fwd->poll(0);
+  TEST_ASSERT_EQUAL(1, sink.results.size());
+  TEST_ASSERT_FALSE(sink.results[0].ok);  // the client still gets SERVFAIL
+  TEST_ASSERT_EQUAL(static_cast<int>(HealthState::kDegraded), static_cast<int>(fwd->upstreamStatus(0).state));
+  TEST_ASSERT_EQUAL_UINT32(0, fwd->upstreamStatus(1).stats.failed);  // secondary not blamed
+  TEST_ASSERT_NOT_EQUAL(static_cast<int>(HealthState::kDegraded),
+                        static_cast<int>(fwd->upstreamStatus(1).state));
+}
+
+static void test_deadline_blames_an_upstream_that_had_time_to_answer() {
+  dot1->mode = FakeTransport::Mode::kSilent;  // connected, never answers
+  dot2->mode = doh->mode = FakeTransport::Mode::kSilent;
+  fwd->submit(2, query("silent.example"));
+  for (int i = 0; i < 30; i++) {
+    fakeClock.advanceMs(100);
+    fwd->poll(0);
+  }
+  TEST_ASSERT_EQUAL(1, sink.results.size());
+  TEST_ASSERT_FALSE(sink.results[0].ok);
+  uint32_t failed = 0;
+  for (int u = 0; u < 3; u++) failed += fwd->upstreamStatus(u).stats.failed;
+  TEST_ASSERT_TRUE(failed >= 2);  // the hedge blamed the first, the deadline the second
+}
+
 int main(int, char**) {
   UNITY_BEGIN();
   RUN_TEST(test_health_goes_down_after_three_failures_and_backs_off);
@@ -521,5 +557,7 @@ int main(int, char**) {
   RUN_TEST(test_idle_connections_are_closed_before_the_server_does);
   RUN_TEST(test_reply_flood_cannot_trap_poll);
   RUN_TEST(test_slow_failing_connects_respect_the_blocking_budget);
+  RUN_TEST(test_deadline_does_not_blame_an_upstream_that_had_no_time_to_answer);
+  RUN_TEST(test_deadline_blames_an_upstream_that_had_time_to_answer);
   return UNITY_END();
 }

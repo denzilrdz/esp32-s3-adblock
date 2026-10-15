@@ -279,7 +279,10 @@ void Forwarder::poll(uint32_t waitMs) {
   for (Slot& s : slots_) {
     if (!s.used) continue;
     if (now >= s.deadlineMs) {
-      if (!s.needsSend && s.upstream >= 0) recordFailure(s.upstream);
+      // Blame the upstream only if it had a fair chance (hedgeAfterMs since this send).
+      // A query that reached it late, e.g. after a blackholed upstream used up the
+      // budget in its connect timeout, says nothing about its health.
+      if (!s.needsSend && s.upstream >= 0 && now - s.sentMs >= cfg_.hedgeAfterMs) recordFailure(s.upstream);
       log_.log(LogLevel::kInfo, kTag, "timeout for %s, answering SERVFAIL", s.q.qname);
       finishFailed(s);
       continue;
