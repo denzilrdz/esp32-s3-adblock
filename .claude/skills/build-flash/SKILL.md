@@ -40,9 +40,22 @@ pio device monitor -e esp32s3                # 115200 baud, esp32_exception_deco
 ```
 
 The DevKitC-1 has **two USB-C ports**:
-- `UART` (CP210x/CH343 bridge): `/dev/cu.usbserial-*` or `/dev/cu.wchusbserial-*`.
-  Most reliable for flashing; the serial console is here.
-- `USB` (native USB-Serial-JTAG): `/dev/cu.usbmodem*`. Flashing and JTAG.
+- `UART` (CP210x/CH343 bridge): **the firmware log (setup code, PSRAM, Wi-Fi, DNS)
+  only appears here.** With macOS's built-in driver a CH343 shows up as
+  `/dev/cu.usbmodem<serial>` (e.g. `usbmodem5CE60447761`, or `usbmodem1234561` when
+  the chip reports its default serial); with the WCH driver as
+  `/dev/cu.wchusbserial-*`; a CP210x as `/dev/cu.usbserial-*`.
+- `USB` (native USB-Serial-JTAG): `/dev/cu.usbmodem101`-style names, chip reports
+  `USB mode: USB-Serial/JTAG`. Flashing works; it only carries ROM boot messages and
+  framework errors, not our log (`ARDUINO_USB_CDC_ON_BOOT` is 0).
+
+**No port at all / LED off or blinking:** on some boards a USB-C port only works
+with the plug one way round (missing CC resistor): flip the plug. A charge-only
+cable also shows nothing in `system_profiler SPUSBDataType`.
+
+**Capture the log for a fixed time** (no `timeout` on macOS): `pio device monitor`
+runs until stopped; for scripted checks use pyserial from
+`~/.platformio/penv/bin/python`, pulse RTS to reset, read for N seconds.
 
 Fix the port with `upload_port = /dev/cu.usbserial-XXXX` in a gitignored
 `platformio_override.ini` (`[env:esp32s3]` section), or pass `--upload-port`.
