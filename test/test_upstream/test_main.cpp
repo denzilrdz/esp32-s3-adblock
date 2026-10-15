@@ -531,6 +531,31 @@ static void test_deadline_blames_an_upstream_that_had_time_to_answer() {
   TEST_ASSERT_TRUE(failed >= 2);  // the hedge blamed the first, the deadline the second
 }
 
+static void test_failed_doh_does_not_reconnect_for_each_queued_query() {
+  // Found on hardware: DoH sends one request at a time, so further queries queue
+  // behind it, already assigned to it. When its connection failed, only the in-flight
+  // query was rerouted; each queued one then opened its own doomed connection to the
+  // failed server (14 failed TLS attempts in ~1 s).
+  downAll(*dot1);
+  downAll(*dot2);
+  for (int i = 0; i < 3; i++) {  // take both DoT upstreams Down
+    fwd->submit(100 + i, query("warm" + std::to_string(i) + ".example"));
+    fwd->poll(0);
+  }
+  sink.results.clear();
+  doh->sent.clear();
+  doh->holdReplies = true;
+  for (int i = 0; i < 3; i++) fwd->submit(i, query("q" + std::to_string(i) + ".example"));
+  TEST_ASSERT_EQUAL(1, doh->sent.size());  // one in flight, two queued behind it
+  const int connectsBefore = doh->connects;
+  doh->mode = FakeTransport::Mode::kCloseAfterSend;  // the connection dies
+  fwd->poll(0);
+  TEST_ASSERT_EQUAL(connectsBefore, doh->connects);  // no reconnect per queued query
+  TEST_ASSERT_EQUAL(1, doh->sent.size());
+  TEST_ASSERT_EQUAL(3, sink.results.size());  // all three answered (SERVFAIL), none stuck
+  TEST_ASSERT_EQUAL(0, fwd->inFlight());
+}
+
 int main(int, char**) {
   UNITY_BEGIN();
   RUN_TEST(test_health_goes_down_after_three_failures_and_backs_off);
@@ -559,5 +584,6 @@ int main(int, char**) {
   RUN_TEST(test_slow_failing_connects_respect_the_blocking_budget);
   RUN_TEST(test_deadline_does_not_blame_an_upstream_that_had_no_time_to_answer);
   RUN_TEST(test_deadline_blames_an_upstream_that_had_time_to_answer);
+  RUN_TEST(test_failed_doh_does_not_reconnect_for_each_queued_query);
   return UNITY_END();
 }

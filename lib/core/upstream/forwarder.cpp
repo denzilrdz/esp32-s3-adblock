@@ -192,8 +192,11 @@ void Forwarder::trySend(Slot& s) {
 void Forwarder::failTransport(int u) {
   transports_[u]->close();
   recordFailure(u);
+  // Reroute everything assigned to it, including queries queued behind a busy DoH
+  // connection (needsSend with upstream == u): left alone, each would reconnect to the
+  // failed server on its own.
   for (Slot& s : slots_)
-    if (s.used && !s.needsSend && s.upstream == u) reroute(s);
+    if (s.used && s.upstream == u) reroute(s);
   for (Slot& s : slots_)
     if (s.used && s.needsSend) trySend(s);
 }
