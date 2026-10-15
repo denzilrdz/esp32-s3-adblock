@@ -5,7 +5,7 @@ sinkhole for the ESP32-S3 (WROOM-1-N16R8: 16 MB flash, 8 MB octal PSRAM). It is 
 fork of [M-Abozaid/esp32-c3-adblock](https://github.com/M-Abozaid/esp32-c3-adblock)
 (MIT). Read it before changing anything in `lib/core/` or `src/tasks/`.
 
-Status: **implemented in v0.1.0, running on an ESP32-S3-DevKitC-1 (N16R8).** Items
+Status: **implemented in v0.1.1, running on an ESP32-S3-DevKitC-1 (N16R8).** Items
 marked *(verify on hardware)* are confirmed against the toolchain and SDK sources but
 not yet measured on the board.
 
@@ -799,7 +799,7 @@ for `qio_opi`): 16 lwIP sockets, 6-datagram UDP receive mailbox, mbedTLS buffers
 internal RAM, no `MBEDTLS_HAVE_TIME_DATE`, TLS 1.3 off, task watchdog at 5 s on
 IDLE0, app rollback enabled. New: lwIP core locking is on.
 
-**Planned (not in v0.1.0):**
+**Planned (not implemented yet):**
 
 - Signed firmware images (ECDSA-P256 over the image hash, public key compiled in,
   verified before `Update.end()`).

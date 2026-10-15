@@ -6,11 +6,26 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-15
+
+Bug fixes from testing v0.1.0 on the board (dashboard updates, rollback, upstream
+failover with a blackholed or impersonated server, plain-DNS fallback on and off).
+
+**Upgrading from v0.1.0:** v0.1.0 can't install updates from its dashboard (first fix
+below), so flash this release once over USB:
+- from source with PlatformIO (`pio run -e esp32s3 -t upload`): settings, Wi-Fi and
+  the dashboard password are kept;
+- or with the [web installer](https://denzilrdz.github.io/esp32-s3-adblock/): its
+  image covers the settings area, so you set up Wi-Fi and the dashboard password again
+  (the downloaded blocklist is kept).
+
+From v0.1.1 on, updates from the dashboard work and keep everything.
+
 ### Fixed
 - Firmware updates from the dashboard crashed the board mid-upload (task watchdog in
   the web task) and never installed; the old firmware kept running. Uploads of
-  firmware and blocklists now keep the watchdog fed. Install this release over USB or
-  the web installer, since v0.1.0 can't update itself from the dashboard.
+  firmware and blocklists now keep the watchdog fed. Verified on hardware, including
+  the automatic rollback of an unhealthy update.
 - Boot no longer logs dozens of `task_wdt: esp_task_wdt_reset: task not found` errors
   (ESP-IDF 5 reports watchdog feeds from tasks that aren't subscribed).
 - When the primary upstream stopped answering (blocked port or dead address), the
@@ -82,5 +97,6 @@ password setup.
   flash are required), upstream's 40-bit blocklist format, the Japanese README,
   the C3 web-installer binaries and the C3 SuperMini enclosure.
 
-[Unreleased]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/denzilrdz/esp32-s3-adblock/releases/tag/v0.1.0
