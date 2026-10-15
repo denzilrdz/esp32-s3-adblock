@@ -75,7 +75,10 @@ docs/          ARCHITECTURE.md, ROUTER_SETUP.md
   Never PSRAM for task stacks, DMA buffers, or anything touched with the flash cache
   disabled.
 - RAII for sockets, TLS sessions, files, PSRAM buffers and mutexes.
-- Every blocking call in a watched task needs a timeout < 5 s (task watchdog).
+- Every blocking call in a watched task needs a timeout < 5 s (task watchdog). Feed it
+  with `platform::feedWatchdog()` (`src/platform/watchdog.h`), which skips tasks that
+  aren't subscribed (IDF 5 logs an error otherwise). Long work inside one
+  `handleClient()` call, like a firmware or list upload, must feed it per chunk.
 - One task per socket: lwIP is built without full-duplex netconn.
 - `-Wall -Wextra` must stay clean (src/ and lib/core); native tests use `-Werror`.
 

@@ -1,5 +1,7 @@
 #include "platform/tls_stream.h"
 
+#include "platform/watchdog.h"
+
 #include <esp_crt_bundle.h>
 
 #include <esp_err.h>
@@ -170,7 +172,7 @@ bool TlsStream::connect(uint32_t timeoutMs) {
   while ((rc = mbedtls_ssl_handshake(&ssl_)) != 0) {
     if (rc != MBEDTLS_ERR_SSL_WANT_READ && rc != MBEDTLS_ERR_SSL_WANT_WRITE) break;
     if (nowMs() >= deadline) break;
-    esp_task_wdt_reset();  // no-op if this task is not watched
+    feedWatchdog();  // only if this task is watched
   }
   if (rc != 0) {
     lastError_ = rc;

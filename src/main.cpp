@@ -28,6 +28,7 @@
 #include "platform/psram.h"
 #include "platform/serial_logger.h"
 #include "platform/transports.h"
+#include "platform/watchdog.h"
 #include "secrets.h"  // first-boot defaults only (copy secrets.example.h); gitignored
 #include "tasks/dns_service.h"
 #include "web/dashboard.h"
@@ -63,7 +64,7 @@ auth::LoginGuard gLogins(gClock);
 web::Dashboard* gDashboard = nullptr;
 
 void feedWatchdog() {
-  esp_task_wdt_reset();
+  platform::feedWatchdog();  // also called from setup(), before loop() subscribes
 }
 
 void applyLiveConfig(const config::AppConfig& c) {

@@ -221,7 +221,10 @@ our tasks calls `esp_task_wdt_add(NULL)` and `esp_task_wdt_reset()` once per loo
 iteration (`esp_task_wdt_add(NULL)` keeps the same signature in IDF 5). Every blocking call in a
 watched task has a timeout below 5 s; the updater resets the watchdog after each
 downloaded chunk, and long blocklist validations feed it through a progress callback.
-The 5 s timeout is kept as is.
+The 5 s timeout is kept as is. Shared code (TLS, HTTP, the blocklist load during
+`setup()`) feeds it through `platform::feedWatchdog()`, which skips tasks that are not
+subscribed: ESP-IDF 5 logs an error for those. Dashboard uploads run inside a single
+`handleClient()` call and feed it for every chunk received.
 
 ---
 

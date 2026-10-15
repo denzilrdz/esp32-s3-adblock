@@ -1,5 +1,7 @@
 #include "platform/esp_http.h"
 
+#include "platform/watchdog.h"
+
 #include <esp_http_client.h>
 #include <esp_task_wdt.h>
 #include <strings.h>
@@ -82,7 +84,7 @@ hal::HttpGetResult EspHttpClient::get(const hal::HttpGetRequest& req, hal::IHttp
     }
     result.contentLength = esp_http_client_fetch_headers(client);
     status = esp_http_client_get_status_code(client);
-    esp_task_wdt_reset();
+    feedWatchdog();
     if (!isRedirect(status)) break;
     int discarded = 0;
     esp_http_client_flush_response(client, &discarded);
@@ -105,7 +107,7 @@ hal::HttpGetResult EspHttpClient::get(const hal::HttpGetRequest& req, hal::IHttp
     uint8_t buf[1024];
     while (true) {
       const int n = esp_http_client_read(client, reinterpret_cast<char*>(buf), sizeof(buf));
-      esp_task_wdt_reset();  // long downloads must not trip the watchdog
+      feedWatchdog();  // long downloads must not trip the watchdog
       if (n < 0) {
         result.error = hal::HttpError::kTimeout;
         break;

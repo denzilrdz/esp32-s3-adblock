@@ -7,6 +7,7 @@
 
 #include <ctime>
 
+#include "platform/watchdog.h"
 #include "web/page.h"
 #include "web/portal.h"
 
@@ -384,6 +385,7 @@ void Dashboard::handleListUpload() {
       break;
     }
     case UPLOAD_FILE_WRITE:
+      platform::feedWatchdog();  // the whole upload runs inside one handleClient() call
       if (uploadAuthorized_ && file && file.write(u.buf, u.currentSize) != u.currentSize) {
         file.close();
         uploadResult_ = "not enough flash";
@@ -424,8 +426,13 @@ void Dashboard::handleFirmwareUpload() {
   } else if (!uploadAuthorized_) {
     return;
   } else if (u.status == UPLOAD_FILE_WRITE) {
+    // The whole upload (and each sector erase) runs inside one handleClient() call: a
+    // 1.3 MB image over a weak link took longer than the 5 s task watchdog and panicked
+    // the web task mid-upload (found on hardware, 2026-10-15).
+    platform::feedWatchdog();
     if (Update.write(u.buf, u.currentSize) != u.currentSize) Update.printError(Serial);
   } else if (u.status == UPLOAD_FILE_END) {
+    platform::feedWatchdog();  // end() hashes and verifies the image before activating it
     if (Update.end(true))
       ctx_.log->log(LogLevel::kInfo, "ota", "firmware %u bytes OK", u.totalSize);
     else

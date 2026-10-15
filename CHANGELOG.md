@@ -6,6 +6,14 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+- Firmware updates from the dashboard crashed the board mid-upload (task watchdog in
+  the web task) and never installed; the old firmware kept running. Uploads of
+  firmware and blocklists now keep the watchdog fed. Install this release over USB or
+  the web installer, since v0.1.0 can't update itself from the dashboard.
+- Boot no longer logs dozens of `task_wdt: esp_task_wdt_reset: task not found` errors
+  (ESP-IDF 5 reports watchdog feeds from tasks that aren't subscribed).
+
 ## [0.1.0] - 2026-10-15
 
 First release of the ESP32-S3 fork of
