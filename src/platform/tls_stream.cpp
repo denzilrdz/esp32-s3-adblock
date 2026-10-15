@@ -51,6 +51,10 @@ int waitReadable(int fd, uint32_t timeoutMs) {
 }
 
 constexpr uint32_t kIoSliceMs = 1000;  // per-syscall timeout; lets us reset the watchdog
+// TCP connect to Cloudflare/Quad9 takes well under 100 ms; an upstream that never
+// answers the SYN (blocked port, dead address) should not eat the whole connect budget
+// that the much slower TLS handshake needs (~1.5 s full handshake, measured).
+constexpr uint32_t kTcpConnectMs = 1000;
 
 }  // namespace
 
@@ -154,7 +158,7 @@ bool TlsStream::connect(uint32_t timeoutMs) {
   close();
   const uint64_t start = nowMs();
   const uint64_t deadline = start + timeoutMs;
-  if (!setupConfig() || !openSocket(timeoutMs)) return false;
+  if (!setupConfig() || !openSocket(timeoutMs < kTcpConnectMs ? timeoutMs : kTcpConnectMs)) return false;
 
   int rc = mbedtls_ssl_setup(&ssl_, &conf_);
   if (rc != 0) {

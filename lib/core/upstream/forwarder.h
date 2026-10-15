@@ -27,6 +27,9 @@ namespace upstream {
 struct ForwarderConfig {
   uint32_t totalDeadlineMs = 2500;
   uint32_t hedgeAfterMs = 1200;
+  // TCP connect + TLS handshake. A full handshake measured ~1.5 s on the ESP32-S3
+  // (2026-10-15), so this stays at 3 s; the TCP stage alone is capped much lower in
+  // platform::TlsStream, so a blackholed upstream fails fast.
   uint32_t connectTimeoutMs = 3000;
   // Upper bound on blocking connects per submit()/poll() call: keeps the upstream
   // task well inside the 5 s task watchdog when every upstream is unreachable.
