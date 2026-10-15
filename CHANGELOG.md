@@ -20,6 +20,8 @@ All notable changes to this project are documented here. The format follows
   1 s, and an upstream is no longer marked down for a query that reached it too late
   to answer (this had taken the healthy Quad9 down too, for ~30 s of SERVFAIL).
 - Settings pasted with spaces around them (e.g. a custom DoT IP) are accepted.
+- A failed DNS-over-HTTPS connection no longer triggers a burst of reconnect attempts
+  (one per queued query); queued queries move to the next upstream.
 
 ## [0.1.0] - 2026-10-15
 
