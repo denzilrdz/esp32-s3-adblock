@@ -56,6 +56,27 @@ static void test_field_validation() {
   assertSet(SetResult::kUnknownKey, c, "wifi_pass", "x");
 }
 
+// Values pasted into the dashboard often carry spaces (found on hardware: a pasted
+// "192.0.2.1 " was rejected as "invalid value for up_cip").
+static void test_values_are_trimmed() {
+  AppConfig c;
+  assertSet(SetResult::kOk, c, "up_cip", " 192.0.2.1 ");
+  TEST_ASSERT_EQUAL_STRING("192.0.2.1", c.customIp);
+  assertSet(SetResult::kOk, c, "up_cname", "\tcloudflare-dns.com\r\n");
+  TEST_ASSERT_EQUAL_STRING("cloudflare-dns.com", c.customName);
+  assertSet(SetResult::kOk, c, "up_pri", " custom");
+  TEST_ASSERT_EQUAL(static_cast<int>(Provider::kCustom), static_cast<int>(c.primary));
+  assertSet(SetResult::kOk, c, "blk_ttl", " 30 ");
+  TEST_ASSERT_EQUAL(30u, c.blockedTtl);
+  assertSet(SetResult::kOk, c, "up_cip", "   ");  // only spaces = cleared
+  TEST_ASSERT_EQUAL_STRING("", c.customIp);
+  assertSet(SetResult::kInvalid, c, "up_cip", "192.0 .2.1");  // inner spaces still invalid
+  char longValue[200];
+  memset(longValue, '1', sizeof(longValue) - 1);
+  longValue[sizeof(longValue) - 1] = 0;
+  assertSet(SetResult::kInvalid, c, "tz", longValue);
+}
+
 static void test_cross_field_validation() {
   AppConfig c;
   const char* why = nullptr;
@@ -159,6 +180,7 @@ int main(int, char**) {
   UNITY_BEGIN();
   RUN_TEST(test_defaults_match_the_design);
   RUN_TEST(test_field_validation);
+  RUN_TEST(test_values_are_trimmed);
   RUN_TEST(test_cross_field_validation);
   RUN_TEST(test_round_trip_through_nvs);
   RUN_TEST(test_load_handles_empty_future_and_corrupt_stores);

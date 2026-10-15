@@ -80,8 +80,9 @@ bool validTimezone(const char* v) {
 
 template <size_t N>
 bool copyIf(char (&dst)[N], const char* v, bool ok) {
-  if (!ok || strlen(v) >= N) return false;
-  snprintf(dst, N, "%s", v);
+  const size_t len = strlen(v);
+  if (!ok || len >= N) return false;
+  memcpy(dst, v, len + 1);
   return true;
 }
 
@@ -111,8 +112,17 @@ bool parseProvider(const char* s, Provider& out) {
   return false;
 }
 
-SetResult setField(AppConfig& c, const char* key, const char* v) {
-  if (!key || !v) return SetResult::kInvalid;
+SetResult setField(AppConfig& c, const char* key, const char* raw) {
+  if (!key || !raw) return SetResult::kInvalid;
+  // Ignore surrounding whitespace: values are often pasted into the dashboard.
+  auto space = [](char ch) { return ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n'; };
+  while (space(*raw)) raw++;
+  size_t len = strlen(raw);
+  while (len && space(raw[len - 1])) len--;
+  char v[128];
+  if (len >= sizeof(v)) return SetResult::kInvalid;
+  memcpy(v, raw, len);
+  v[len] = 0;
   bool ok = false;
   uint32_t n = 0;
   if (!strcmp(key, "up_pri"))
