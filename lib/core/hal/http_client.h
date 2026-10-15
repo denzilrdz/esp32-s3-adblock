@@ -21,8 +21,9 @@ struct HttpGetRequest {
 };
 
 enum class HttpError {
-  kNone,     // a response was received (check status)
-  kConnect,  // DNS/TCP/TLS failure
+  kNone,      // a response was received (check status)
+  kConnect,   // DNS/TCP/TLS failure
+  kRedirect,  // redirect not followed (non-HTTPS target or unreadable Location)
   kTimeout,
   kAborted,    // sink returned false
   kTruncated,  // connection closed before Content-Length bytes

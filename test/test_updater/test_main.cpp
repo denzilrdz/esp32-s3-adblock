@@ -142,6 +142,12 @@ static void test_network_and_http_errors_keep_old_list() {
   TEST_ASSERT_EQUAL_STRING("network error", update::updateStatusName(run().status));
   assertLiveIsOld();
   http.next = FakeHttpClient::Response{};
+  http.next.error = hal::HttpError::kRedirect;  // reported apart from connect failures
+  const auto redirect = run();
+  TEST_ASSERT_EQUAL_STRING("network error", update::updateStatusName(redirect.status));
+  TEST_ASSERT_EQUAL_STRING("redirect refused", redirect.detail);
+  assertLiveIsOld();
+  http.next = FakeHttpClient::Response{};
   http.next.status = 404;
   const auto r = run();
   TEST_ASSERT_EQUAL_STRING("http error", update::updateStatusName(r.status));

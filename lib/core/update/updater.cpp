@@ -133,6 +133,7 @@ UpdateReport BlocklistUpdater::update(const char* url) {
   if (res.error == hal::HttpError::kConnect || res.error == hal::HttpError::kTimeout)
     return fail(UpdateStatus::kNetworkError,
                 res.error == hal::HttpError::kTimeout ? "timeout" : "connect failed");
+  if (res.error == hal::HttpError::kRedirect) return fail(UpdateStatus::kNetworkError, "redirect refused");
   if (res.status == 304) {
     fs_.remove(paths_.tmp);
     UpdateReport r;

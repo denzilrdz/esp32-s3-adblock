@@ -13,6 +13,10 @@ All notable changes to this project are documented here. The format follows
   unchanged.
 
 ### Fixed
+- Blocklist downloads from GitHub releases failed with "connect failed": the
+  redirect to `release-assets.githubusercontent.com` carries a ~900-character signed
+  URL, which overflowed a 512-byte buffer. URLs up to 2 KB are now followed, and a
+  refused redirect is logged as "redirect refused".
 - CI: native tests failed on Linux GCC, which predefines `unix` as a macro; coverage
   failed because `pio` was only installed in `.venv`.
 

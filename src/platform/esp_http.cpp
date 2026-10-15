@@ -5,7 +5,9 @@
 #include <strings.h>
 
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
+#include <memory>
 
 #include <esp_crt_bundle.h>
 
@@ -14,6 +16,9 @@ namespace platform {
 namespace {
 
 constexpr int kMaxRedirects = 5;
+// GitHub release downloads redirect to release-assets.githubusercontent.com with a
+// signed query string of ~900 characters; leave room for longer tokens.
+constexpr int kMaxUrlLen = 2048;
 
 struct Context {
   char etag[96];
@@ -51,6 +56,7 @@ hal::HttpGetResult EspHttpClient::get(const hal::HttpGetRequest& req, hal::IHttp
   cfg.event_handler = onEvent;
   cfg.user_data = &ctx;
   cfg.buffer_size = 2048;
+  cfg.buffer_size_tx = kMaxUrlLen;  // the request line carries the full redirect URL
   esp_http_client_handle_t client = esp_http_client_init(&cfg);
   if (!client) {
     result.error = hal::HttpError::kConnect;
@@ -59,6 +65,13 @@ hal::HttpGetResult EspHttpClient::get(const hal::HttpGetRequest& req, hal::IHttp
   if (req.ifNoneMatch && req.ifNoneMatch[0])
     esp_http_client_set_header(client, "If-None-Match", req.ifNoneMatch);
 
+  // Heap, not stack: this runs in the maintenance task next to a TLS handshake.
+  std::unique_ptr<char, void (*)(void*)> next(static_cast<char*>(malloc(kMaxUrlLen)), free);
+  if (!next) {
+    result.error = hal::HttpError::kConnect;
+    esp_http_client_cleanup(client);
+    return result;
+  }
   int status = 0;
   for (int hop = 0; hop <= kMaxRedirects; hop++) {
     ctx.etag[0] = 0;
@@ -76,9 +89,10 @@ hal::HttpGetResult EspHttpClient::get(const hal::HttpGetRequest& req, hal::IHttp
     if (esp_http_client_set_redirection(client) != ESP_OK) break;
     // Never follow a redirect to plain http: the list's CRC only detects
     // corruption, so authenticity depends on TLS for every hop.
-    char next[512] = {0};
-    if (esp_http_client_get_url(client, next, sizeof(next)) != ESP_OK || strncmp(next, "https://", 8) != 0) {
-      result.error = hal::HttpError::kConnect;
+    next.get()[0] = 0;
+    if (esp_http_client_get_url(client, next.get(), kMaxUrlLen) != ESP_OK ||
+        strncmp(next.get(), "https://", 8) != 0) {
+      result.error = hal::HttpError::kRedirect;
       esp_http_client_close(client);
       esp_http_client_cleanup(client);
       return result;
