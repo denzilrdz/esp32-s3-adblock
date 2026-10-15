@@ -89,7 +89,7 @@ native tests; pre-push = clang-tidy + esp32s3 firmware build.
 ## Git rules
 
 - Commit directly on `main`; small, focused commits; Conventional Commits
-  (`feat:`, `fix:`, `test:`, `docs:`, `chore:`, `ci:`, `refactor:`).
+  (`feat:`, `fix:`, `test:`, `docs:`, `chore:`, `ci:`, `refactor:`, `build:`).
 - All commits and tags are GPG-signed (configured in the local repo config).
 - Never change global git config. Never force-push without asking. Ask before pushing.
 - Never commit `src/secrets.h` or any real password, key, or token.

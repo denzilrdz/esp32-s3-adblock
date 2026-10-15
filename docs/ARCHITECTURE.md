@@ -5,8 +5,9 @@ sinkhole for the ESP32-S3 (WROOM-1-N16R8: 16 MB flash, 8 MB octal PSRAM). It is 
 fork of [M-Abozaid/esp32-c3-adblock](https://github.com/M-Abozaid/esp32-c3-adblock)
 (MIT). Read it before changing anything in `lib/core/` or `src/tasks/`.
 
-Status: **implemented in v0.1.0.** Items marked *(verify on hardware)* are confirmed
-against the toolchain and SDK sources but not yet measured on a real board.
+Status: **implemented in v0.1.0, running on an ESP32-S3-DevKitC-1 (N16R8).** Items
+marked *(verify on hardware)* are confirmed against the toolchain and SDK sources but
+not yet measured on the board.
 
 ---
 
@@ -396,8 +397,10 @@ stateDiagram-v2
   today. A reboot at 02:05 therefore runs once, and a reboot at 02:30 after a
   successful run does not run again.
 - **ETag:** we store the `ETag` from the last 200 response and send
-  `If-None-Match`. GitHub release downloads redirect to a CDN that returns an ETag
-  *(verify on hardware that the CDN answers 304)*. If it does not, the CRC in the
+  `If-None-Match`. GitHub release downloads redirect (302, with a ~900-character
+  signed URL) to `release-assets.githubusercontent.com`, which returns an ETag and
+  answers `304` to a matching `If-None-Match` (checked 2026-10-15). If it ever does
+  not, the CRC in the
   downloaded header is compared with the live list's, so an identical list is still
   not swapped.
 - **Flash space:** the temp file and the live file coexist. With about 7.9 MB of

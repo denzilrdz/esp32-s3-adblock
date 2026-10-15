@@ -23,7 +23,10 @@ Best: tell the router's DHCP server to give clients the blocker as their DNS ser
 - **LAN → DHCP server → Primary DNS** = the blocker's IP. Leave secondary DNS
   **empty** (a public secondary such as 8.8.8.8 lets clients skip the blocker
   whenever they like).
-- Some ISP routers lock these fields. Options if yours does:
+- Some ISP routers lock these fields. On an Airtel "GPON Home Gateway" (checked
+  2026-10-15) the customer login shows LAN DNS, the DHCP on/off switch, static DHCP
+  leases, IPv6 LAN DNS (set to the router itself, "HGWProxy") and the WAN settings
+  all greyed out, so steps 1–3 can't be done there. Options if yours does:
   1. Set DNS per device (Wi-Fi settings → IP/DNS → manual) on the devices you care
      about.
   2. Turn off the router's DHCP server and run DHCP elsewhere (another router in
