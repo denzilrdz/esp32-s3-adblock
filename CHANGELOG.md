@@ -6,34 +6,18 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
-### Changed
-- Firmware now builds on Arduino-ESP32 3.3.12 / ESP-IDF 5.5.5 (mbedTLS 3.6) through
-  the pioarduino PlatformIO platform, pinned to release 55.03.312-1. ESP-IDF 4.4 no
-  longer gets security fixes. Partition layout, settings and blocklist format are
-  unchanged.
-
-### Fixed
-- Blocklist downloads from GitHub releases failed with "connect failed": the
-  redirect to `release-assets.githubusercontent.com` carries a ~900-character signed
-  URL, which overflowed a 512-byte buffer. URLs up to 2 KB are now followed, and a
-  refused redirect is logged as "redirect refused".
-- CI: native tests failed on Linux GCC, which predefines `unix` as a macro; coverage
-  failed because `pio` was only installed in `.venv`.
-
-### Security
-- GitHub Actions hardening: workflows audited with zizmor (auditor persona) and
-  actionlint in CI and pre-commit; checkout credentials not persisted; per-job
-  least-privilege permissions; job timeouts; no template expansion in scripts;
-  release builds never use caches; Sigstore build-provenance attestations for
-  release binaries; Dependabot cooldown; CODEOWNERS for CI and security-relevant
-  paths.
-
-## [0.1.0] - 2026-10-14
+## [0.1.0] - 2026-10-15
 
 First release of the ESP32-S3 fork of
 [M-Abozaid/esp32-c3-adblock](https://github.com/M-Abozaid/esp32-c3-adblock).
+Tested on an ESP32-S3-DevKitC-1 (WROOM-1-N16R8): Wi-Fi setup, DNS-over-TLS, the
+blocklist download and blocking, the response cache, DNS over TCP and the dashboard
+password setup.
 
 ### Added
+- Built on Arduino-ESP32 3.3.12 / ESP-IDF 5.5.5 (mbedTLS 3.6) through the pioarduino
+  PlatformIO platform, pinned to release 55.03.312-1 (ESP-IDF 4.4, used upstream, no
+  longer gets security fixes).
 - ESP32-S3 N16R8 target (`esp32s3`): octal PSRAM, 16 MB flash with two 4 MB OTA
   slots, ~7.9 MB LittleFS and a core-dump partition.
 - Encrypted upstream DNS: DNS-over-TLS to Cloudflare and Quad9 by hard-coded IP with
@@ -65,7 +49,16 @@ First release of the ESP32-S3 fork of
 - A failed or corrupt blocklist download no longer leaves the device without a list.
 - Large blocklists no longer miss entries in crowded index buckets.
 - A slow upstream no longer stalls every other query, the dashboard and OTA.
-- Blocklist downloads verify HTTPS certificates and refuse redirects to plain HTTP.
+- Blocklist downloads verify HTTPS certificates and refuse redirects to plain HTTP,
+  and follow GitHub's long (~900-character) release-asset redirect.
+
+### Security
+- GitHub Actions hardening: workflows audited with zizmor (auditor persona) and
+  actionlint in CI and pre-commit; checkout credentials not persisted; per-job
+  least-privilege permissions; job timeouts; no template expansion in scripts;
+  release builds never use caches; Sigstore build-provenance attestations for
+  release binaries; Dependabot cooldown; CODEOWNERS for CI and security-relevant
+  paths.
 
 ### Removed
 - ESP32-C3 and classic ESP32 support (this fork is ESP32-S3 only: PSRAM and 16 MB

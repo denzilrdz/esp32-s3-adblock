@@ -11,10 +11,9 @@ A small board powered from your router's USB port, no Raspberry Pi needed.
 Based on [M-Abozaid/esp32-c3-adblock](https://github.com/M-Abozaid/esp32-c3-adblock).
 
 > [!NOTE]
-> **Project status: pre-release (v0.1.0 in progress).** Running on an ESP32-S3-DevKitC-1
-> (N16R8): Wi-Fi, DNS-over-TLS, the daily blocklist download and blocking work. Expect
-> rough edges until the first tagged release. The web installer and release downloads
-> appear with that release.
+> **Project status: early release (v0.1.0).** Tested on an ESP32-S3-DevKitC-1 (N16R8):
+> Wi-Fi setup, DNS-over-TLS, the daily blocklist download and blocking work. Expect
+> some rough edges; please [report issues](https://github.com/denzilrdz/esp32-s3-adblock/issues).
 
 ```
 client query ──▶ dns_io task ──▶ local name? ─▶ answer on the device
@@ -84,7 +83,7 @@ randomly, try another cable or charger. Keep the PCB antenna away from metal.
 
 ### 1. Flash
 
-**Option A: from the browser** (from the first release on). Open the
+**Option A: from the browser.** Open the
 [web installer](https://denzilrdz.github.io/esp32-s3-adblock/) in Chrome or Edge,
 plug the board in (DevKitC-1: the port marked **UART**), click *Install*.
 
