@@ -499,6 +499,11 @@ void DnsService::upstreamLoop() {
     while (xQueueReceive(upQ_, &idx, wait) == pdTRUE) {
       wait = 0;
       if (!forwarder_->submit(idx, pool_[idx].q)) onFailure(idx, pool_[idx].q);
+      // Each submit() may block up to ForwarderConfig::maxBlockingMs (one connect to
+      // an unreachable upstream), so feed per query: draining several queued queries
+      // before one feed exceeded the 5 s watchdog and crash-looped the board while
+      // the primary upstream was down (found on hardware, 2026-10-15).
+      esp_task_wdt_reset();
     }
     forwarder_->poll(forwarder_->inFlight() > 0 ? 10 : 0);
     esp_task_wdt_reset();
