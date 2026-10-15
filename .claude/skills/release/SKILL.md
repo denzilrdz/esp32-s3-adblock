@@ -39,6 +39,17 @@ schema), MINOR (features), PATCH (fixes).
 - Deploys the browser installer to GitHub Pages: `installer/index.html` +
   `manifest.json` (ESP32-S3) + esp-web-tools vendored from the npm tarball
   pinned in `installer/esp-web-tools.lock` (SHA-512 checked). Needs Pages set to
-  "GitHub Actions" in the repo settings.
+  "GitHub Actions" in the repo settings, and the `github-pages` environment must
+  allow tags `v*` (Settings → Environments → github-pages → deployment branches and
+  tags). GitHub creates it allowing only `main`, and then the `installer` job fails
+  with "Tag ... is not allowed to deploy to github-pages". Fixed for this repo on
+  2026-10-15; after changing it, re-run only the failed job (`gh run rerun <id> --failed`).
+
+## After the release
+
+- Check the live installer: `https://denzilrdz.github.io/esp32-s3-adblock/` and its
+  `manifest.json` (version must match the tag).
+- Check downloads: `gh release download vX.Y.Z`, `shasum -a 256 -c SHA256SUMS`,
+  `gh attestation verify factory-esp32s3-vX.Y.Z.bin -R denzilrdz/esp32-s3-adblock`.
 
 Firmware images are not signed yet (ARCHITECTURE.md §15).
