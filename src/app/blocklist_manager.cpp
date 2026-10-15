@@ -21,6 +21,7 @@ constexpr const char* kKeyUrl = "bl_url";
 constexpr const char* kKeyHour = "bl_hour";
 constexpr const char* kKeyMinute = "bl_min";
 constexpr const char* kKeyResult = "bl_res";
+constexpr const char* kKeyOk = "bl_ok";  // kept with bl_res: a restart showed "updated" as failed
 constexpr const char* kKeyAttempt = "bl_at";
 
 #ifndef DEFAULT_BLOCKLIST_URL
@@ -63,6 +64,8 @@ void BlocklistManager::begin() {
   scheduler_.setTime(hour_, minute_);
   if (kv_.getString(kKeyResult, buf, sizeof(buf))) lastResult_ = buf;
   kv_.getI64(kKeyAttempt, lastAttempt_);
+  uint32_t ok = 0;
+  if (kv_.getU32(kKeyOk, ok)) lastOk_ = ok != 0;
   fs_.remove("/update.cfg");  // upstream's settings file: superseded by NVS
 
   const update::RecoveryResult rec = update::BlocklistUpdater::recover(fs_, limits_, update::Paths{}, tick_);
@@ -135,6 +138,7 @@ void BlocklistManager::record(const update::UpdateReport& r) {
       String(update::updateStatusName(r.status)) + (r.detail[0] ? String(": ") + r.detail : String());
   kv_.setString(kKeyResult, lastResult_.c_str());
   kv_.setI64(kKeyAttempt, lastAttempt_);
+  kv_.setU32(kKeyOk, lastOk_ ? 1 : 0);
 }
 
 void BlocklistManager::loop() {

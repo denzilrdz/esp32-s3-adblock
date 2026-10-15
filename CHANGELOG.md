@@ -37,6 +37,8 @@ From v0.1.1 on, updates from the dashboard work and keep everything.
 - Settings pasted with spaces around them (e.g. a custom DoT IP) are accepted.
 - A failed DNS-over-HTTPS connection no longer triggers a burst of reconnect attempts
   (one per queued query); queued queries move to the next upstream.
+- After a restart, the dashboard showed the last successful blocklist update as failed
+  (its OK flag wasn't saved with the result).
 
 ## [0.1.0] - 2026-10-15
 
