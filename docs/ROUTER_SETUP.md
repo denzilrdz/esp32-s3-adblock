@@ -27,6 +27,8 @@ Best: tell the router's DHCP server to give clients the blocker as their DNS ser
   2026-10-15) the customer login shows LAN DNS, the DHCP on/off switch, static DHCP
   leases, IPv6 LAN DNS (set to the router itself, "HGWProxy") and the WAN settings
   all greyed out, so steps 1–3 can't be done there. Options if yours does:
+  0. **Put your own router behind it** (what works on the Airtel box above): see
+     [§2a](#2a-your-own-router-behind-a-locked-isp-router).
   1. Set DNS per device (Wi-Fi settings → IP/DNS → manual) on the devices you care
      about.
   2. Turn off the router's DHCP server and run DHCP elsewhere (another router in
@@ -35,6 +37,29 @@ Best: tell the router's DHCP server to give clients the blocker as their DNS ser
   3. Point only the router's **WAN/Internet DNS** at the blocker. Clients then still
      ask the router, which forwards to the blocker. This works, but every query
      appears to come from the router, so per-client stats and bans show one client.
+
+### 2a. Your own router behind a locked ISP router
+
+Leave the ISP router as it is and plug a second router's **WAN/Internet** port into
+one of its LAN ports. The second router runs its own network, which you fully control:
+
+1. Second router: **Router** mode (not access point), internet type **Dynamic IP**.
+2. Join the blocker to the second router's Wi-Fi (dashboard *Forget Wi-Fi*, or hold
+   BOOT while powering on, then pick the new network on its setup page).
+3. Reserve the blocker's IP (by its MAC) in the second router's DHCP settings.
+4. Make that router hand out the blocker as DNS, with no secondary DNS.
+5. Turn off IPv6 on the second router.
+6. Move your devices to the second router's Wi-Fi; plug wired devices into it too.
+   Anything left on the ISP router's Wi-Fi or ports still uses the ISP's DNS.
+
+Checked on a **TP-Link TL-WR850N** behind the Airtel box (2026-10-15): its DHCP page
+has no DNS fields, but it passes its own internet DNS to clients, so step 4 is
+*Network → Internet → Advanced → Use the Following DNS Addresses* = the blocker's IP.
+Address reservation is under *Network → LAN Settings*, and IPv6 is the *IPv6 Enable*
+switch on the Internet page. `s3adblock.local` only resolves on the network the
+blocker is on; from elsewhere use its IP. Mesh systems work the same way if they let
+you set the DNS their DHCP hands out (TP-Link Deco: *More → Advanced → DHCP Server →
+Primary DNS*).
 
 ## 3. IPv6: the most common bypass
 

@@ -11,6 +11,19 @@ description: Diagnose problems on the device. Use when reading serial logs, deco
 pio device monitor -e esp32s3        # 115200 baud, filters: esp32_exception_decoder, time
 ```
 
+- **Reading the log without restarting the board** (e.g. a stability check): open
+  the port with pyserial (`~/.platformio/penv/bin/python`) and leave DTR and RTS at
+  their default (both asserted). On the DevKitC-1 auto-reset circuit only RTS
+  asserted alone pulls EN low; pulsing RTS on purpose is how to *get* a boot log.
+  Opening `pio device monitor` may reset the board.
+- Logs can contain binary bytes (ROM boot noise): use `grep -a`, otherwise grep
+  silently treats the file as binary and matches nothing.
+- **OTA slot state:** read otadata with
+  `~/.platformio/penv/bin/esptool --chip esp32s3 read-flash 0xe000 0x2000 ota.bin`
+  (resets the board). Two 32-byte records (`seq`, label, `state` at +24, crc): the
+  higher valid `seq` wins, `(seq-1) % 2` is the slot; state 1 = pending verify,
+  2 = valid, 3 = invalid (rolled back).
+
 - Lines look like `[I][up] cloudflare-dot: unknown -> up (180 ms)`. Tags: `dns`, `up`
   (upstream), `bl` (blocklist), `time`, `wifi`, `web`, `ota`, `boot`.
 - Log level: dashboard *Settings → Log* (error/warn/info/debug), stored in NVS and

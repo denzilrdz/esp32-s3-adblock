@@ -465,11 +465,23 @@ timeout)`, `close()`, plus `pipelined()`. Implementations:
   reopened lazily on the next query, using **TLS session resumption**
   (`TlsStream` drives mbedTLS directly on an lwIP socket and keeps the session with
   `mbedtls_ssl_get_session`/`set_session`, because `esp_tls`'s ticket API is not
-  compiled into the prebuilt library). A resumed handshake skips the ECDHE and
-  certificate cost *(verify on hardware: handshake times)*.
+  compiled into the prebuilt library). A full handshake (ECDHE + certificate chain)
+  measured **~1.5 s** on the DevKitC-1 (9.9.9.9, 2026-10-15); a resumed one skips the
+  ECDHE and certificate cost *(verify on hardware: resumed handshake time)*.
 - **Deadlines:** a query has 2.5 s in total. If the active upstream does not answer
   within 1.2 s, the query is re-sent once to the next healthy upstream. At the
   deadline the client gets SERVFAIL (upstream sent nothing, W8).
+- **Unreachable upstreams** (all found while testing on hardware):
+  - The TCP stage of a connect is capped at 1 s (`TlsStream`); the full connect
+    budget (3 s) is for the TLS handshake. A blackholed upstream then fails fast
+    enough that the same query can still be answered by the next one.
+  - At the deadline an upstream is only counted as failed if it had at least
+    `hedgeAfterMs` since the query was sent to it. Otherwise a query that reached a
+    healthy upstream late (after a dead one used up its time) would mark it down too.
+  - When a connection fails, every query assigned to it is rerouted, including those
+    queued behind a busy DoH connection, so they don't each reconnect to it.
+  - `dns_up` feeds the watchdog after every `submit()`: each may block up to
+    `maxBlockingMs`, and a queue of them used to exceed the 5 s watchdog.
 
 ### 7.2 Health state machine (per upstream)
 

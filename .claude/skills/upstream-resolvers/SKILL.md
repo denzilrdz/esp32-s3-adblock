@@ -72,7 +72,14 @@ created at boot in `startDnsService()`).
 - Hedge to the next healthy upstream after 1.2 s.
 - SERVFAIL at the deadline.
 - Blocking budget: one `submit()`/`poll()` call starts a connect only if it fits in
-  `maxBlockingMs` (4 s), so unreachable upstreams can't trip the 5 s watchdog.
+  `maxBlockingMs` (4 s); `dns_up` feeds the watchdog after **each** call (a queue of
+  them crash-looped the board with a dead primary).
+- Connect: TCP stage capped at 1 s in `TlsStream`, TLS handshake gets the rest of the
+  3 s. A full handshake measured ~1.5 s on the S3: don't lower the total below ~2.5 s.
+- Blame at the deadline only if the upstream had `hedgeAfterMs` since the send; a
+  failed transport reroutes every query assigned to it (incl. queued DoH ones).
+- Test failover on hardware: Primary = custom with IP `192.0.2.1` (never answers),
+  Secondary = quad9; certificate check: custom IP `1.1.1.1` with a wrong TLS name.
 - At most `kMaxRepliesPerPoll` (64) replies are read per transport per `poll()`, so
   a flood of forged UDP replies can't monopolise the upstream task.
 - In-flight table: 32 slots. Each upstream query gets a fresh random ID; a reply

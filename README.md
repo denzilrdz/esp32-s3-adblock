@@ -12,8 +12,10 @@ Based on [M-Abozaid/esp32-c3-adblock](https://github.com/M-Abozaid/esp32-c3-adbl
 
 > [!NOTE]
 > **Project status: early release (v0.1.1).** Tested on an ESP32-S3-DevKitC-1 (N16R8):
-> Wi-Fi setup, DNS-over-TLS, the daily blocklist download and blocking work. Expect
-> some rough edges; please [report issues](https://github.com/denzilrdz/esp32-s3-adblock/issues).
+> Wi-Fi setup, DNS-over-TLS, blocking, the blocklist download and its "not modified"
+> check, failover to Quad9 when the primary is unreachable, plain-DNS fallback on and
+> off, dashboard firmware updates and automatic rollback of a bad update. Expect some
+> rough edges; please [report issues](https://github.com/denzilrdz/esp32-s3-adblock/issues).
 
 ```
 client query ──▶ dns_io task ──▶ local name? ─▶ answer on the device
@@ -197,8 +199,11 @@ bigger list, Hagezi's `pro-onlydomains.txt` (~370k) fits easily on the S3.
 
 ## Updating firmware
 
-- **Dashboard:** *Device → Flash firmware* with a `firmware.bin` from a
-  [release](https://github.com/denzilrdz/esp32-s3-adblock/releases).
+- **Dashboard:** *Device → Flash firmware* with **`firmware-esp32s3-vX.Y.Z.bin`** from a
+  [release](https://github.com/denzilrdz/esp32-s3-adblock/releases) (not the larger
+  `factory-…` image, which is for first installs; the board rejects it). Settings, Wi-Fi
+  and the blocklist are kept. v0.1.0 can't update itself this way: install v0.1.1 or
+  later over USB once (see the [changelog](CHANGELOG.md)).
 - **Over the network:** set `OTA_PASS` (10+ characters) in `secrets.h`, then
   `pio run -e esp32s3 -t upload --upload-port s3adblock.local --upload-protocol espota --upload-flags="--auth=<OTA_PASS>"`.
 
