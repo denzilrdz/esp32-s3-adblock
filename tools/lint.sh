@@ -3,7 +3,8 @@
 # findings. Uses the pinned clang-tidy from .venv (tools/setup-dev.sh) if present.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-TIDY=".venv/bin/clang-tidy"; [ -x "$TIDY" ] || TIDY="clang-tidy"
+TIDY=".venv/bin/clang-tidy"
+[ -x "$TIDY" ] || TIDY="clang-tidy"
 EXTRA=()
 if [[ "$(uname)" == "Darwin" ]]; then EXTRA=(-isysroot "$(xcrun --show-sdk-path)"); fi
 status=0

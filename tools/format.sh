@@ -4,8 +4,10 @@
 #   tools/format.sh --check  # CI: fail if anything would change
 set -euo pipefail
 cd "$(dirname "$0")/.."
-CF=".venv/bin/clang-format"; [ -x "$CF" ] || CF="clang-format"
-BLACK=".venv/bin/black"; [ -x "$BLACK" ] || BLACK="black"
+CF=".venv/bin/clang-format"
+[ -x "$CF" ] || CF="clang-format"
+BLACK=".venv/bin/black"
+[ -x "$BLACK" ] || BLACK="black"
 mapfile_cpp() { git ls-files 'lib/core/**/*.cpp' 'lib/core/**/*.h' 'src/**/*.cpp' 'src/**/*.h' 'src/*.cpp' 'test/**/*.cpp' 'test/**/*.h' | grep -v 'src/secrets'; }
 if [[ "${1:-}" == "--check" ]]; then
   mapfile_cpp | xargs "$CF" --dry-run --Werror
