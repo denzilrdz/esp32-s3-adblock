@@ -6,6 +6,11 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-10-17
+
+Update from the dashboard (_Device → Check for updates_) on v0.1.2. From this release
+on, the update check knows when a future release can't be installed over the air.
+
 ### Added
 
 - The dashboard update check refuses releases it can't install safely: a release that
@@ -128,7 +133,8 @@ password setup.
   flash are required), upstream's 40-bit blocklist format, the Japanese README,
   the C3 web-installer binaries and the C3 SuperMini enclosure.
 
-[Unreleased]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.1.3...HEAD
+[0.1.3]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/denzilrdz/esp32-s3-adblock/releases/tag/v0.1.0
