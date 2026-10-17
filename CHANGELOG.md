@@ -6,6 +6,14 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- The default blocklist is now rebuilt daily at 00:17 IST (was weekly), ahead of the
+  boards' 02:00 IST update. If nothing changed, the file isn't re-uploaded, so boards
+  skip the download.
+- README rewritten: highlights, a comparison with Pi-hole and the C3 original, a
+  contents list and a flow diagram.
+
 ## [0.1.4] - 2026-10-17
 
 The dashboard now reports the result of an update. You see it on updates made

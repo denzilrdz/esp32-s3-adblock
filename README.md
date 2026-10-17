@@ -1,14 +1,42 @@
+<div align="center">
+
 # esp32-s3-adblock
 
+**A Pi-hole on a $10 board.** Network-wide ad and tracker blocking with encrypted DNS,
+running on an ESP32-S3 plugged into your router's USB port.
+
+[![build](https://github.com/denzilrdz/esp32-s3-adblock/actions/workflows/build.yml/badge.svg)](https://github.com/denzilrdz/esp32-s3-adblock/actions/workflows/build.yml)
+[![release](https://img.shields.io/github/v/release/denzilrdz/esp32-s3-adblock?sort=semver)](https://github.com/denzilrdz/esp32-s3-adblock/releases)
+[![board: ESP32-S3 N16R8](https://img.shields.io/badge/board-ESP32--S3%20N16R8-e7352c)](#hardware)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-A **Pi-hole-style DNS ad blocker for the ESP32-S3** (N16R8: 16 MB flash, 8 MB PSRAM).
-It blocks ads, trackers and malware domains for every device on your network, sends
-all other lookups to Cloudflare or Quad9 **encrypted with DNS-over-TLS** (so your ISP
-can't read them), and refreshes its blocklist every night at 02:00 on its own.
-A small board powered from your router's USB port, no Raspberry Pi needed.
+[**Install from the browser**](https://denzilrdz.github.io/esp32-s3-adblock/) ·
+[Quick start](#quick-start) ·
+[Router setup](docs/ROUTER_SETUP.md) ·
+[How it works](#how-it-works) ·
+[Architecture](docs/ARCHITECTURE.md)
 
-Based on [M-Abozaid/esp32-c3-adblock](https://github.com/M-Abozaid/esp32-c3-adblock).
+</div>
+
+---
+
+It blocks ads, trackers and malware domains for **every device on your network**
+(phones, TVs, laptops, no apps to install), sends all other lookups to Cloudflare or
+Quad9 **encrypted with DNS-over-TLS** so your ISP can't read them, and **refreshes its
+blocklist every night on its own**. No Raspberry Pi, no SD card, no OS to patch.
+
+## Highlights
+
+|                                        |                                                                                                          |
+| -------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| **Five-minute setup**                  | Flash from Chrome/Edge with one click, pick your Wi-Fi on your phone, point the router at it. Done.      |
+| **Blocks for the whole network**       | Up to **1 million domains** in PSRAM; one entry blocks a domain and all its subdomains.                  |
+| **Your ISP stops seeing your lookups** | Allowed queries leave encrypted (DNS-over-TLS, with DNS-over-HTTPS fallback), unlike a plain sinkhole.   |
+| **Maintenance-free**                   | The blocklist updates itself daily; firmware updates are one button on the dashboard, with rollback.     |
+| **Fast**                               | Blocklist and answer cache live in RAM: repeat lookups are answered in milliseconds.                     |
+| **Dashboard**                          | `http://s3adblock.local`: live stats, clients, your own block/allow rules, pause blocking, settings.     |
+| **Secure by default**                  | Password set with a one-time code from the serial console, login lockout, CSRF and DNS-rebinding guards. |
+| **Tiny and cheap**                     | Powered from the router's USB port; nothing else to buy or run.                                          |
 
 > [!NOTE]
 > **Project status: early release (v0.1.4).** Tested on an ESP32-S3-DevKitC-1 (N16R8):
@@ -17,25 +45,96 @@ Based on [M-Abozaid/esp32-c3-adblock](https://github.com/M-Abozaid/esp32-c3-adbl
 > off, dashboard firmware updates and automatic rollback of a bad update. Expect some
 > rough edges; please [report issues](https://github.com/denzilrdz/esp32-s3-adblock/issues).
 
-```
-client query ──▶ dns_io task ──▶ local name? ─▶ answer on the device
-                      │        └▶ blocked?    ─▶ 0.0.0.0 / :: / NODATA
-                      │        └▶ cached?     ─▶ answer from PSRAM cache
-                      ▼
-                upstream task ──▶ DNS-over-TLS (Cloudflare, Quad9)
-                                  └▶ DNS-over-HTTPS if port 853 is blocked
-                                     └▶ plain DNS only if all encrypted upstreams are down
+## Contents
+
+- [How it compares](#how-it-compares)
+- [Quick start](#quick-start)
+- [Features](#features)
+- [Hardware and requirements](#hardware)
+- [How it works](#how-it-works)
+- [Configuration](#configuration)
+- [Updating firmware](#updating-firmware)
+- [Limitations](#limitations)
+- [Troubleshooting](#troubleshooting)
+- [Development](#development) · [Roadmap](#roadmap) · [Support](#support) · [Credits](#credits)
+
+## How it compares
+
+|                       | **esp32-s3-adblock**                          | Pi-hole on a Raspberry Pi   | Original [esp32-c3-adblock](https://github.com/M-Abozaid/esp32-c3-adblock) |
+| --------------------- | --------------------------------------------- | --------------------------- | -------------------------------------------------------------------------- |
+| Hardware              | ESP32-S3 board, USB-powered                   | Pi + SD card + power supply | ESP32-C3 board                                                             |
+| Maintenance           | none (no OS, no SD card)                      | OS updates, SD card wear    | none                                                                       |
+| Upstream DNS          | **encrypted** (DoT, DoH fallback)             | plain by default            | plain UDP to 9.9.9.9                                                       |
+| Blocklist             | up to 1M domains, in PSRAM                    | millions, on disk           | read from flash                                                            |
+| Failed list update    | old list stays active                         | old list stays active       | can leave no list loaded                                                   |
+| Answer cache          | yes (PSRAM)                                   | yes                         | no                                                                         |
+| Slow upstream answer  | other queries keep flowing; SERVFAIL at 2.5 s | other queries keep flowing  | stalls every client                                                        |
+| DHCP server, IPv6 DNS | not yet                                       | yes                         | no                                                                         |
+
+## Quick start
+
+You need an **ESP32-S3-DevKitC-1 (N16R8)** (or another board with that module), a USB
+data cable, a **2.4 GHz Wi-Fi** network and **admin access to your router**.
+
+### 1. Flash
+
+Open the **[web installer](https://denzilrdz.github.io/esp32-s3-adblock/)** in Chrome
+or Edge, plug the board in (DevKitC-1: the port marked **UART**), click _Install_.
+
+<details>
+<summary><b>Or build and flash from source</b> (macOS/Linux/Windows with PlatformIO)</summary>
+
+```bash
+git clone https://github.com/denzilrdz/esp32-s3-adblock && cd esp32-s3-adblock
+cp src/secrets.example.h src/secrets.h      # optional Wi-Fi + OTA password, see comments
+pio run -e esp32s3 -t upload                # flash firmware over USB
+pio device monitor -e esp32s3               # watch it boot
 ```
 
-## Why this project
+Needs [PlatformIO](https://platformio.org/) (CLI or the VS Code extension) and Python
+3.11+.
 
-- **No Raspberry Pi to maintain:** a small board powered by the router, no SD card
-  to corrupt, no OS to patch.
-- **Your ISP stops seeing your lookups:** unlike a plain DNS sinkhole, allowed queries
-  leave your network encrypted.
-- **Compared with the original C3 version:** the blocklist and an answer cache live in
-  PSRAM (faster, up to 1M domains), upstream DNS is encrypted, the list updates itself,
-  and the dashboard is password-protected.
+</details>
+
+### 2. Connect it to Wi-Fi
+
+On first boot the device opens an access point **`S3-AdBlock-XXXX`**. Join it from a
+phone; a setup page appears. Pick your network and enter its password; the device
+restarts and joins it. (Or put `WIFI_SSID`/`WIFI_PASS` in `src/secrets.h`.) Hold the
+**BOOT** button while powering on to forget Wi-Fi.
+
+### 3. Set the dashboard password
+
+The serial console (`pio device monitor`, or the web installer's _Logs_) prints a
+**one-time setup code**. Open `http://s3adblock.local` (or the device IP), log in with
+user `admin` and the setup code, and set a real password (10+ characters). Until you
+do, nothing can be changed, so nobody else on your network can claim the device.
+
+### 4. Point your network at it
+
+Give the device a fixed IP (DHCP reservation in the router), then set the router's
+**DHCP DNS server** to that IP and leave the secondary DNS empty.
+
+> [!WARNING]
+> **IPv6 (Airtel and most fibre routers):** the router also advertises its own IPv6
+> DNS, and devices will use it to skip the blocker. Turn off IPv6 DNS advertisement or
+> IPv6 on the LAN. Airtel routers often lock the DNS fields; the guide lists
+> workarounds. Full walkthrough and checks: **[docs/ROUTER_SETUP.md](docs/ROUTER_SETUP.md)**.
+
+### 5. Check it works
+
+From any computer on the network (replace `192.168.1.50` with the device's IP):
+
+```console
+$ dig @192.168.1.50 doubleclick.net +short
+0.0.0.0
+$ dig @192.168.1.50 example.com +short
+<one or more real IP addresses>
+```
+
+The first name is blocked; the second gets a real answer, fetched over DNS-over-TLS.
+After the router change, the dashboard's client table should fill up with your devices
+and the "blocked" counter should start rising.
 
 ## Features
 
@@ -52,12 +151,15 @@ client query ──▶ dns_io task ──▶ local name? ─▶ answer on the de
 - **Privacy extras**: query padding, DNSSEC "validated" flag pass-through, local
   answers for private names, and Firefox's DoH canary so Firefox keeps using it.
 - **Dashboard** at `http://s3adblock.local`: live stats, upstream health, clients,
-  block/allow rules, pause blocking, settings, firmware and blocklist uploads.
+  block/allow rules, pause blocking, settings, firmware and blocklist uploads, and a
+  one-click update check.
 - **Secure by default**: hashed dashboard password set with a one-time code from the
   serial console, login lockout, CSRF and DNS-rebinding checks, HTTPS-only list
   downloads, LAN-only DNS answers.
 
-## Hardware
+<a id="hardware"></a>
+
+## Hardware and requirements
 
 | Board                                      | Status      | Notes                                                   |
 | ------------------------------------------ | ----------- | ------------------------------------------------------- |
@@ -71,72 +173,27 @@ partition table needs 16 MB of flash.
 Cheap or loose cables can brown out the board during Wi-Fi transmission; if it reboots
 randomly, try another cable or charger. Keep the PCB antenna away from metal.
 
-## Requirements
+**You also need:**
 
-- An **ESP32-S3-DevKitC-1 (N16R8)** or another board with the same module, and a USB
-  data cable.
-- A **2.4 GHz Wi-Fi** network.
+- A USB data cable and a **2.4 GHz Wi-Fi** network.
 - **Admin access to your router**, to set its DHCP DNS server (and ideally turn off
   IPv6 DNS advertisement).
-- To build from source: [PlatformIO](https://platformio.org/) (CLI or the VS Code
-  extension) and Python 3.11+. To use the web installer: Chrome or Edge on a computer.
-
-## Quick start
-
-### 1. Flash
-
-**Option A: from the browser.** Open the
-[web installer](https://denzilrdz.github.io/esp32-s3-adblock/) in Chrome or Edge,
-plug the board in (DevKitC-1: the port marked **UART**), click _Install_.
-
-**Option B: from source** (macOS/Linux/Windows with [PlatformIO](https://platformio.org/)):
-
-```bash
-git clone https://github.com/denzilrdz/esp32-s3-adblock && cd esp32-s3-adblock
-cp src/secrets.example.h src/secrets.h      # optional Wi-Fi + OTA password, see comments
-pio run -e esp32s3 -t upload                # flash firmware over USB
-pio device monitor -e esp32s3               # watch it boot
-```
-
-### 2. Wi-Fi
-
-On first boot the device opens an access point **`S3-AdBlock-XXXX`**. Join it from a
-phone; a setup page appears. Pick your network and enter its password; the device
-restarts and joins it. (Or put `WIFI_SSID`/`WIFI_PASS` in `src/secrets.h`.) Hold the
-**BOOT** button while powering on to forget Wi-Fi.
-
-### 3. Dashboard password
-
-The serial console (`pio device monitor`, or the web installer's _Logs_) prints a
-**one-time setup code**. Open `http://s3adblock.local` (or the device IP), log in with
-user `admin` and the setup code, and set a real password (10+ characters). Until you
-do, nothing can be changed, so nobody else on your network can claim the device.
-
-### 4. Point your network at it
-
-Give the device a fixed IP (DHCP reservation in the router), then set the router's
-**DHCP DNS server** to that IP and leave the secondary DNS empty.
-
-> **IPv6 warning (Airtel and most fibre routers):** the router also advertises its own
-> IPv6 DNS, and devices will use it to skip the blocker. Turn off IPv6 DNS
-> advertisement or IPv6 on the LAN. Airtel routers often lock the DNS fields; the guide
-> lists workarounds. Full walkthrough and checks: **[docs/ROUTER_SETUP.md](docs/ROUTER_SETUP.md)**.
-
-### 5. Check it works
-
-From any computer on the network (replace `192.168.1.50` with the device's IP):
-
-```console
-$ dig @192.168.1.50 doubleclick.net +short
-0.0.0.0
-$ dig @192.168.1.50 example.com +short
-<one or more real IP addresses>
-```
-
-The first name is blocked; the second gets a real answer, fetched over DNS-over-TLS. After the router change, the dashboard's client table should
-fill up with your devices and the "blocked" counter should start rising.
+- For the web installer: Chrome or Edge on a computer. To build from source:
+  [PlatformIO](https://platformio.org/) (CLI or the VS Code extension) and Python 3.11+.
 
 ## How it works
+
+```mermaid
+flowchart LR
+    C([Client query]) --> IO[dns_io task]
+    IO -->|local name| L[Answer on the device]
+    IO -->|blocked| B["0.0.0.0 / :: / NODATA"]
+    IO -->|cached| K[Answer from PSRAM cache]
+    IO -->|otherwise| U[upstream task]
+    U --> DOT["DNS-over-TLS<br/>Cloudflare, Quad9"]
+    DOT -.->|port 853 blocked| DOH[DNS-over-HTTPS]
+    DOH -.->|all encrypted upstreams down| P[plain DNS]
+```
 
 **Blocking.** Domains are stored as 48-bit hashes in a bucketed index (65,536 buckets).
 For `a.b.ads.example.com` the device checks the name and each parent down to
@@ -153,8 +210,8 @@ those names instead (pick the order on the dashboard). If port 853 is blocked th
 device uses DNS-over-HTTPS (port 443). Only when every encrypted upstream is down does
 it fall back to plain DNS, and it says so loudly in the log and on the dashboard.
 Why not run a full recursive resolver like Unbound on the chip? See
-[ARCHITECTURE.md §13](docs/ARCHITECTURE.md#13-is-an-unbound-style-recursive-resolver-feasible-here): it's slow on this CPU and would actually
-show the ISP _more_.
+[ARCHITECTURE.md §13](docs/ARCHITECTURE.md#13-is-an-unbound-style-recursive-resolver-feasible-here):
+it's slow on this CPU and would actually show the ISP _more_.
 
 **Cache.** Answers are cached in PSRAM with their real TTLs, so repeat lookups are
 answered locally in milliseconds.
@@ -163,9 +220,10 @@ answered locally in milliseconds.
 over NTP, the device fetches the list over verified HTTPS. A list is only installed
 after its header, size, checksum and ordering check out; otherwise the current list
 stays and it retries hourly. The default list (StevenBlack + Hagezi Light, about
-100k domains, social and messaging apps keep working) is rebuilt weekly by this
-repository's CI and published at
+100k domains, social and messaging apps keep working) is rebuilt daily at 00:17 IST by
+this repository's CI, so boards always pick up a fresh one, and published at
 `https://github.com/denzilrdz/esp32-s3-adblock/releases/download/blocklist/blocklist.bin`.
+If the sources didn't change, the file isn't re-uploaded and boards skip the download.
 
 Design details, memory budget and threading: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
@@ -180,7 +238,7 @@ Everything is on the dashboard (stored in flash/NVS, survives updates):
 | Query padding, DNSSEC AD pass-through                                             | on                                                         |
 | Blocked answer TTL                                                                | 10 s                                                       |
 | Firefox DoH canary / iCloud Private Relay opt-out / local private reverse lookups | on / off / on                                              |
-| Blocklist URL and daily update time                                               | this repo's weekly list, 02:00                             |
+| Blocklist URL and daily update time                                               | this repo's daily list, 02:00                              |
 | Time zone                                                                         | `IST-5:30` (POSIX TZ string, e.g. `UTC0`)                  |
 | Custom block / allow rules, banned clients, pause                                 |                                                            |
 
@@ -257,8 +315,9 @@ Contributions are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md) and the
 
 ## Roadmap
 
-Planned (details in [ARCHITECTURE.md §15](docs/ARCHITECTURE.md#15-platform-notes-and-roadmap)): signed
-firmware images, DNS over IPv6, an optional DHCP server, and certificate date checks.
+Planned (details in [ARCHITECTURE.md §15](docs/ARCHITECTURE.md#15-platform-notes-and-roadmap)):
+signed firmware images, DNS over IPv6, an optional DHCP server, and certificate date
+checks.
 
 ## Support
 
@@ -280,3 +339,10 @@ firmware images, DNS over IPv6, an optional DHCP server, and certificate date ch
 ## License
 
 MIT. See [LICENSE](LICENSE) (original copyright retained).
+
+<div align="center">
+
+<sub>If it blocks something it shouldn't, add it to the allowlist on the dashboard, or
+<a href="https://github.com/denzilrdz/esp32-s3-adblock/issues">tell us</a> so the default list improves.</sub>
+
+</div>
