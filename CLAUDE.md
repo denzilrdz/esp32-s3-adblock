@@ -133,7 +133,9 @@ native tests; pre-push = clang-tidy + esp32s3 firmware build.
   `UPDATE_BASE_URL` (GitHub Pages; release downloads have no CORS). The page CSP only
   allows that origin. To test without a release, build with a local
   `-DUPDATE_BASE_URL=\"http://<mac-ip>:8765/\"` and serve the files with
-  `Access-Control-Allow-Origin: *`.
+  `Access-Control-Allow-Origin: *`. Boards jump straight to the latest release, so a
+  release that can't be installed over the air from older versions must raise
+  `installer/min-update-from` (skill `release`, step 4).
 - mDNS name: `s3adblock.local`; setup AP `S3-AdBlock-XXXX`.
 - **First boot:** a placeholder/weak `WEB_PASS` never works; the serial console prints
   a one-time setup code. ArduinoOTA stays off until `OTA_PASS` is real (10+ chars).

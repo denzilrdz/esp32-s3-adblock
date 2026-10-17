@@ -6,6 +6,13 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- The dashboard update check refuses releases it can't install safely: a release that
+  needs a USB flash from the running version (`minUpdateFrom` in `update.json`, set from
+  `installer/min-update-from`), or an `update.json` format it doesn't know (`schema`).
+  It shows why, with a link to the release notes. Boards can still skip versions.
+
 ## [0.1.2] - 2026-10-17
 
 From this release on, the dashboard can update the board itself (_Device → Check for

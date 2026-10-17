@@ -625,6 +625,12 @@ automatically. This is a circuit-breaker with exponential backoff.
     The browser can't hash the file on a plain-HTTP page (WebCrypto needs a secure
     context); the device rejects a corrupted image when it verifies the image hash
     before switching slots. Trust is the same as the web installer: GitHub + TLS.
+  - **Skipping versions:** the check always offers the latest release, so releases
+    must be installable from any older version over the air. `update.json` carries
+    `minUpdateFrom` (from `installer/min-update-from`: oldest version allowed to
+    install it from the dashboard; raised for releases that need a USB flash) and
+    `schema` (its own format). Dashboards from v0.1.3 refuse a release that needs
+    USB from their version, or an unknown schema, and link the release notes.
   - **Rollback:** the prebuilt bootloader has `CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE`.
     Arduino's `verifyRollbackLater()` hook is overridden, so a new image stays
     "pending verify" until it has had Wi-Fi and a running DNS service for 60 s; only

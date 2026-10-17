@@ -22,6 +22,19 @@ schema), MINOR (features), PATCH (fixes).
    the section is missing).
 4. Partition table / blocklist format / settings schema changed? Say so under
    **Changed** ("requires USB flash", "requires a new blocklist") and bump MAJOR.
+   **Dashboard updates skip versions** (a board jumps straight to the latest), so:
+   - Settings and stored data must stay readable from _any_ older release, and every
+     migration must run from any older version, never relying on an in-between
+     release having run first.
+   - A release that can't be installed over the air from older versions (new
+     partition table, a migration older data can't take) raises
+     `installer/min-update-from` to the oldest version that _can_ (often the release
+     itself). Dashboards from v0.1.3 on then say "needs a USB install" instead of
+     offering it. **v0.1.2 dashboards predate this field and would still offer it**:
+     if that ever matters, also stop publishing `update.json` for one release or
+     warn in the release notes.
+   - A future change to `update.json` that old dashboards can't read safely bumps
+     `SCHEMA` in `tools/make_update_json.py`; dashboards refuse unknown schemas.
 5. Commit: `chore(release): vX.Y.Z` (signed).
 6. Tag (signed, annotated): `git tag -s vX.Y.Z -m "vX.Y.Z"`; check with
    `git tag -v vX.Y.Z`.
