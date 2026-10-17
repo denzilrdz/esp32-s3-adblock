@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- After _Download & flash_ the dashboard stayed on "installed, rebooting...". It now waits
+  for the device to come back and shows the version it runs (or that the update rolled
+  back, or to reload the page if the device takes longer than 3 minutes).
+
 ## [0.1.3] - 2026-10-17
 
 Update from the dashboard (_Device → Check for updates_) on v0.1.2. From this release

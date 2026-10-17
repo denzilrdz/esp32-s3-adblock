@@ -122,13 +122,22 @@ $('upCheck').onclick=async()=>{upd=null;$('upFlash').hidden=true;$('upInfo').tex
  if(manual){const parts=['v'+j.version+' available, but '+manual+'. '];if(/^https:\/\//.test(j.release||'')){const a=el('a','Release notes');a.href=j.release;a.target='_blank';a.rel='noopener';parts.push(a)}$('upInfo').replaceChildren(...parts);return}
  upd=Object.assign({},j,{base:s.updateUrl});$('upInfo').textContent='v'+j.version+' available (running v'+s.version+')';$('upFlash').hidden=false}
  catch(e){$('upInfo').textContent='';toast('update check failed: '+e.message,true)}};
+// After an update: poll until the device is back and report what it runs. A fresh
+// boot shows as an unreachable device or an uptime under a minute.
+async function waitForVersion(v){const info=$('upInfo'),t0=Date.now();let restarted=false;
+ while(Date.now()-t0<180000){await new Promise(r=>setTimeout(r,3000));
+  try{const s=await (await fetch('/api/stats',{cache:'no-store'})).json();
+   if(s.version===v){info.textContent='updated: now running v'+v;load();return}
+   if(restarted||/^0d 0h 0m/.test(s.uptime)){info.textContent='the device restarted on v'+s.version+': v'+v+' did not stick (rolled back)';load();return}}
+  catch(e){restarted=true;info.textContent='v'+v+' installed, restarting...'}}
+ info.textContent='the device is not back yet: reload this page in a minute'}
 $('upFlash').onclick=async()=>{if(!upd)return;
  if(!confirm('Download v'+upd.version+' ('+(upd.size/1048576).toFixed(2)+' MB) and flash it? The device reboots and rolls back if the new firmware is unhealthy.'))return;
  try{$('upInfo').textContent='downloading v'+upd.version+'...';const r=await fetch(new URL(upd.firmware,upd.base),{cache:'no-store'});if(!r.ok)throw Error('download HTTP '+r.status);
  const buf=await r.arrayBuffer();if(buf.byteLength!==upd.size)throw Error('downloaded '+buf.byteLength+' bytes, expected '+upd.size);
  if(new Uint8Array(buf)[0]!==0xE9)throw Error('not an ESP32 firmware image');
  const fd=new FormData();fd.append('f',new Blob([buf],{type:'application/octet-stream'}),'firmware-esp32s3-v'+upd.version+'.bin');
- $('upInfo').textContent='uploading v'+upd.version+' to the device...';if(await api('/api/firmware',null,fd)){$('upInfo').textContent='v'+upd.version+' installed, rebooting...';$('upFlash').hidden=true}else $('upInfo').textContent=''}
+ $('upInfo').textContent='uploading v'+upd.version+' to the device...';if(await api('/api/firmware',null,fd)){$('upInfo').textContent='v'+upd.version+' installed, rebooting...';$('upFlash').hidden=true;waitForVersion(upd.version)}else $('upInfo').textContent=''}
  catch(e){$('upInfo').textContent='';toast('update failed: '+e.message,true)}};
 $('fwUpload').onclick=()=>{if(confirm('Flash this firmware? The device reboots and rolls back if the new firmware is unhealthy.'))upload('/api/firmware','fwFile')};
 $('flush').onclick=()=>api('/api/cache/flush');
