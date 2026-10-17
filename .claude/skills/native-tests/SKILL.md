@@ -60,7 +60,7 @@ static FakeClock fakeClock;
 void setUp() { fakeClock = FakeClock{}; }
 void tearDown() {}
 
-static void test_runs_once_at_2am_ist() {
+static void test_runs_once_at_2am_local() {
   fakeClock.setSynced(true);
   fakeClock.setLocal(2026, 10, 15, 1, 59, 0);          // 01:59 local (FakeClock: UTC+05:30)
   DailyScheduler s(fakeClock, /*hour=*/2, /*minute=*/0);
@@ -73,7 +73,7 @@ static void test_runs_once_at_2am_ist() {
 
 int main(int, char**) {
   UNITY_BEGIN();
-  RUN_TEST(test_runs_once_at_2am_ist);
+  RUN_TEST(test_runs_once_at_2am_local);
   return UNITY_END();
 }
 ```

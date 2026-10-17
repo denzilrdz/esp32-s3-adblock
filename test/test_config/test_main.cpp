@@ -50,6 +50,7 @@ static void test_field_validation() {
   assertSet(SetResult::kInvalid, c, "up_cname", "Bad Name");
   assertSet(SetResult::kInvalid, c, "up_cname", "<script>.example");
   assertSet(SetResult::kOk, c, "tz", "UTC0");
+  assertSet(SetResult::kOk, c, "tz", "<+03>-3");  // offset-only form the dashboard suggests
   assertSet(SetResult::kInvalid, c, "tz", "UTC;rm -rf");
   assertSet(SetResult::kOk, c, "log", "3");
   assertSet(SetResult::kInvalid, c, "log", "9");

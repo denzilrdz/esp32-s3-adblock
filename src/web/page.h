@@ -38,7 +38,7 @@ label{display:flex;gap:6px;align-items:center}fieldset{border:1px solid var(--li
 <div class=row style=margin-top:12px><b>Blocking</b> <button data-pause=300>Pause 5 min</button><button data-pause=3600>Pause 1 h</button><button data-pause=0>Pause</button><button id=resume>Resume</button></div>
 <div class=grid2><div><h2>UPSTREAM DNS</h2><table id=ups><thead><tr><th>Upstream</th><th>Type</th><th>State</th><th>OK</th><th>Fail</th><th>Latency</th></tr></thead><tbody></tbody></table></div>
 <div><h2>BLOCKLIST</h2><div class=card><div id=blInfo></div>
-<div class=row><input id=blUrl size=38 placeholder="https://.../blocklist.bin"> daily at <input id=blTime size=5 placeholder=02:00> <button id=blSave>Save</button><button id=blNow>Update now</button></div>
+<div class=row><input id=blUrl size=38 placeholder="https://.../blocklist.bin"> daily at <input id=blTime size=5 placeholder=02:00> (device time zone) <button id=blSave>Save</button><button id=blNow>Update now</button></div>
 <div class=row><input type=file id=blFile accept=.bin><button id=blUpload>Upload list</button></div>
 <div class=dim>Format v2 lists from <code>tools/build_blocklist.py</code>. A bad download or upload never replaces the current list.</div></div></div></div>
 <div class=grid2><div><h2>CUSTOM BLOCK</h2><div class=row><input id=addBlock placeholder="ads.example.com"><button data-add=block>Block</button></div><div class=scroll><table id=ruleBlock><tbody></tbody></table></div></div>
@@ -57,7 +57,7 @@ label{display:flex;gap:6px;align-items:center}fieldset{border:1px solid var(--li
 <label><input type=checkbox name=ff_canary> Stop Firefox bypassing via its own DoH</label>
 <label><input type=checkbox name=icloud> Disable iCloud Private Relay on this network</label>
 <label><input type=checkbox name=priv_rev> Answer private reverse lookups locally</label>
-<div class=row>Blocked answer TTL <input name=blk_ttl size=5> s &nbsp; Time zone <input name=tz size=12 placeholder=UTC0 title="POSIX TZ string, e.g. UTC0, CET-1CEST,M3.5.0,M10.5.0/3, EST5EDT,M3.2.0,M11.1.0"> &nbsp; Log <select name=log><option value=0>error<option value=1>warn<option value=2>info<option value=3>debug</select></div>
+<div class=row>Blocked answer TTL <input name=blk_ttl size=5> s &nbsp; Time zone <input name=tz size=12 placeholder=UTC0 title="POSIX TZ string: UTC0, or e.g. &lt;+03&gt;-3 for UTC+3 and &lt;-05&gt;5 for UTC-5 (the sign is inverted)"> &nbsp; Log <select name=log><option value=0>error<option value=1>warn<option value=2>info<option value=3>debug</select></div>
 <div class=row><button class=primary>Save settings</button><span class=dim>DNS changes restart the device.</span></div></fieldset></form>
 <h2>DEVICE</h2><div class=grid2><div class=card><div id=dev></div><div class=row><button id=flush>Flush DNS cache</button><button id=reboot>Reboot</button><button id=forget>Forget Wi-Fi</button></div>
 <div class=row><input type=file id=fwFile accept=.bin><button id=fwUpload>Flash firmware</button></div>

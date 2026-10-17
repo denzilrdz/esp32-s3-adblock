@@ -42,7 +42,7 @@ static void test_not_due_before_time_sync_or_with_bogus_year() {
   TEST_ASSERT_TRUE(s.due());
 }
 
-static void test_triggers_at_2am_ist_exactly() {
+static void test_triggers_at_2am_local_exactly() {
   kv.setU32(DailyScheduler::kLastSuccessKey, 20261014);  // ran yesterday
   DailyScheduler s(noJitter(), fakeClock, kv, fakeRandom);
   fakeClock.setLocal(2026, 10, 15, 1, 59, 59);
@@ -162,7 +162,7 @@ static void test_configurable_time_and_late_slot_clamped() {
 int main(int, char**) {
   UNITY_BEGIN();
   RUN_TEST(test_not_due_before_time_sync_or_with_bogus_year);
-  RUN_TEST(test_triggers_at_2am_ist_exactly);
+  RUN_TEST(test_triggers_at_2am_local_exactly);
   RUN_TEST(test_jitter_delays_within_window);
   RUN_TEST(test_no_double_run_same_day_even_after_reboot);
   RUN_TEST(test_catches_up_after_missing_the_slot);
