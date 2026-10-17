@@ -59,7 +59,8 @@ label{display:flex;gap:6px;align-items:center}fieldset{border:1px solid var(--li
 <div class=row>Blocked answer TTL <input name=blk_ttl size=5> s &nbsp; Time zone <input name=tz size=12> &nbsp; Log <select name=log><option value=0>error<option value=1>warn<option value=2>info<option value=3>debug</select></div>
 <div class=row><button class=primary>Save settings</button><span class=dim>DNS changes restart the device.</span></div></fieldset></form>
 <h2>DEVICE</h2><div class=grid2><div class=card><div id=dev></div><div class=row><button id=flush>Flush DNS cache</button><button id=reboot>Reboot</button><button id=forget>Forget Wi-Fi</button></div>
-<div class=row><input type=file id=fwFile accept=.bin><button id=fwUpload>Flash firmware</button></div></div>
+<div class=row><input type=file id=fwFile accept=.bin><button id=fwUpload>Flash firmware</button></div>
+<div class=row><button id=upCheck>Check for updates</button><button id=upFlash class=primary hidden>Download &amp; flash</button><span id=upInfo class=dim></span></div></div>
 <div class=card><b>Change password</b><div class=row><input id=pCur type=password placeholder=current autocomplete=current-password><input id=pNew type=password placeholder="new (10+)" autocomplete=new-password><button id=pSave>Change</button></div></div></div>
 </div><div id=toast></div>
 <script>
@@ -105,6 +106,25 @@ $('blSave').onclick=()=>api('/api/blocklist/settings',{u:$('blUrl').value.trim()
 $('blNow').onclick=()=>api('/api/blocklist/update');
 function upload(path,input){const f=$(input).files[0];if(!f)return toast('choose a file first',true);const fd=new FormData();fd.append('f',f);toast('uploading '+(f.size/1048576).toFixed(2)+' MB...');api(path,null,fd)}
 $('blUpload').onclick=()=>upload('/api/blocklist/upload','blFile');
+// Updates: the browser fetches update.json and the firmware from the update site
+// (GitHub Pages: release downloads send no CORS headers), keeps it in memory and
+// sends it through the normal upload, so the same health check and rollback apply.
+let upd=null;
+function verCmp(a,b){const p=v=>String(v).replace(/^v/,'').split(/[-+]/)[0].split('.').map(n=>parseInt(n,10)||0);const x=p(a),y=p(b);for(let i=0;i<3;i++){const d=(x[i]||0)-(y[i]||0);if(d)return d}return 0}
+$('upCheck').onclick=async()=>{upd=null;$('upFlash').hidden=true;$('upInfo').textContent='checking...';
+ try{const s=await (await fetch('/api/stats')).json();const r=await fetch(s.updateUrl+'update.json',{cache:'no-store'});if(!r.ok)throw Error('HTTP '+r.status);const j=await r.json();
+ if(!j.version||!j.firmware||!(j.size>0))throw Error('bad update.json');
+ if(verCmp(j.version,s.version)>0){upd=Object.assign({},j,{base:s.updateUrl});$('upInfo').textContent='v'+j.version+' available (running v'+s.version+')';$('upFlash').hidden=false}
+ else $('upInfo').textContent='up to date (v'+s.version+')'}
+ catch(e){$('upInfo').textContent='';toast('update check failed: '+e.message,true)}};
+$('upFlash').onclick=async()=>{if(!upd)return;
+ if(!confirm('Download v'+upd.version+' ('+(upd.size/1048576).toFixed(2)+' MB) and flash it? The device reboots and rolls back if the new firmware is unhealthy.'))return;
+ try{$('upInfo').textContent='downloading v'+upd.version+'...';const r=await fetch(new URL(upd.firmware,upd.base),{cache:'no-store'});if(!r.ok)throw Error('download HTTP '+r.status);
+ const buf=await r.arrayBuffer();if(buf.byteLength!==upd.size)throw Error('downloaded '+buf.byteLength+' bytes, expected '+upd.size);
+ if(new Uint8Array(buf)[0]!==0xE9)throw Error('not an ESP32 firmware image');
+ const fd=new FormData();fd.append('f',new Blob([buf],{type:'application/octet-stream'}),'firmware-esp32s3-v'+upd.version+'.bin');
+ $('upInfo').textContent='uploading v'+upd.version+' to the device...';if(await api('/api/firmware',null,fd)){$('upInfo').textContent='v'+upd.version+' installed, rebooting...';$('upFlash').hidden=true}else $('upInfo').textContent=''}
+ catch(e){$('upInfo').textContent='';toast('update failed: '+e.message,true)}};
 $('fwUpload').onclick=()=>{if(confirm('Flash this firmware? The device reboots and rolls back if the new firmware is unhealthy.'))upload('/api/firmware','fwFile')};
 $('flush').onclick=()=>api('/api/cache/flush');
 $('reboot').onclick=()=>{if(confirm('Reboot the device?'))api('/api/reboot')};

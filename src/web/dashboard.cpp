@@ -22,6 +22,26 @@ constexpr const char* kCsrfHeader = "X-Requested-With";
 constexpr const char* kCsrfValue = "adblock";
 constexpr const char* kUploadTmp = "/upload.tmp";
 
+// Where the dashboard's "Check for updates" looks for update.json and the firmware
+// (published to GitHub Pages by release.yml: Pages sends CORS headers, release
+// downloads don't). Forks: point this at their own Pages site.
+#ifndef UPDATE_BASE_URL
+#define UPDATE_BASE_URL "https://denzilrdz.github.io/esp32-s3-adblock/"
+#endif
+
+// The dashboard page may only fetch from the device itself and the update site.
+String pageCsp() {
+  String csp =
+      "default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'";
+  char origin[96];
+  if (auth::urlOrigin(UPDATE_BASE_URL, origin, sizeof(origin))) {
+    csp += ' ';
+    csp += origin;
+  }
+  csp += "; frame-ancestors 'none'";
+  return csp;
+}
+
 String jsonEscape(const String& s) {
   String o;
   o.reserve(s.length() + 2);
@@ -146,9 +166,8 @@ void Dashboard::begin() {
 
   s.on("/", HTTP_GET, [this]() {
     if (!guard(Access::kPublic)) return;
-    ctx_.server->sendHeader("Content-Security-Policy",
-                            "default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; "
-                            "frame-ancestors 'none'");
+    static const String csp = pageCsp();
+    ctx_.server->sendHeader("Content-Security-Policy", csp);
     ctx_.server->sendHeader("X-Frame-Options", "DENY");
     ctx_.server->send_P(200, "text/html", kPage);
   });
@@ -218,7 +237,8 @@ void Dashboard::handleStats() {
 
   String j;
   j.reserve(4096);
-  j += "{\"version\":" + q(ctx_.version) + ",\"hostname\":" + q(ctx_.hostname);
+  j += "{\"version\":" + q(ctx_.version) + ",\"hostname\":" + q(ctx_.hostname) +
+       ",\"updateUrl\":" + q(UPDATE_BASE_URL);
   j += ",\"ip\":" + q(WiFi.localIP().toString()) + ",\"rssi\":" + String(WiFi.RSSI());
   j += ",\"uptime\":" + q(uptime) + ",\"heap\":" + String(ESP.getFreeHeap()) +
        ",\"heapMin\":" + String(ESP.getMinFreeHeap()) + ",\"psram\":" + String(ESP.getFreePsram()) +
