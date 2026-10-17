@@ -10,7 +10,8 @@ namespace web {
 
 const char kPage[] PROGMEM = R"HTML(<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width,initial-scale=1"><title>AdBlock</title><style>
-:root{--bg:#0d1117;--card:#161b22;--line:#30363d;--fg:#c9d1d9;--dim:#8b949e;--ok:#3fb950;--bad:#f85149;--warn:#d29922}
+:root{--bg:#0d1117;--card:#161b22;--line:#30363d;--fg:#c9d1d9;--dim:#8b949e;--ok:#3fb950;--bad:#f85149;--warn:#d29922;--link:#58a6ff}
+a{color:var(--link)}a:hover{text-decoration:none}
 *{box-sizing:border-box}body{font:14px system-ui,sans-serif;margin:0;background:var(--bg);color:var(--fg)}
 header{background:var(--card);padding:12px 16px;border-bottom:1px solid var(--line);display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 h1{margin:0 12px 0 0;font-size:18px}h1 b{color:var(--ok)}h2{font-size:13px;color:var(--dim);letter-spacing:.06em;margin:22px 0 8px}
