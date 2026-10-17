@@ -58,7 +58,7 @@ test/          Unity tests: test/test_<area>/test_main.cpp, fakes in test/fakes/
 tools/         blocklist builder, factory image, setup/format/lint/coverage scripts
 installer/     browser installer (esp-web-tools pinned by SHA-512), deployed by CI
 docs/          ARCHITECTURE.md, ROUTER_SETUP.md
-.github/       CI (build.yml), release.yml (v* tags), weekly blocklist.yml
+.github/       CI (build.yml), release.yml (v* tags), daily blocklist.yml
 .claude/skills/ task playbooks (see list below)
 ```
 

@@ -46,7 +46,7 @@ python3 -m unittest discover -s tools -p 'test_*.py'
 - Inputs: hosts files, plain domain lists, AdGuard `||d^` / `@@||d^`.
 - Regex, `$modifiers` and cosmetic rules are skipped and counted.
 - A missing source fails the build (`--allow-missing` to override).
-- CI rebuilds the default list weekly and publishes it at
+- CI rebuilds the default list daily at 00:17 IST (before the boards check at 02:00) and publishes it at
   `https://github.com/denzilrdz/esp32-s3-adblock/releases/download/blocklist/blocklist.bin`.
 
 ## Daily update (maintenance task)

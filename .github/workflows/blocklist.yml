@@ -1,11 +1,12 @@
 name: blocklist
 
-# Rebuilds the default blocklist weekly and publishes it at a stable URL:
+# Rebuilds the default blocklist daily and publishes it at a stable URL:
 #   https://github.com/<owner>/<repo>/releases/download/blocklist/blocklist.bin  (format v2)
-# Devices fetch it daily at 02:00 IST (ETag: unchanged lists are not re-downloaded).
+# Devices fetch it daily at 02:00 IST + 0-10 min jitter (ETag: unchanged lists are not
+# re-downloaded). This runs well before that: scheduled runs often start late.
 on:
   schedule:
-    - cron: "17 4 * * 1" # Mondays 04:17 UTC
+    - cron: "47 18 * * *" # daily 18:47 UTC = 00:17 IST
   workflow_dispatch:
 
 permissions: {}
@@ -40,6 +41,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # Same bytes as the published list: keep the asset (and its ETag), so boards skip the download.
+          if gh release download blocklist --pattern blocklist.bin --output current.bin 2>/dev/null &&
+            cmp -s blocklist.bin current.bin; then
+            echo "blocklist unchanged, not re-uploading"
+            exit 0
+          fi
           entries=$(( ($(stat -c%s blocklist.bin) - 32 - 4 * 65537) / 4 ))
           notes="Auto-built $(date -u +%F): ${entries} entries (StevenBlack base + Hagezi Light).
 
@@ -48,6 +55,6 @@ jobs:
           if gh release view blocklist >/dev/null 2>&1; then
             gh release edit blocklist --notes "$notes"
           else
-            gh release create blocklist --title "Weekly blocklist" --notes "$notes" --latest=false
+            gh release create blocklist --title "Daily blocklist" --notes "$notes" --latest=false
           fi
           gh release upload blocklist blocklist.bin --clobber

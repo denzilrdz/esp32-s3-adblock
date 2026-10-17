@@ -43,7 +43,7 @@ not yet measured on the board.
 - Dashboard auth model (Basic Auth + custom-header CSRF guard) and HTML escaping.
 - Upstream reply matching from issue #10 (random txid, match txid + question +
   source, restore client txid).
-- The weekly CI blocklist build (`tools/build_blocklist.py`), extended.
+- The CI blocklist build (`tools/build_blocklist.py`), extended and run daily.
 
 ### Upstream weak points we fix
 
