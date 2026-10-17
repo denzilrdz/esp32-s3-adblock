@@ -6,7 +6,7 @@ import sys
 import tempfile
 import unittest
 
-from make_update_json import FIRMWARE_NAME, build
+from make_update_json import FIRMWARE_NAME, SCHEMA, build
 
 SCRIPT = pathlib.Path(__file__).with_name("make_update_json.py")
 IMAGE = bytes([0xE9]) + b"\x00" * 1023
@@ -20,6 +20,28 @@ class BuildTest(unittest.TestCase):
         self.assertEqual(info["size"], len(IMAGE))
         self.assertEqual(info["sha256"], hashlib.sha256(IMAGE).hexdigest())
         self.assertEqual(info["release"], "https://example.org/releases/tag/v0.1.2")
+
+    def test_compatibility_fields(self):
+        info = build(IMAGE, "v0.2.1", min_update_from="v0.2.0")
+        self.assertEqual(info["schema"], SCHEMA)
+        self.assertEqual(info["minUpdateFrom"], "0.2.0")
+        self.assertEqual(
+            build(IMAGE, "0.1.3")["minUpdateFrom"], "0.0.0"
+        )  # default: any
+        self.assertEqual(
+            build(IMAGE, "0.2.0", min_update_from="0.2.0")["minUpdateFrom"], "0.2.0"
+        )
+
+    def test_min_update_from_is_validated(self):
+        for m in (
+            "0.3.0",
+            "1.0.0",
+            "0.2.1",
+            "0.2",
+            "x",
+        ):  # newer than the release, or malformed
+            with self.subTest(m=m), self.assertRaises(ValueError):
+                build(IMAGE, "0.2.0", min_update_from=m)
 
     def test_release_url_is_optional(self):
         self.assertNotIn("release", build(IMAGE, "0.1.2"))
@@ -47,6 +69,24 @@ class CliTest(unittest.TestCase):
             )
             info = json.loads(out.read_text())
             self.assertEqual((info["version"], info["size"]), ("0.1.2", len(IMAGE)))
+
+    def test_min_update_from_flag(self):
+        with tempfile.TemporaryDirectory() as d:
+            fw, out = pathlib.Path(d, "fw.bin"), pathlib.Path(d, "update.json")
+            fw.write_bytes(IMAGE)
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "--min-update-from",
+                    "0.2.0",
+                    str(fw),
+                    "v0.2.0",
+                    str(out),
+                ],
+                check=True,
+            )
+            self.assertEqual(json.loads(out.read_text())["minUpdateFrom"], "0.2.0")
 
     def test_fails_on_bad_input(self):
         with tempfile.TemporaryDirectory() as d:
