@@ -11,7 +11,7 @@ A small board powered from your router's USB port, no Raspberry Pi needed.
 Based on [M-Abozaid/esp32-c3-adblock](https://github.com/M-Abozaid/esp32-c3-adblock).
 
 > [!NOTE]
-> **Project status: early release (v0.1.1).** Tested on an ESP32-S3-DevKitC-1 (N16R8):
+> **Project status: early release (v0.1.2).** Tested on an ESP32-S3-DevKitC-1 (N16R8):
 > Wi-Fi setup, DNS-over-TLS, blocking, the blocklist download and its "not modified"
 > check, failover to Quad9 when the primary is unreachable, plain-DNS fallback on and
 > off, dashboard firmware updates and automatic rollback of a bad update. Expect some
