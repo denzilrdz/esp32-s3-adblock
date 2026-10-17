@@ -27,7 +27,7 @@ static void test_defaults_match_the_design() {
   TEST_ASSERT_TRUE(c.padding);
   TEST_ASSERT_TRUE(c.firefoxCanary);
   TEST_ASSERT_FALSE(c.icloudRelay);
-  TEST_ASSERT_EQUAL_STRING("IST-5:30", c.timezone);
+  TEST_ASSERT_EQUAL_STRING("UTC0", c.timezone);
   TEST_ASSERT_TRUE(config::validate(c, nullptr));
 }
 
@@ -50,7 +50,7 @@ static void test_field_validation() {
   assertSet(SetResult::kInvalid, c, "up_cname", "Bad Name");
   assertSet(SetResult::kInvalid, c, "up_cname", "<script>.example");
   assertSet(SetResult::kOk, c, "tz", "UTC0");
-  assertSet(SetResult::kInvalid, c, "tz", "IST;rm -rf");
+  assertSet(SetResult::kInvalid, c, "tz", "UTC;rm -rf");
   assertSet(SetResult::kOk, c, "log", "3");
   assertSet(SetResult::kInvalid, c, "log", "9");
   assertSet(SetResult::kUnknownKey, c, "wifi_pass", "x");

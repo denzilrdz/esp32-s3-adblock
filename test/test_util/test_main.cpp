@@ -46,12 +46,12 @@ static void test_byte_helpers_round_trip() {
   TEST_ASSERT_TRUE(util::readU64Le(b) == 0x1122334455667788ull);
 }
 
-static void test_civil_epoch_and_ist_offset() {
+static void test_civil_epoch_and_utc_offset() {
   util::CivilTime t = util::civilFromUnix(0, 0);
   TEST_ASSERT_EQUAL(1970, t.year);
   TEST_ASSERT_EQUAL(1, t.month);
   TEST_ASSERT_EQUAL(1, t.day);
-  // 2026-10-14 20:30:00 UTC == 2026-10-15 02:00:00 IST
+  // 2026-10-14 20:30:00 UTC == 2026-10-15 02:00:00 at UTC+05:30
   const int64_t unixSeconds = 1792009800;
   t = util::civilFromUnix(unixSeconds, 19800);
   TEST_ASSERT_EQUAL(2026, t.year);
@@ -147,7 +147,7 @@ int main(int, char**) {
   RUN_TEST(test_crc32_incremental_equals_one_shot);
   RUN_TEST(test_crc32_empty_is_zero);
   RUN_TEST(test_byte_helpers_round_trip);
-  RUN_TEST(test_civil_epoch_and_ist_offset);
+  RUN_TEST(test_civil_epoch_and_utc_offset);
   RUN_TEST(test_civil_round_trip_including_leap_day);
   RUN_TEST(test_sha256_vectors);
   RUN_TEST(test_hmac_sha256_vectors);

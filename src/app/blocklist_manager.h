@@ -1,7 +1,7 @@
 #pragma once
 // Owns everything blocklist-related on the device: the live index (PSRAM or
 // file-backed), the matcher used by the DNS policy, custom block/allow rules, the
-// 02:00 IST scheduler and the updater. loop() runs in the maintenance task.
+// 02:00 local-time scheduler and the updater. loop() runs in the maintenance task.
 
 #include <Arduino.h>
 

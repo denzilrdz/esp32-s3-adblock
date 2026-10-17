@@ -8,9 +8,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
-- The default blocklist is now rebuilt daily at 00:17 IST (was weekly), ahead of the
-  boards' 02:00 IST update. If nothing changed, the file isn't re-uploaded, so boards
-  skip the download.
+- The default blocklist is now rebuilt daily (was weekly). If nothing changed, the
+  file isn't re-uploaded, so boards skip the download.
+- The default time zone is now `UTC0` (was a fixed regional zone), so the daily
+  update runs at 02:00 UTC until you set yours under _Settings → Time zone_ (POSIX TZ
+  string; the field shows examples). Boards that already saved settings keep their
+  zone.
 - README rewritten: highlights, a comparison with Pi-hole and the C3 original, a
   contents list and a flow diagram.
 
@@ -112,7 +115,7 @@ password setup.
 - PSRAM response cache (TTL-aware, LRU, negative caching).
 - Blocklist format v2: 48-bit hashes in a bucketed index held in PSRAM, custom
   block and allow rules, parent-domain matching.
-- Daily blocklist update at 02:00 IST with ETag, streaming validation, atomic swap
+- Daily blocklist update at 02:00 local time with ETag, streaming validation, atomic swap
   and boot recovery; retries hourly on failure.
 - Dedicated FreeRTOS tasks for UDP/53, TCP/53, upstream, web and maintenance, all on
   the task watchdog; app rollback for unhealthy OTA firmware.

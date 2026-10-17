@@ -18,7 +18,7 @@ struct CivilTime {
   uint32_t dateKey() const { return static_cast<uint32_t>(year * 10000 + month * 100 + day); }
 };
 
-// Unix seconds + fixed UTC offset (seconds, e.g. +19800 for IST) -> local civil time.
+// Unix seconds + fixed UTC offset (seconds, e.g. +19800 for UTC+05:30) -> local civil time.
 CivilTime civilFromUnix(int64_t unixSeconds, int32_t utcOffsetSeconds);
 
 // Inverse of civilFromUnix for a local civil time at a fixed UTC offset.

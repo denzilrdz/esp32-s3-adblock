@@ -1,5 +1,5 @@
 #pragma once
-// Decides when the daily blocklist update runs (default 02:00 local time, IST).
+// Decides when the daily blocklist update runs (default 02:00 local time).
 //
 //  - Nothing runs until the wall clock is synced and plausible (year >= minYear).
 //  - Due once per local day, at hour:minute plus a per-day random jitter, so many

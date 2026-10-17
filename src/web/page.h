@@ -57,7 +57,7 @@ label{display:flex;gap:6px;align-items:center}fieldset{border:1px solid var(--li
 <label><input type=checkbox name=ff_canary> Stop Firefox bypassing via its own DoH</label>
 <label><input type=checkbox name=icloud> Disable iCloud Private Relay on this network</label>
 <label><input type=checkbox name=priv_rev> Answer private reverse lookups locally</label>
-<div class=row>Blocked answer TTL <input name=blk_ttl size=5> s &nbsp; Time zone <input name=tz size=12> &nbsp; Log <select name=log><option value=0>error<option value=1>warn<option value=2>info<option value=3>debug</select></div>
+<div class=row>Blocked answer TTL <input name=blk_ttl size=5> s &nbsp; Time zone <input name=tz size=12 placeholder=UTC0 title="POSIX TZ string, e.g. UTC0, CET-1CEST,M3.5.0,M10.5.0/3, EST5EDT,M3.2.0,M11.1.0"> &nbsp; Log <select name=log><option value=0>error<option value=1>warn<option value=2>info<option value=3>debug</select></div>
 <div class=row><button class=primary>Save settings</button><span class=dim>DNS changes restart the device.</span></div></fieldset></form>
 <h2>DEVICE</h2><div class=grid2><div class=card><div id=dev></div><div class=row><button id=flush>Flush DNS cache</button><button id=reboot>Reboot</button><button id=forget>Forget Wi-Fi</button></div>
 <div class=row><input type=file id=fwFile accept=.bin><button id=fwUpload>Flash firmware</button></div>

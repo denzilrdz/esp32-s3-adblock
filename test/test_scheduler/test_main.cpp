@@ -1,4 +1,4 @@
-// Tests for lib/core/sched: the 02:00 IST daily trigger, jitter, no double runs
+// Tests for lib/core/sched: the 02:00 local daily trigger, jitter, no double runs
 // (also across reboots), catch-up, retries after failure, and no runs before sync.
 
 #include <unity.h>
@@ -47,7 +47,7 @@ static void test_triggers_at_2am_ist_exactly() {
   DailyScheduler s(noJitter(), fakeClock, kv, fakeRandom);
   fakeClock.setLocal(2026, 10, 15, 1, 59, 59);
   TEST_ASSERT_FALSE(s.due());
-  fakeClock.advanceSeconds(1);  // 02:00:00 IST == 20:30 UTC the previous day
+  fakeClock.advanceSeconds(1);  // 02:00:00 at UTC+05:30 == 20:30 UTC the previous day
   TEST_ASSERT_EQUAL(20, util::civilFromUnix(fakeClock.unixTime(), 0).hour);
   TEST_ASSERT_TRUE(s.due());
 }

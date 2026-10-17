@@ -5,7 +5,7 @@
 
 class FakeClock final : public hal::IClock {
  public:
-  static constexpr int32_t kIstOffset = 5 * 3600 + 30 * 60;
+  static constexpr int32_t kDefaultUtcOffset = 5 * 3600 + 30 * 60;  // not a whole hour, on purpose
 
   uint64_t monotonicMs() const override { return mono_ms_; }
   bool wallClockSynced() const override { return synced_; }
@@ -16,7 +16,7 @@ class FakeClock final : public hal::IClock {
   void setUtcOffset(int32_t seconds) { offset_ = seconds; }
   void setUnix(int64_t unixSeconds) { unix_ = unixSeconds; }
 
-  // Sets wall time from a local (IST by default) civil time.
+  // Sets wall time from a local civil time (UTC+05:30 unless setUtcOffset() changed it).
   void setLocal(int year, int month, int day, int hour, int minute, int second = 0) {
     util::CivilTime t;
     t.year = year;
@@ -40,6 +40,6 @@ class FakeClock final : public hal::IClock {
   uint64_t mono_ms_ = 1000;
   uint64_t sub_ms_ = 0;
   bool synced_ = false;
-  int32_t offset_ = kIstOffset;
+  int32_t offset_ = kDefaultUtcOffset;
   int64_t unix_ = 0;
 };

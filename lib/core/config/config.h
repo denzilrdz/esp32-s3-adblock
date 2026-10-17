@@ -31,7 +31,7 @@ struct AppConfig {
   bool firefoxCanary = true;
   bool icloudRelay = false;
   bool privateReverse = true;
-  char timezone[48] = "IST-5:30";
+  char timezone[48] = "UTC0";
   uint8_t logLevel = 2;  // 0 error .. 3 debug
 };
 
