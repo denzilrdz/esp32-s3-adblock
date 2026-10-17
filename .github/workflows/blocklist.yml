@@ -6,7 +6,7 @@ name: blocklist
 # are not re-downloaded).
 on:
   schedule:
-    - cron: "47 18 * * *" # daily 18:47 UTC
+    - cron: "47 18 * * *" # daily 18:47 UTC (off the hour, when scheduled runs are less delayed)
   workflow_dispatch:
 
 permissions: {}
@@ -28,7 +28,9 @@ jobs:
           persist-credentials: false
       # The builder only needs the Python standard library (runner's python3).
       - name: Build default blocklist (fails if any source is unreachable)
-        run: python3 tools/build_blocklist.py blocklist.bin 2>&1 | tee build.log
+        run: |
+          set -o pipefail
+          python3 tools/build_blocklist.py blocklist.bin 2>&1 | tee build.log
       - name: Sanity checks
         run: |
           size=$(stat -c%s blocklist.bin)
@@ -41,9 +43,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # Same bytes as the published list: keep the asset (and its ETag), so boards skip the download.
-          if gh release download blocklist --pattern blocklist.bin --output current.bin 2>/dev/null &&
-            cmp -s blocklist.bin current.bin; then
+          # Same list as the published one: keep the asset (and its ETag), so boards skip the
+          # download. Bytes 16-23 hold the build time; count and CRC (8-15) follow from the
+          # payload, which is compared in full, so skip the first 24 bytes.
+          if gh release download blocklist --pattern blocklist.bin --output current.bin &&
+            cmp -s -i 24 blocklist.bin current.bin; then
             echo "blocklist unchanged, not re-uploading"
             exit 0
           fi
@@ -53,7 +57,7 @@ jobs:
           Device setting (Blocklist URL):
           https://github.com/${GITHUB_REPOSITORY}/releases/download/blocklist/blocklist.bin"
           if gh release view blocklist >/dev/null 2>&1; then
-            gh release edit blocklist --notes "$notes"
+            gh release edit blocklist --title "Daily blocklist" --notes "$notes"
           else
             gh release create blocklist --title "Daily blocklist" --notes "$notes" --latest=false
           fi

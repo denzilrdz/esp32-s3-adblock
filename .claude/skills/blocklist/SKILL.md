@@ -48,6 +48,11 @@ python3 -m unittest discover -s tools -p 'test_*.py'
 - A missing source fails the build (`--allow-missing` to override).
 - CI rebuilds the default list daily (18:47 UTC) and publishes it at
   `https://github.com/denzilrdz/esp32-s3-adblock/releases/download/blocklist/blocklist.bin`.
+  A list whose payload matches the published one isn't re-uploaded (the compare skips
+  the build-time header bytes 16–23), so its ETag stays and boards skip the download.
+- GitHub disables scheduled workflows after 60 days without repository activity:
+  if the release notes' "Auto-built" date stops moving, re-enable the workflow in the
+  Actions tab.
 
 ## Daily update (maintenance task)
 
