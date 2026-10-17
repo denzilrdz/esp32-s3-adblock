@@ -23,7 +23,7 @@ test/
   test_dns/test_main.cpp         parser/builder, EDNS0, malformed, blocked replies
   test_blocklist/test_main.cpp   hash, index, parent matching, collisions, format
   test_cache/test_main.cpp       TTL decrement/expiry, LRU eviction, negative caching
-  test_scheduler/test_main.cpp   02:00 IST trigger, dedupe, retry, no-sync gating
+  test_scheduler/test_main.cpp   02:00 local trigger, dedupe, retry, no-sync gating
   test_upstream/test_main.cpp    fallback chain, health FSM, pipelining, timeouts
   test_updater/test_main.cpp     ETag, validation, atomic swap, corrupt download
   test_config/test_main.cpp      settings validation, NVS round trip, upstream chain
@@ -62,7 +62,7 @@ void tearDown() {}
 
 static void test_runs_once_at_2am_ist() {
   fakeClock.setSynced(true);
-  fakeClock.setLocal(2026, 10, 15, 1, 59, 0);          // 01:59 IST
+  fakeClock.setLocal(2026, 10, 15, 1, 59, 0);          // 01:59 local (FakeClock: UTC+05:30)
   DailyScheduler s(fakeClock, /*hour=*/2, /*minute=*/0);
   TEST_ASSERT_FALSE(s.due());
   fakeClock.advanceSeconds(60);                         // 02:00

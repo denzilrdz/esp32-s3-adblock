@@ -2,10 +2,9 @@
 
 The blocker only sees queries that are sent to it. This page covers how to make
 every device on your network use it, why **IPv6 can silently bypass it**, and how to
-check the result. Examples mention Airtel Xstream Fiber routers because that is the
-reference setup, but the same ideas apply to any router.
+check the result. The same ideas apply to any router.
 
-> Router menus differ between models and firmware versions (Airtel supplies routers
+> Router menus differ between models and firmware versions (ISPs often supply routers
 > from several makers). The names below are the usual ones; look for the closest
 > match on your router's admin page (often `http://192.168.1.1`).
 
@@ -23,10 +22,10 @@ Best: tell the router's DHCP server to give clients the blocker as their DNS ser
 - **LAN → DHCP server → Primary DNS** = the blocker's IP. Leave secondary DNS
   **empty** (a public secondary such as 8.8.8.8 lets clients skip the blocker
   whenever they like).
-- Some ISP routers lock these fields. On an Airtel "GPON Home Gateway" (checked
-  2026-10-15) the customer login shows LAN DNS, the DHCP on/off switch, static DHCP
-  leases, IPv6 LAN DNS (set to the router itself, "HGWProxy") and the WAN settings
-  all greyed out, so steps 1–3 can't be done there. Options if yours does: 0. **Put your own router behind it** (what works on the Airtel box above): see
+- Some ISP routers lock these fields. On some fibre (GPON) gateways the customer
+  login shows LAN DNS, the DHCP on/off switch, static DHCP leases, IPv6 LAN DNS and
+  the WAN settings all greyed out, so steps 1–3 can't be done there. Options if yours
+  does: 0. **Put your own router behind it** (works even on a fully locked box): see
   [§2a](#2a-your-own-router-behind-a-locked-isp-router).
   1. Set DNS per device (Wi-Fi settings → IP/DNS → manual) on the devices you care
      about.
@@ -51,7 +50,7 @@ one of its LAN ports. The second router runs its own network, which you fully co
 6. Move your devices to the second router's Wi-Fi; plug wired devices into it too.
    Anything left on the ISP router's Wi-Fi or ports still uses the ISP's DNS.
 
-Checked on a **TP-Link TL-WR850N** behind the Airtel box (2026-10-15): its DHCP page
+Checked on a **TP-Link TL-WR850N** behind a locked ISP fibre gateway: its DHCP page
 has no DNS fields, but it passes its own internet DNS to clients, so step 4 is
 _Network → Internet → Advanced → Use the Following DNS Addresses_ = the blocker's IP.
 Address reservation is under _Network → LAN Settings_, and IPv6 is the _IPv6 Enable_
@@ -62,8 +61,8 @@ Primary DNS_).
 
 ## 3. IPv6: the most common bypass
 
-Most Airtel fibre connections are dual-stack. The router announces **its own (or
-Airtel's) IPv6 DNS servers** to clients through router advertisements (RDNSS) and
+Many fibre and cable connections are dual-stack. The router announces **its own (or
+the ISP's) IPv6 DNS servers** to clients through router advertisements (RDNSS) and
 DHCPv6. Phones and laptops happily use those for some or all lookups, so ads load
 even though IPv4 DNS points at the blocker.
 
@@ -76,7 +75,8 @@ cannot stop clients from asking a different IPv6 server). Pick one of these:
 | **B. Disable IPv6 on the LAN**                            | **IPv6 → LAN** (or **Network → IPv6**) → disable, or set the WAN connection to IPv4 only.                      | Simple and reliable; loses IPv6 (most sites work fine over IPv4). |
 | **C. Per device**                                         | Turn off IPv6 on the device, or set its IPv6 DNS manually to nothing / a blocked address.                      | Only covers the devices you change.                               |
 
-Airtel's installer sometimes re-applies settings after a firmware update or reset:
+ISP-managed routers sometimes get settings re-applied remotely or after a firmware
+update or reset:
 re-check after any router change.
 
 ## 4. Browser and OS "secure DNS"

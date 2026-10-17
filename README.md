@@ -2,7 +2,7 @@
 
 # esp32-s3-adblock
 
-**A Pi-hole on a $10 board.** Network-wide ad and tracker blocking with encrypted DNS,
+**A Pi-hole on a tiny board.** Network-wide ad and tracker blocking with encrypted DNS,
 running on an ESP32-S3 plugged into your router's USB port.
 
 [![build](https://github.com/denzilrdz/esp32-s3-adblock/actions/workflows/build.yml/badge.svg)](https://github.com/denzilrdz/esp32-s3-adblock/actions/workflows/build.yml)
@@ -116,9 +116,9 @@ Give the device a fixed IP (DHCP reservation in the router), then set the router
 **DHCP DNS server** to that IP and leave the secondary DNS empty.
 
 > [!WARNING]
-> **IPv6 (Airtel and most fibre routers):** the router also advertises its own IPv6
+> **IPv6 (most fibre and cable routers):** the router also advertises its own IPv6
 > DNS, and devices will use it to skip the blocker. Turn off IPv6 DNS advertisement or
-> IPv6 on the LAN. Airtel routers often lock the DNS fields; the guide lists
+> IPv6 on the LAN. Some ISP routers lock the DNS fields; the guide lists
 > workarounds. Full walkthrough and checks: **[docs/ROUTER_SETUP.md](docs/ROUTER_SETUP.md)**.
 
 ### 5. Check it works
@@ -146,7 +146,7 @@ and the "blocked" counter should start rising.
 - **Stays up**: health-tracked fallback chain with backoff, answers within 2.5 s or a
   clean SERVFAIL, PSRAM answer cache, watchdog on every task, automatic rollback of
   bad firmware updates, Wi-Fi supervision.
-- **Self-updating blocklist**: daily at 02:00 IST (configurable). Unchanged lists aren't
+- **Self-updating blocklist**: daily at 02:00 local time (configurable). Unchanged lists aren't
   downloaded again (ETag); a bad download never replaces the working list.
 - **Privacy extras**: query padding, DNSSEC "validated" flag pass-through, local
   answers for private names, and Firefox's DoH canary so Firefox keeps using it.
@@ -204,7 +204,7 @@ browsers ask for) gets an empty answer, never NXDOMAIN.
 
 **Encrypted DNS.** Allowed queries go to Cloudflare or Quad9 over DNS-over-TLS (port
 853), connecting by IP and verifying the provider's certificate name, so no plaintext
-lookup is needed to find the resolver. Airtel then sees only an encrypted connection to
+lookup is needed to find the resolver. Your ISP then sees only an encrypted connection to
 1.1.1.1 or 9.9.9.9, not the names you look up. You do trust Cloudflare or Quad9 with
 those names instead (pick the order on the dashboard). If port 853 is blocked the
 device uses DNS-over-HTTPS (port 443). Only when every encrypted upstream is down does
@@ -216,12 +216,12 @@ it's slow on this CPU and would actually show the ISP _more_.
 **Cache.** Answers are cached in PSRAM with their real TTLs, so repeat lookups are
 answered locally in milliseconds.
 
-**Daily update.** At 02:00 IST (plus a few random minutes), once the clock is synced
+**Daily update.** At 02:00 local time (plus a few random minutes), once the clock is synced
 over NTP, the device fetches the list over verified HTTPS. A list is only installed
 after its header, size, checksum and ordering check out; otherwise the current list
 stays and it retries hourly. The default list (StevenBlack + Hagezi Light, about
-100k domains, social and messaging apps keep working) is rebuilt daily at 00:17 IST by
-this repository's CI, so boards always pick up a fresh one, and published at
+100k domains, social and messaging apps keep working) is rebuilt daily by this
+repository's CI and published at
 `https://github.com/denzilrdz/esp32-s3-adblock/releases/download/blocklist/blocklist.bin`.
 If the sources didn't change, the file isn't re-uploaded and boards skip the download.
 
@@ -231,16 +231,16 @@ Design details, memory budget and threading: [docs/ARCHITECTURE.md](docs/ARCHITE
 
 Everything is on the dashboard (stored in flash/NVS, survives updates):
 
-| Setting                                                                           | Default                                                    |
-| --------------------------------------------------------------------------------- | ---------------------------------------------------------- |
-| Primary / secondary upstream                                                      | Cloudflare / Quad9 (or a custom DoT server: IP + TLS name) |
-| DoH fallback / plain-DNS fallback                                                 | on / on                                                    |
-| Query padding, DNSSEC AD pass-through                                             | on                                                         |
-| Blocked answer TTL                                                                | 10 s                                                       |
-| Firefox DoH canary / iCloud Private Relay opt-out / local private reverse lookups | on / off / on                                              |
-| Blocklist URL and daily update time                                               | this repo's daily list, 02:00                              |
-| Time zone                                                                         | `IST-5:30` (POSIX TZ string, e.g. `UTC0`)                  |
-| Custom block / allow rules, banned clients, pause                                 |                                                            |
+| Setting                                                                           | Default                                                     |
+| --------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| Primary / secondary upstream                                                      | Cloudflare / Quad9 (or a custom DoT server: IP + TLS name)  |
+| DoH fallback / plain-DNS fallback                                                 | on / on                                                     |
+| Query padding, DNSSEC AD pass-through                                             | on                                                          |
+| Blocked answer TTL                                                                | 10 s                                                        |
+| Firefox DoH canary / iCloud Private Relay opt-out / local private reverse lookups | on / off / on                                               |
+| Blocklist URL and daily update time                                               | this repo's daily list, 02:00                               |
+| Time zone                                                                         | `UTC0` (POSIX TZ string, e.g. `CET-1CEST,M3.5.0,M10.5.0/3`) |
+| Custom block / allow rules, banned clients, pause                                 |                                                             |
 
 `src/secrets.h` only holds first-boot defaults (Wi-Fi, initial dashboard password, the
 network OTA password). It is gitignored.

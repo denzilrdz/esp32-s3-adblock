@@ -2,11 +2,11 @@ name: blocklist
 
 # Rebuilds the default blocklist daily and publishes it at a stable URL:
 #   https://github.com/<owner>/<repo>/releases/download/blocklist/blocklist.bin  (format v2)
-# Devices fetch it daily at 02:00 IST + 0-10 min jitter (ETag: unchanged lists are not
-# re-downloaded). This runs well before that: scheduled runs often start late.
+# Devices fetch it daily at 02:00 local time + 0-10 min jitter (ETag: unchanged lists
+# are not re-downloaded).
 on:
   schedule:
-    - cron: "47 18 * * *" # daily 18:47 UTC = 00:17 IST
+    - cron: "47 18 * * *" # daily 18:47 UTC
   workflow_dispatch:
 
 permissions: {}

@@ -40,4 +40,4 @@ body:
     id: network
     attributes:
       label: Router / ISP (optional)
-      placeholder: "e.g. Airtel Xstream Fiber, IPv6 on"
+      placeholder: "e.g. ISP-supplied fibre router, IPv6 on"

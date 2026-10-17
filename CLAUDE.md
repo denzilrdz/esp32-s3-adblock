@@ -3,7 +3,7 @@
 Pi-hole-style DNS ad blocker for the **ESP32-S3 N16R8** (16 MB flash, 8 MB octal
 PSRAM). It answers blocked names locally (0.0.0.0 / :: / NODATA), forwards the rest
 over DNS-over-TLS (Cloudflare, Quad9) with DoH and optional plain-UDP fallback, caches
-answers in PSRAM, and refreshes its blocklist daily at 02:00 IST. Fork of
+answers in PSRAM, and refreshes its blocklist daily at 02:00 local time. Fork of
 M-Abozaid/esp32-c3-adblock (MIT). **Read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 before changing core logic or tasks.** User docs: README.md, docs/ROUTER_SETUP.md.
 
@@ -42,7 +42,9 @@ python3 tools/make_update_json.py fw.bin vX.Y.Z update.json   # dashboard update
 python3 -m unittest discover -s tools -p 'test_*.py'   # tool tests
 ```
 
-`pio` may be the Homebrew one or `.venv/bin/pio` (same pinned 6.2.0). Details, OTA and
+`pio` may be the Homebrew one or `.venv/bin/pio` (same pinned 6.2.0). Prefer
+`.venv/bin/pio`: the Homebrew one stops with "Python version must be 3.10–3.14" once
+Homebrew's Python moves to 3.15. Details, OTA and
 port troubleshooting: skill `build-flash`.
 
 ## Layout

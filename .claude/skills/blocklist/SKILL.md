@@ -1,6 +1,6 @@
 ---
 name: blocklist
-description: Blocklist format, building and updating. Use when changing the hash/index format, tools/build_blocklist.py, the 02:00 IST auto-update (scheduler, ETag, validation, atomic swap), custom block/allow rules, or when a list fails to load or update.
+description: Blocklist format, building and updating. Use when changing the hash/index format, tools/build_blocklist.py, the 02:00 local-time auto-update (scheduler, ETag, validation, atomic swap), custom block/allow rules, or when a list fails to load or update.
 ---
 
 # Blocklist
@@ -46,7 +46,7 @@ python3 -m unittest discover -s tools -p 'test_*.py'
 - Inputs: hosts files, plain domain lists, AdGuard `||d^` / `@@||d^`.
 - Regex, `$modifiers` and cosmetic rules are skipped and counted.
 - A missing source fails the build (`--allow-missing` to override).
-- CI rebuilds the default list daily at 00:17 IST (before the boards check at 02:00) and publishes it at
+- CI rebuilds the default list daily (18:47 UTC) and publishes it at
   `https://github.com/denzilrdz/esp32-s3-adblock/releases/download/blocklist/blocklist.bin`.
 
 ## Daily update (maintenance task)
@@ -56,7 +56,7 @@ Code: `lib/core/sched/daily_scheduler.*`, `lib/core/update/updater.*`, wired up 
 `bl_url`, `bl_hour`, `bl_min`, `bl_etag`, `sch_last`). HTTPS client:
 `src/platform/esp_http.*` (esp_http_client + CA bundle, manual redirects, ETag).
 
-1. Wait for NTP sync (and a plausible year). Timezone `IST-5:30`.
+1. Wait for NTP sync (and a plausible year). Timezone from config (POSIX TZ, default `UTC0`).
 2. Due when local time ≥ 02:00 + jitter (0–10 min) and the last success date ≠
    today (stored in NVS: no double runs across reboots).
 3. GET with `If-None-Match: <stored ETag>`. 304 → "unchanged", done.

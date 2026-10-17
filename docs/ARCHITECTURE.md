@@ -16,11 +16,11 @@ not yet measured on the board.
 **Goals**
 
 1. Block ads/trackers for the whole LAN by answering blocked names locally.
-2. Hide DNS query names from the ISP (Airtel) by sending all upstream traffic over
+2. Hide DNS query names from the ISP by sending all upstream traffic over
    DNS-over-TLS (DoT), with DNS-over-HTTPS (DoH) as a fallback.
 3. Never break the internet: a dead upstream, a bad blocklist, or a reboot must
    degrade gracefully, not stop name resolution.
-4. Keep the blocklist current without user action (daily at 02:00 IST).
+4. Keep the blocklist current without user action (daily at 02:00 local time).
 5. Keep core logic testable on a Mac without hardware.
 
 **Non-goals**
@@ -374,7 +374,7 @@ DO bit echoed, and the extended RCODE recomputed. Upstream queries carry our own
 7. N ≥ `min_entries` (default 1 000), which catches a source that silently
    shrank.
 
-### 6.3 Daily update flow (02:00 IST)
+### 6.3 Daily update flow (02:00 local time)
 
 ```mermaid
 stateDiagram-v2
@@ -395,7 +395,8 @@ stateDiagram-v2
 
 - **Time sync gating:** nothing is scheduled until SNTP reports a sync. The clock is
   then also checked for plausibility: year ≥ 2026.
-- **Timezone:** `configTzTime("IST-5:30", ...)`. India has no DST.
+- **Timezone:** `configTzTime(<config timezone>, ...)`, a POSIX TZ string (default
+  `UTC0`); DST rules in the string are applied by newlib.
 - **No double runs:** the scheduler stores the local date of the last successful
   run in NVS. The trigger fires only if `now ≥ today 02:00` and the last run date ≠
   today. A reboot at 02:05 therefore runs once, and a reboot at 02:30 after a
@@ -547,7 +548,7 @@ automatically. This is a circuit-breaker with exponential backoff.
   - `allow_plain_fallback`, EDNS padding, AD pass-through;
   - `blocked_ttl`;
   - blocklist URL, update hour/minute (default 02:00), timezone (default
-    `IST-5:30`);
+    `UTC0`);
   - cache size, local-answer toggles, dashboard user and password hash.
 - **Storage:** stored in NVS through `IKeyValueStore` (namespace `cfg`, with a
   `schema` version key for migrations).
@@ -763,17 +764,17 @@ coredump,  data, coredump, 0xFF0000,  0x10000    64 KB   crash dumps
 | Network        | A cold name needs root → TLD → authoritative referrals plus DS/DNSKEY fetches: about 6–15 round trips (0.3–1.5 s) before any crypto.                                                                                                                                                                                                                                                                                                    |
 | Trust anchors  | Needs RFC 5011 automated root-key rollover with persistent state and correct time. A device offline across a KSK rollover stops validating everything.                                                                                                                                                                                                                                                                                  |
 | Prior art      | No maintained Unbound/Knot port to ESP-IDF; lwIP ships only a stub resolver. Porting is a large, risky project.                                                                                                                                                                                                                                                                                                                         |
-| **Privacy**    | **Recursion does not hide queries from the ISP.** The resolver talks to root, TLD and authoritative servers in plaintext UDP/53 from your Airtel IP. QNAME minimisation hides the full name from the root and TLD servers, but every query still crosses Airtel's network in the clear.                                                                                                                                                 |
+| **Privacy**    | **Recursion does not hide queries from the ISP.** The resolver talks to root, TLD and authoritative servers in plaintext UDP/53 from your home IP. QNAME minimisation hides the full name from the root and TLD servers, but every query still crosses the ISP's network in the clear.                                                                                                                                                  |
 
-**How our design meets the same goal.** The goal is to keep Airtel from seeing
+**How our design meets the same goal.** The goal is to keep the ISP from seeing
 which names we look up.
 
 - DoT/DoH encrypts every query between the device and the resolver.
-- Airtel sees only a TLS connection to 1.1.1.1:853 or 9.9.9.9:853 (the SNI shows
+- The ISP sees only a TLS connection to 1.1.1.1:853 or 9.9.9.9:853 (the SNI shows
   "cloudflare-dns.com", not the names inside).
 - Padding (§5.6) further hides query sizes.
 
-**The trade-off.** You move trust from Airtel to Cloudflare or Quad9, which see your
+**The trade-off.** You move trust from the ISP to Cloudflare or Quad9, which see your
 public IP and every name you look up.
 
 - Cloudflare's 1.1.1.1 policy: no selling of data, IP logs purged within 25 h,
@@ -783,7 +784,7 @@ public IP and every name you look up.
 - You choose the order on the dashboard; choosing Quad9 first is the more private
   default.
 
-**What this does not hide from Airtel:** the IP addresses you then connect to, and
+**What this does not hide from the ISP:** the IP addresses you then connect to, and
 the server name (SNI) in your browser's own TLS connections. Only Encrypted Client
 Hello, which is up to websites and browsers, or a VPN closes that gap.
 
@@ -797,10 +798,10 @@ Hello, which is up to websites and browsers, or a VPN closes that gap.
 
 ## 14. IPv6 and other bypasses (documented for users in README)
 
-- **IPv6 DNS from the router:** Airtel routers advertise the ISP's IPv6 DNS
+- **IPv6 DNS from the router:** many ISP routers advertise the ISP's IPv6 DNS
   servers through router advertisements (RDNSS) or DHCPv6. Dual-stack clients may
-  use those and bypass the blocker entirely (upstream issues #40/#41). The README
-  gives Airtel-specific options:
+  use those and bypass the blocker entirely (upstream issues #40/#41). docs/ROUTER_SETUP.md
+  gives the options:
   - set a custom IPv6 DNS in the router, if the firmware allows it;
   - otherwise disable IPv6 on the LAN;
   - or set DNS per device.
