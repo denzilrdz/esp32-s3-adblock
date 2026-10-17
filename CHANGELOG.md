@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-10-17
+
+The dashboard now reports the result of an update. You see it on updates made
+_from_ v0.1.4 onward: updating a v0.1.3 board still ends at "installed, rebooting..."
+(reload the page after a few seconds).
+
 ### Fixed
 
 - After _Download & flash_ the dashboard stayed on "installed, rebooting...". It now waits
@@ -139,7 +145,8 @@ password setup.
   flash are required), upstream's 40-bit blocklist format, the Japanese README,
   the C3 web-installer binaries and the C3 SuperMini enclosure.
 
-[Unreleased]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.1.3...HEAD
+[Unreleased]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.1.4...HEAD
+[0.1.4]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.1.0...v0.1.1
