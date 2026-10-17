@@ -36,6 +36,9 @@ schema), MINOR (features), PATCH (fixes).
   download with `gh attestation verify factory-esp32s3-vX.Y.Z.bin -R denzilrdz/esp32-s3-adblock`.
 - Uses no caches (a poisoned cache can't reach release artifacts) and never cancels
   an in-progress release.
+- Publishes the dashboard update files to Pages: `firmware-esp32s3.bin` and
+  `update.json` (`tools/make_update_json.py`: version, size, SHA-256, release link).
+  Every board with the update check sees the new release as soon as Pages deploys.
 - Deploys the browser installer to GitHub Pages: `installer/index.html` +
   `manifest.json` (ESP32-S3) + esp-web-tools vendored from the npm tarball
   pinned in `installer/esp-web-tools.lock` (SHA-512 checked). Needs Pages set to
@@ -48,7 +51,8 @@ schema), MINOR (features), PATCH (fixes).
 ## After the release
 
 - Check the live installer: `https://denzilrdz.github.io/esp32-s3-adblock/` and its
-  `manifest.json` (version must match the tag).
+  `manifest.json` (version must match the tag), and `update.json` (same version; its
+  `size` matches `firmware-esp32s3.bin`). Then run _Check for updates_ on a board.
 - Check downloads: `gh release download vX.Y.Z`, `shasum -a 256 -c SHA256SUMS`,
   `gh attestation verify factory-esp32s3-vX.Y.Z.bin -R denzilrdz/esp32-s3-adblock`.
 

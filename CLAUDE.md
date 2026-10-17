@@ -38,6 +38,7 @@ tools/lint.sh                            # clang-tidy on lib/core (.clang-tidy)
 .venv/bin/zizmor --persona=auditor .github/ && .venv/bin/actionlint   # workflow lint
 tools/make_factory.sh                    # merged image flashable at 0x0 (after a build)
 python3 tools/build_blocklist.py out.bin # build a format-v2 blocklist (stdlib only)
+python3 tools/make_update_json.py fw.bin vX.Y.Z update.json   # dashboard update manifest
 python3 -m unittest discover -s tools -p 'test_*.py'   # tool tests
 ```
 
@@ -128,6 +129,11 @@ native tests; pre-push = clang-tidy + esp32s3 firmware build.
   `read-flash`) in `~/.platformio/penv/bin`, and writes `firmware.factory.bin` after
   each build (`tools/make_factory.sh` checks and copies it). First build downloads
   ~4 GB of packages.
+- **Dashboard update check:** the browser fetches `update.json` + firmware from
+  `UPDATE_BASE_URL` (GitHub Pages; release downloads have no CORS). The page CSP only
+  allows that origin. To test without a release, build with a local
+  `-DUPDATE_BASE_URL=\"http://<mac-ip>:8765/\"` and serve the files with
+  `Access-Control-Allow-Origin: *`.
 - mDNS name: `s3adblock.local`; setup AP `S3-AdBlock-XXXX`.
 - **First boot:** a placeholder/weak `WEB_PASS` never works; the serial console prints
   a one-time setup code. ArduinoOTA stays off until `OTA_PASS` is real (10+ chars).

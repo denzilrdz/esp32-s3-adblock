@@ -614,6 +614,17 @@ automatically. This is a circuit-breaker with exponential backoff.
   - **Signed images: not implemented yet** (see §15). Firmware uploads are protected
     by the dashboard password and ArduinoOTA by `OTA_PASS` (disabled until set);
     release binaries come with `SHA256SUMS`.
+  - **Update check from the dashboard:** the page reads `update.json` from
+    `UPDATE_BASE_URL` (GitHub Pages, published by `release.yml`), compares versions,
+    downloads the firmware into browser memory, checks size and the `0xE9` image
+    magic, and uploads it to `/api/firmware` (password required, same health check
+    and rollback). It goes through the browser because GitHub release downloads send
+    no CORS headers while Pages does; the device itself never contacts the update
+    site. The page's CSP allows `connect-src` to the device and that one origin only
+    (`auth::urlOrigin()` builds it and refuses anything but `http(s)://host[:port]`).
+    The browser can't hash the file on a plain-HTTP page (WebCrypto needs a secure
+    context); the device rejects a corrupted image when it verifies the image hash
+    before switching slots. Trust is the same as the web installer: GitHub + TLS.
   - **Rollback:** the prebuilt bootloader has `CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE`.
     Arduino's `verifyRollbackLater()` hook is overridden, so a new image stays
     "pending verify" until it has had Wi-Fi and a running DNS service for 60 s; only

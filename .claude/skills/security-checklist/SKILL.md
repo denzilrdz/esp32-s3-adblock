@@ -31,6 +31,9 @@ network as hostile.
       `UPLOAD_FILE_START`.
 - [ ] Read-only GET routes still call `guard(Access::kPublic)` (Host check: DNS
       rebinding defence).
+- [ ] The page's CSP (`pageCsp()` in `dashboard.cpp`) keeps `connect-src` to
+      `'self'` plus the update origin only; a new external fetch needs its origin
+      added there deliberately, never `*`.
 - [ ] All values rendered into HTML are escaped (`htmlEscape`); JSON strings are
       escaped (`jsonEscape`); no `innerHTML` with server data in `page.h`, use
       `textContent`.

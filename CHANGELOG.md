@@ -6,6 +6,15 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Dashboard _Device → Check for updates_: compares the running version with the latest
+  release and, with **Download & flash**, downloads the firmware into the browser from
+  GitHub Pages and installs it through the normal upload (same password, health check
+  and rollback). Releases now also publish `firmware-esp32s3.bin` and `update.json` to
+  Pages. The dashboard's Content-Security-Policy allows fetches to that site only.
+  Build-time `UPDATE_BASE_URL` points forks at their own Pages site.
+
 ## [0.1.1] - 2026-10-15
 
 Bug fixes from testing v0.1.0 on the board (dashboard updates, rollback, upstream

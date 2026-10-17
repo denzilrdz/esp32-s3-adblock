@@ -199,6 +199,10 @@ bigger list, Hagezi's `pro-onlydomains.txt` (~370k) fits easily on the S3.
 
 ## Updating firmware
 
+- **Check for updates (v0.1.2 and later):** _Device → Check for updates_. If a newer
+  release exists, **Download & flash** fetches it into the browser from this project's
+  GitHub Pages site and installs it through the normal upload. Settings, Wi-Fi and the
+  blocklist are kept. Forks: build with `-DUPDATE_BASE_URL=\"https://<you>.github.io/<repo>/\"`.
 - **Dashboard:** _Device → Flash firmware_ with **`firmware-esp32s3-vX.Y.Z.bin`** from a
   [release](https://github.com/denzilrdz/esp32-s3-adblock/releases) (not the larger
   `factory-…` image, which is for first installs; the board rejects it). Settings, Wi-Fi
