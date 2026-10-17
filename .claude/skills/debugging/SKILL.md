@@ -73,7 +73,7 @@ pio device monitor -e esp32s3        # 115200 baud, filters: esp32_exception_dec
   - a long flash erase in one go: chunk writes and reset the watchdog between
     chunks.
 - Reset reason on boot: `TG1WDT_SYS_RESET` / `TASK_WDT` = watchdog;
-  `BROWNOUT_RST` = power. The router's USB port may sag; use a 5 V/1 A supply.
+  `BROWNOUT_RST` = power. Weak USB ports (routers, hubs) may sag; use a 5 V/1 A supply.
 
 ## Wi-Fi drops
 

@@ -796,12 +796,12 @@ Hello, which is up to websites and browsers, or a VPN closes that gap.
 
 ---
 
-## 14. IPv6 and other bypasses (documented for users in README)
+## 14. IPv6 and other bypasses (documented for users in ROUTER_SETUP.md)
 
 - **IPv6 DNS from the router:** many ISP routers advertise the ISP's IPv6 DNS
   servers through router advertisements (RDNSS) or DHCPv6. Dual-stack clients may
-  use those and bypass the blocker entirely (upstream issues #40/#41). docs/ROUTER_SETUP.md
-  gives the options:
+  use those and bypass the blocker entirely (upstream issues #40/#41).
+  [ROUTER_SETUP.md](ROUTER_SETUP.md) gives the options:
   - set a custom IPv6 DNS in the router, if the firmware allows it;
   - otherwise disable IPv6 on the LAN;
   - or set DNS per device.
