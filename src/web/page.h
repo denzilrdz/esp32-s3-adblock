@@ -114,8 +114,12 @@ function verCmp(a,b){const p=v=>String(v).replace(/^v/,'').split(/[-+]/)[0].spli
 $('upCheck').onclick=async()=>{upd=null;$('upFlash').hidden=true;$('upInfo').textContent='checking...';
  try{const s=await (await fetch('/api/stats')).json();const r=await fetch(s.updateUrl+'update.json',{cache:'no-store'});if(!r.ok)throw Error('HTTP '+r.status);const j=await r.json();
  if(!j.version||!j.firmware||!(j.size>0))throw Error('bad update.json');
- if(verCmp(j.version,s.version)>0){upd=Object.assign({},j,{base:s.updateUrl});$('upInfo').textContent='v'+j.version+' available (running v'+s.version+')';$('upFlash').hidden=false}
- else $('upInfo').textContent='up to date (v'+s.version+')'}
+ if(verCmp(j.version,s.version)<=0){$('upInfo').textContent='up to date (v'+s.version+')';return}
+ // Never offer what this dashboard can't safely install: an update.json format it doesn't
+ // know (schema), or a release that needs a USB flash from this version (minUpdateFrom).
+ const manual=(j.schema||1)>1?'this dashboard is too old to install it':(j.minUpdateFrom&&verCmp(s.version,j.minUpdateFrom)<0)?'it needs a USB install from v'+s.version:'';
+ if(manual){const parts=['v'+j.version+' available, but '+manual+'. '];if(/^https:\/\//.test(j.release||'')){const a=el('a','Release notes');a.href=j.release;a.target='_blank';a.rel='noopener';parts.push(a)}$('upInfo').replaceChildren(...parts);return}
+ upd=Object.assign({},j,{base:s.updateUrl});$('upInfo').textContent='v'+j.version+' available (running v'+s.version+')';$('upFlash').hidden=false}
  catch(e){$('upInfo').textContent='';toast('update check failed: '+e.message,true)}};
 $('upFlash').onclick=async()=>{if(!upd)return;
  if(!confirm('Download v'+upd.version+' ('+(upd.size/1048576).toFixed(2)+' MB) and flash it? The device reboots and rolls back if the new firmware is unhealthy.'))return;
