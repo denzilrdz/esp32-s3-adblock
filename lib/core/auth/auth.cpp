@@ -213,4 +213,43 @@ bool originAllowed(const char* origin, const char* referer, const char* deviceIp
   return hostAllowed(host, deviceIp, hostname);
 }
 
+bool urlOrigin(const char* url, char* out, size_t cap) {
+  if (!url || !out || cap == 0) return false;
+  auto lower = [](char ch) { return (ch >= 'A' && ch <= 'Z') ? static_cast<char>(ch - 'A' + 'a') : ch; };
+  auto startsWith = [&](const char* prefix) {
+    for (size_t k = 0; prefix[k]; k++)
+      if (lower(url[k]) != prefix[k]) return false;
+    return true;
+  };
+  size_t i;
+  if (startsWith("https://"))
+    i = 8;
+  else if (startsWith("http://"))
+    i = 7;
+  else
+    return false;
+  size_t hostLen = 0;
+  for (; url[i] && url[i] != '/' && url[i] != ':'; i++, hostLen++) {
+    const char ch = lower(url[i]);
+    if (!((ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '.' || ch == '-')) return false;
+  }
+  if (hostLen == 0) return false;
+  size_t end = i;
+  if (url[i] == ':') {
+    uint32_t port = 0;
+    size_t digits = 0;
+    for (i++; url[i] >= '0' && url[i] <= '9'; i++, digits++) {
+      port = port * 10 + static_cast<uint32_t>(url[i] - '0');
+      if (port > 65535) return false;
+    }
+    if (digits == 0 || port == 0) return false;
+    end = i;
+  }
+  if (url[end] && url[end] != '/') return false;  // e.g. "host;..." or "host'x"
+  if (end + 1 > cap) return false;
+  for (size_t k = 0; k < end; k++) out[k] = lower(url[k]);
+  out[end] = 0;
+  return true;
+}
+
 }  // namespace auth

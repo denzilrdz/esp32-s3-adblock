@@ -182,6 +182,34 @@ static void test_origin_checks_block_cross_site_requests() {
   TEST_ASSERT_FALSE(auth::originAllowed("http://evil.example", "http://192.168.1.50/", ip, "s3adblock"));
 }
 
+static void test_url_origin_for_the_dashboard_csp() {
+  char o[64];
+  TEST_ASSERT_TRUE(auth::urlOrigin("https://denzilrdz.github.io/esp32-s3-adblock/", o, sizeof(o)));
+  TEST_ASSERT_EQUAL_STRING("https://denzilrdz.github.io", o);
+  TEST_ASSERT_TRUE(auth::urlOrigin("http://192.168.0.101:8765/x/update.json", o, sizeof(o)));
+  TEST_ASSERT_EQUAL_STRING("http://192.168.0.101:8765", o);
+  TEST_ASSERT_TRUE(auth::urlOrigin("HTTPS://Example.ORG", o, sizeof(o)));  // no path, mixed case
+  TEST_ASSERT_EQUAL_STRING("https://example.org", o);
+  // The result goes into a Content-Security-Policy header: anything that is not a
+  // plain http(s)://host[:port] must be refused, never passed through.
+  const char* bad[] = {"",
+                       "ftp://example.org/",
+                       "//example.org/",
+                       "https://",
+                       "https:///path",
+                       "https://exa mple.org/",
+                       "https://example.org;script-src *",
+                       "https://example.org'/",
+                       "https://user@example.org/",
+                       "https://example.org:/",
+                       "https://example.org:99999/",
+                       "javascript:alert(1)"};
+  for (const char* u : bad) TEST_ASSERT_FALSE_MESSAGE(auth::urlOrigin(u, o, sizeof(o)), u);
+  char tiny[12];
+  TEST_ASSERT_FALSE(auth::urlOrigin("https://denzilrdz.github.io/", tiny, sizeof(tiny)));  // too long
+  TEST_ASSERT_FALSE(auth::urlOrigin(nullptr, o, sizeof(o)));
+}
+
 int main(int, char**) {
   UNITY_BEGIN();
   RUN_TEST(test_placeholder_password_never_authenticates);
@@ -194,5 +222,6 @@ int main(int, char**) {
   RUN_TEST(test_one_client_cannot_lock_out_another);
   RUN_TEST(test_host_header_checks_block_dns_rebinding);
   RUN_TEST(test_origin_checks_block_cross_site_requests);
+  RUN_TEST(test_url_origin_for_the_dashboard_csp);
   return UNITY_END();
 }

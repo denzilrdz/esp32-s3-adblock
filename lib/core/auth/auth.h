@@ -107,4 +107,10 @@ bool hostAllowed(const char* host, const char* deviceIp, const char* hostname);
 // browsers always send Origin on cross-site POSTs.
 bool originAllowed(const char* origin, const char* referer, const char* deviceIp, const char* hostname);
 
+// Writes the origin ("scheme://host[:port]", lowercase) of an http(s) URL to `out`.
+// Used to allow one update site in the dashboard's Content-Security-Policy, so it is
+// strict: only [a-z0-9.-] hosts and a numeric port <= 65535; anything else (spaces,
+// quotes, ';', userinfo, other schemes) returns false.
+bool urlOrigin(const char* url, char* out, size_t cap);
+
 }  // namespace auth
