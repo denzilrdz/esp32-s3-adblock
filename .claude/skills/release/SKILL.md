@@ -65,7 +65,8 @@ schema), MINOR (features), PATCH (fixes).
 
 - Check the live installer: `https://denzilrdz.github.io/esp32-s3-adblock/` and its
   `manifest.json` (version must match the tag), and `update.json` (same version; its
-  `size` matches `firmware-esp32s3.bin`). Then run _Check for updates_ on a board.
+  `size` matches `firmware-esp32s3.bin`). Then open the dashboard on a board: the update
+  check runs on load and should offer the new version.
 - Check downloads: `gh release download vX.Y.Z`, `shasum -a 256 -c SHA256SUMS`,
   `gh attestation verify factory-esp32s3-vX.Y.Z.bin -R denzilrdz/esp32-s3-adblock`.
 

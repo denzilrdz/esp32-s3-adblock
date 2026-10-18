@@ -39,7 +39,7 @@ tools/lint.sh                            # clang-tidy on lib/core (.clang-tidy)
 tools/make_factory.sh                    # merged image flashable at 0x0 (after a build)
 python3 tools/build_blocklist.py out.bin # build a format-v2 blocklist (stdlib only)
 python3 tools/make_update_json.py fw.bin vX.Y.Z update.json   # dashboard update manifest
-python3 -m unittest discover -s tools -p 'test_*.py'   # tool tests
+python3 -m unittest discover -s tools -p 'test_*.py'   # tool + web page tests
 ```
 
 `pio` may be the Homebrew one or `.venv/bin/pio` (same pinned 6.2.0). Prefer
@@ -55,10 +55,10 @@ lib/core/      portable C++17 logic, NO Arduino/IDF headers (tested natively)
 src/           ESP32-only: main.cpp (composition root), platform/ (HAL impls: TLS,
                transports, LittleFS, NVS, HTTP), tasks/ (DNS service tasks),
                app/ (blocklist manager, client table, DNS policy),
-               web/ (dashboard REST API, page.h, Wi-Fi setup portal)
+               web/ (dashboard REST API, page.h, Wi-Fi setup portal; skill web-ui)
 test/          Unity tests: test/test_<area>/test_main.cpp, fakes in test/fakes/
 tools/         blocklist builder, factory image, setup/format/lint/coverage scripts
-installer/     browser installer (esp-web-tools pinned by SHA-512), deployed by CI
+installer/     browser installer + 404 (esp-web-tools pinned by SHA-512), deployed by CI
 docs/          ARCHITECTURE.md, ROUTER_SETUP.md
 .github/       CI (build.yml), release.yml (v* tags), daily blocklist.yml
 .claude/skills/ task playbooks (see list below)
@@ -154,4 +154,5 @@ native tests; pre-push = clang-tidy + esp32s3 firmware build.
 ## Skills (.claude/skills/)
 
 `build-flash`, `native-tests`, `dns-protocol`, `upstream-resolvers`, `blocklist`,
-`debugging`, `release`, `security-checklist`.
+`debugging`, `release`, `security-checklist`, `web-ui` (design system for the
+dashboard, setup portal and installer pages).

@@ -6,6 +6,22 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Redesigned dashboard: a block-rate headline, stat tiles with trend lines, a live
+  queries-per-minute chart (allowed vs blocked, with hover details), a breakdown of how
+  queries were answered, upstream health with latency trends, per-client bars and a
+  client filter, removable rule chips, health meters, a section menu and light/dark
+  themes (follows the system, or pick one). The charts use what the page has seen since
+  it opened; nothing new runs on the board.
+- The dashboard checks for firmware updates when it opens and shows a banner when one
+  is available (no more _Check for updates_ click).
+- Wi-Fi setup page: tap a network from a list with signal strength and lock icons
+  (duplicates and hidden networks removed, strongest first), _Other network_ for hidden
+  ones, show-password toggle, clearer saved and error pages; works without JavaScript.
+- Web installer: new layout with numbered steps, troubleshooting, the current version
+  and a browser-support message; the GitHub Pages site gets a 404 page.
+
 ## [0.1.5] - 2026-10-18
 
 Faster recovery after an internet outage, and a daily blocklist. Update from the

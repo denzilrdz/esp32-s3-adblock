@@ -117,8 +117,8 @@ src/                          ESP32 only (Arduino core 3.3.12 / ESP-IDF 5.5)
               clients.*           client table, bans, pause, MAC lookups
               app_policy.h        the DNS policy used by the tasks
   web/        dashboard.*         REST API + security checks
-              page.h              dashboard page
-              portal.*            Wi-Fi setup access point
+              page.h              dashboard page (design rules: skill web-ui)
+              portal.*            Wi-Fi setup access point and pages
 
 test/                         Unity tests, one folder per area (test_dns, ...)
   fakes/                      FakeClock, FakeRandom, FakeTransport, FakeHttpClient,
@@ -623,7 +623,7 @@ automatically. This is a circuit-breaker with exponential backoff.
   - **Signed images: not implemented yet** (see §15). Firmware uploads are protected
     by the dashboard password and ArduinoOTA by `OTA_PASS` (disabled until set);
     release binaries come with `SHA256SUMS`.
-  - **Update check from the dashboard:** the page reads `update.json` from
+  - **Update check from the dashboard:** when it opens, the page reads `update.json` from
     `UPDATE_BASE_URL` (GitHub Pages, published by `release.yml`), compares versions,
     downloads the firmware into browser memory, checks size and the `0xE9` image
     magic, and uploads it to `/api/firmware` (password required, same health check
