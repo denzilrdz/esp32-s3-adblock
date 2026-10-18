@@ -1,6 +1,6 @@
 {
   "name": "core",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Portable ad-blocker core logic (no Arduino/ESP-IDF dependencies)",
   "license": "MIT",
   "build": {
