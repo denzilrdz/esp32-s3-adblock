@@ -312,7 +312,10 @@ function render(s){const d=s.dns,bl=s.blocklist;
  const m=(label,val,w,color)=>{const f=document.createDocumentFragment(),bar=el('div',undefined,'meter'),i=el('i');i.style.width=w+'%';if(color)i.style.background=color;bar.append(i);f.append(el('div',label,'hint'),bar);return f};
  $('dev').replaceChildren(m('Wi-Fi signal: '+q+' ('+s.rssi+' dBm)',null,qp,qp<35?'var(--warn)':null),m('PSRAM: '+mb(s.psram)+' free of 8 MB',null,100*used/PSRAM),dv)}
 
-function renderClients(){if(!last)return;const f=$('cFilter').value.trim().toLowerCase(),list=last.clients.slice().sort((a,b)=>(b.blocked+b.allowed)-(a.blocked+a.allowed));
+// Fixed order (by IP): the table redraws every poll, and sorting by activity moved rows
+// under the cursor, so a Ban click could land on another client (found on hardware).
+const ipNum=ip=>ip.split('.').reduce((n,o)=>n*256+(+o||0),0);
+function renderClients(){if(!last)return;const f=$('cFilter').value.trim().toLowerCase(),list=last.clients.slice().sort((a,b)=>ipNum(a.ip)-ipNum(b.ip));
  const max=Math.max(1,...list.map(c=>c.blocked+c.allowed)),shown=list.filter(c=>!f||c.ip.includes(f)||c.mac.includes(f));
  const tb=$('clientT').tBodies[0];tb.replaceChildren(...shown.map(c=>{const tr=el('tr'),b=el('button',c.banned?'Unban':'Ban',c.banned?'':'danger');b.onclick=()=>{if(c.banned||confirm('Ban '+c.ip+'? It gets no DNS answers until you unban it.'))api('/api/clients/ban',{ip:c.ip})};
   const ip=el('td',undefined,'mono');ip.append(c.ip);if(c.banned){ip.append(' ',el('span','banned','tag'))}
