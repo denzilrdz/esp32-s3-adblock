@@ -209,6 +209,8 @@ function record(s){const now=Date.now(),d=s.dns,p=hist[hist.length-1];
 // Per-minute rates over a ~20 s sliding window (smooths the 4 s polls).
 function rates(){const out=[];for(let i=1;i<hist.length;i++){const j=Math.max(0,i-5),a=hist[j],z=hist[i],dt=(z.t-a.t)/60000;if(dt<=0)continue;
  const q=(z.q-a.q)/dt,b=(z.b-a.b)/dt;out.push({t:z.t,a:Math.max(0,q-b),b:Math.max(0,b)})}return out}
+// Round time ticks (every 5 s, 1 min, 15 min, ...) aligned to local clock time, at most `max` of them.
+function timeTicks(t0,t1,max){const steps=[1,2,5,10,15,30,60,120,300,600,900,1800].map(s=>s*1000),off=-new Date(t0).getTimezoneOffset()*60000;let step=steps[steps.length-1];for(const s of steps)if((t1-t0)/s<=max){step=s;break}const ticks=[];for(let t=Math.ceil((t0+off)/step)*step-off;t<=t1;t+=step)ticks.push(t);return {step,ticks}}
 function niceMax(v){if(v<=0)return 4;const p=Math.pow(10,Math.floor(Math.log10(v))),f=v/p;return (f<=1?1:f<=2?2:f<=5?5:10)*p}
 const p2=n=>String(n).padStart(2,'0');
 function hhmm(t,sec){const d=new Date(t);return p2(d.getHours())+':'+p2(d.getMinutes())+(sec?':'+p2(d.getSeconds()):'')}
@@ -228,7 +230,7 @@ function drawChart(){const box=$('qChart'),tip=$('tip');[...box.children].forEac
  const svg=sv('svg',{viewBox:'0 0 '+W+' '+H,height:H});
  for(let i=0;i<=4;i++){const v=ymax*i/4,yy=y(v);sv('line',{x1:L,x2:W-R,y1:yy,y2:yy,stroke:i?'var(--line)':'var(--axis)','stroke-width':1},svg);
   const tx=sv('text',{x:L-6,y:yy+4,'text-anchor':'end','font-size':11,fill:'var(--muted)'},svg);tx.textContent=compact(Math.round(v*10)/10)}
- const nt=Math.min(5,Math.max(2,Math.floor(iw/90)));for(let i=0;i<=nt;i++){const t=t0+span*i/nt;const tx=sv('text',{x:x(t),y:H-5,'text-anchor':i===0?'start':i===nt?'end':'middle','font-size':11,fill:'var(--muted)'},svg);tx.textContent=hhmm(t,span<300000)}
+ const tk=timeTicks(t0,t1,Math.min(6,Math.max(2,Math.floor(iw/80))));for(const t of tk.ticks){const xx=x(t),tx=sv('text',{x:xx,y:H-5,'text-anchor':xx<L+30?'start':xx>W-R-30?'end':'middle','font-size':11,fill:'var(--muted)'},svg);tx.textContent=hhmm(t,tk.step<60000)}
  const path=k=>pts.map((p,i)=>(i?'L':'M')+x(p.t).toFixed(1)+' '+y(p[k]).toFixed(1)).join('');
  sv('path',{d:path('a')+'L'+x(t1)+' '+y(0)+'L'+x(t0)+' '+y(0)+'Z',fill:'var(--s-allowed)','fill-opacity':.1},svg);
  for(const [k,c] of [['a','var(--s-allowed)'],['b','var(--s-blocked)']]){sv('path',{d:path(k),fill:'none',stroke:c,'stroke-width':2,'stroke-linejoin':'round','stroke-linecap':'round'},svg);

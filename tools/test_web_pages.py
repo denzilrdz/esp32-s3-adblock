@@ -7,6 +7,8 @@ has no internet), and that the dashboard script at least parses.
 """
 
 import ast
+import json
+import os
 import pathlib
 import re
 import shutil
@@ -79,6 +81,30 @@ class DashboardPageTest(unittest.TestCase):
             )
             self.assertEqual(r.returncode, 0, r.stderr)
 
+    @unittest.skipUnless(shutil.which("node"), "node not installed")
+    def test_time_ticks_are_round_and_distinct(self):
+        # Regression: a 4 s span used to print the same second twice on the x-axis.
+        fn = re.search(r"^function timeTicks\(.*$", self.html, re.M).group(0)
+        js = fn + r"""
+        const out = [];
+        for (const [span, max] of [[4e3, 5], [37e3, 6], [9e5, 5], [18e5, 6]]) {
+          const t0 = Date.UTC(2026, 9, 18, 15, 43, 56, 321), r = timeTicks(t0, t0 + span, max);
+          out.push({ step: r.step, n: r.ticks.length, ok: r.ticks.every(t => t >= t0 && t <= t0 + span && t % r.step === 0) });
+        }
+        console.log(JSON.stringify(out));"""
+        r = subprocess.run(
+            ["node", "-e", js],
+            capture_output=True,
+            text=True,
+            env={"TZ": "UTC", "PATH": os.environ.get("PATH", "")},
+        )
+        self.assertEqual(r.returncode, 0, r.stderr)
+        res = json.loads(r.stdout)
+        self.assertEqual([x["step"] for x in res], [1000, 10000, 300000, 300000])
+        for (span, max_), x in zip([(4e3, 5), (37e3, 6), (9e5, 5), (18e5, 6)], res):
+            self.assertTrue(x["ok"], x)
+            self.assertLessEqual(x["n"], max_ + 1)
+
 
 class PortalPageTest(unittest.TestCase):
     def test_works_offline_without_script(self):
@@ -87,6 +113,14 @@ class PortalPageTest(unittest.TestCase):
         # iOS opens captive portals in a mini-browser: plain HTML forms, no script tags.
         self.assertNotIn("<script", head)
         self.assertEqual(external_loads(head), [])
+
+    def test_no_preselected_network(self):
+        # Regression: with the first network preselected, a hidden SSID typed under
+        # "Other" was saved as that network instead.
+        src = (ROOT / "src/web/portal.cpp").read_text(encoding="utf-8")
+        loop = src[src.index('portalNetworks = "";') : src.index("uint8_t mac[6];")]
+        self.assertNotIn("checked", loop)
+        self.assertIn("other.checked=true", src)
 
 
 class InstallerSiteTest(unittest.TestCase):

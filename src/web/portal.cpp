@@ -150,9 +150,8 @@ void forgetWifi() {
   portalNetworks = "";
   for (size_t i = 0; i < shown; i++) {
     const String name = htmlEscape(picked[i].ssid);
-    portalNetworks += "<label class=net><input type=radio name=s value='" + name + "' required" +
-                      (i ? "" : " checked") + "><span>" + name + "</span>" +
-                      (picked[i].secured ? kLock : "") + bars(picked[i].rssi) + "</label>";
+    portalNetworks += "<label class=net><input type=radio name=s value='" + name + "' required><span>" +
+                      name + "</span>" + (picked[i].secured ? kLock : "") + bars(picked[i].rssi) + "</label>";
   }
   uint8_t mac[6];
   WiFi.macAddress(mac);
@@ -168,12 +167,15 @@ void forgetWifi() {
         "<h1>Connect to Wi-Fi</h1><p>Pick your home network and enter its password. The blocker restarts "
         "and joins it.</p><form method=POST action=/wifisave><div class=card>";
     html += portalNetworks;
-    html += "<label class=net><input type=radio name=s value=''";
+    // Nothing is preselected: typing a name selects "Other", so a hidden network can't be
+    // saved as the first listed one by mistake (without JS, `required` makes them pick).
+    html += "<label class=net><input type=radio name=s value='' id=other";
     html += portalNetworks.length() ? "" : " checked";
     html +=
         "><span>Other network&hellip;</span></label></div>"
         "<label class=f for=o>Network name <span class=hint>(only for &ldquo;Other&rdquo;)</span></label>"
-        "<input class=t id=o name=o maxlength=32 autocapitalize=off autocomplete=off spellcheck=false>"
+        "<input class=t id=o name=o maxlength=32 autocapitalize=off autocomplete=off spellcheck=false "
+        "oninput='if(this.value)other.checked=true'>"
         "<label class=f for=p>Password</label>"
         "<input class=t id=p name=p type=password maxlength=64 autocomplete=current-password>"
         "<label class=show><input type=checkbox onchange=\"p.type=this.checked?'text':'password'\">"

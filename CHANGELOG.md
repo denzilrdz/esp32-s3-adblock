@@ -6,6 +6,14 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Wi-Fi setup page: a hidden network typed under _Other network_ could be saved as the
+  first listed network, which was preselected. Nothing is preselected now, and typing a
+  name selects _Other network_.
+- Dashboard chart: on a short time span the x-axis could show the same time twice. Ticks
+  now fall on round times (every 5 s, 1 min, 5 min, ...).
+
 ## [0.2.0] - 2026-10-18
 
 A redesigned dashboard with live charts, a friendlier Wi-Fi setup page and a new web
