@@ -6,6 +6,11 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-10-18
+
+Fixes for bans and for Wi-Fi setup. Update from the dashboard (_Device → Check for
+updates_); settings and bans are kept.
+
 ### Fixed
 
 - A banned device could be silently unbanned: after a restart, changing any ban
@@ -17,7 +22,6 @@ All notable changes to this project are documented here. The format follows
 - The dashboard's client table no longer reorders itself while you use it (it was
   sorted by activity and redrawn every few seconds, so a Ban click could land on the
   wrong device). Clients are listed by IP.
-
 - Wi-Fi setup could save a secured network without its password: the board then
   couldn't join, fell back to setup mode and stopped answering DNS. Setup is now two
   steps: tap a network, then a page with its name filled in asks for the password
@@ -227,7 +231,8 @@ password setup.
   flash are required), upstream's 40-bit blocklist format, the Japanese README,
   the C3 web-installer binaries and the C3 SuperMini enclosure.
 
-[Unreleased]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.2.2...HEAD
+[0.2.2]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.1.5...v0.2.0
 [0.1.5]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.1.4...v0.1.5

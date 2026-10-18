@@ -39,7 +39,7 @@ blocklist every day on its own**. No Raspberry Pi, no SD card, no OS to patch.
 | **Tiny and low-power**                 | Runs from any stable 5 V USB supply; no computer to keep running.                                             |
 
 > [!NOTE]
-> **Project status: early release (v0.1.5).** Tested on an ESP32-S3-DevKitC-1 (N16R8):
+> **Project status: early release (v0.2.2).** Tested on an ESP32-S3-DevKitC-1 (N16R8):
 > Wi-Fi setup, DNS-over-TLS, blocking, the blocklist download and its "not modified"
 > check, failover to Quad9 when the primary is unreachable, plain-DNS fallback on and
 > off, dashboard firmware updates and automatic rollback of a bad update. Expect some
