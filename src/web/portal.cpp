@@ -202,7 +202,18 @@ String joinPage(const String& ssid, util::WifiSecurity sec, bool listed, const c
     prefs.end();
     if (!lastSsid.length()) lastSsid = WIFI_SSID;
   }
-  const int n = WiFi.scanNetworks();  // scan while still in STA mode
+  // Scan while still in STA mode. After a failed join the station is still retrying the
+  // saved network, and a scan then fails (returns < 0) and the list came up empty
+  // (found on hardware): stop the attempt first, and retry a failed scan.
+  WiFi.setAutoReconnect(false);
+  WiFi.disconnect();
+  WiFi.mode(WIFI_STA);
+  int n = WiFi.scanNetworks();
+  for (int attempt = 1; n < 0 && attempt < 3; attempt++) {
+    delay(500);
+    n = WiFi.scanNetworks();
+  }
+  Serial.printf("[setup] Wi-Fi scan: %d network%s\n", n < 0 ? 0 : n, n == 1 ? "" : "s");
   // Setup mode only (this function never returns): the listed networks and their
   // security, so the next step asks for the right password.
   constexpr size_t kScanMax = 30, kShowMax = 15;
@@ -245,9 +256,15 @@ String joinPage(const String& ssid, util::WifiSecurity sec, bool listed, const c
   // Step 1: tap a network (plain buttons and links: works without JavaScript).
   auto root = [&server, &lastSsid]() {
     String html = "<h1>Connect to Wi-Fi</h1>";
-    if (lastSsid.length())
-      html += "<p class=warn>Couldn't join <b>" + htmlEscape(lastSsid) +
-              "</b>. Check the password, or pick another network.</p>";
+    if (lastSsid.length()) {
+      const String name = htmlEscape(lastSsid);
+      html += "<p class=warn>Couldn't join <b>" + name +
+              "</b>. Check the password, or pick another network.</p>"
+              // One tap back to its password page (name filled in), listed or not.
+              "<form action=/join><div class=card><button class=net name=s value='" +
+              name + "'><span>Re-enter the password for " + name +
+              "</span><i aria-hidden=true>&rsaquo;</i></button></div></form>";
+    }
     html += "<p>Tap your home network. The blocker restarts and joins it.</p>";
     if (portalNetworks.length())
       html += "<form action=/join><div class=card>" + portalNetworks + "</div></form>";

@@ -6,6 +6,13 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- After a failed Wi-Fi join (e.g. a wrong password) the setup page showed no networks,
+  only "Other network", so the name had to be typed by hand: the scan ran while the
+  board was still retrying the saved network. It now stops that first, so the list is
+  always filled, and the page offers "Re-enter the password for `<network>`" in one tap.
+
 ## [0.2.2] - 2026-10-18
 
 Fixes for bans and for Wi-Fi setup. Update from the dashboard (_Device → Check for
