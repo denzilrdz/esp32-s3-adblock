@@ -4,6 +4,8 @@
 #include <Preferences.h>
 #include <WiFi.h>
 
+#include <memory>
+
 #include "secrets.h"
 #include "util/wifi_scan.h"
 
@@ -137,21 +139,28 @@ void forgetWifi() {
 [[noreturn]] void runSetupPortal(WebServer& server, const char* apPrefix, const char* hostname) {
   portalHostname = hostname;
   const int n = WiFi.scanNetworks();  // scan while still in STA mode
-  static util::ScanEntry scanned[30], picked[15];
-  size_t count = 0;
-  for (int i = 0; i < n && count < 30; i++, count++) {
-    strncpy(scanned[count].ssid, WiFi.SSID(i).c_str(), util::kMaxSsidLength);
-    scanned[count].ssid[util::kMaxSsidLength] = 0;
-    scanned[count].rssi = WiFi.RSSI(i);
-    scanned[count].secured = WiFi.encryptionType(i) != WIFI_AUTH_OPEN;
-  }
-  WiFi.scanDelete();
-  const size_t shown = util::pickNetworks(scanned, count, picked, 15);
-  portalNetworks = "";
-  for (size_t i = 0; i < shown; i++) {
-    const String name = htmlEscape(picked[i].ssid);
-    portalNetworks += "<label class=net><input type=radio name=s value='" + name + "' required><span>" +
-                      name + "</span>" + (picked[i].secured ? kLock : "") + bars(picked[i].rssi) + "</label>";
+  {
+    // Setup mode only: the scan buffers live on the heap just while the list is built,
+    // instead of taking ~2 KB of RAM for good in normal operation.
+    constexpr size_t kScanMax = 30, kShowMax = 15;
+    std::unique_ptr<util::ScanEntry[]> scanned(new util::ScanEntry[kScanMax]),
+        picked(new util::ScanEntry[kShowMax]);
+    size_t count = 0;
+    for (int i = 0; i < n && count < kScanMax; i++, count++) {
+      strncpy(scanned[count].ssid, WiFi.SSID(i).c_str(), util::kMaxSsidLength);
+      scanned[count].ssid[util::kMaxSsidLength] = 0;
+      scanned[count].rssi = WiFi.RSSI(i);
+      scanned[count].secured = WiFi.encryptionType(i) != WIFI_AUTH_OPEN;
+    }
+    WiFi.scanDelete();
+    const size_t shown = util::pickNetworks(scanned.get(), count, picked.get(), kShowMax);
+    portalNetworks = "";
+    for (size_t i = 0; i < shown; i++) {
+      const String name = htmlEscape(picked[i].ssid);
+      portalNetworks += "<label class=net><input type=radio name=s value='" + name + "' required><span>" +
+                        name + "</span>" + (picked[i].secured ? kLock : "") + bars(picked[i].rssi) +
+                        "</label>";
+    }
   }
   uint8_t mac[6];
   WiFi.macAddress(mac);
