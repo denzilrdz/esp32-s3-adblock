@@ -1,4 +1,4 @@
-// Tests for lib/core/util: CRC-32, byte helpers, civil time conversion.
+// Tests for lib/core/util: CRC-32, byte helpers, civil time conversion, Wi-Fi scan list.
 
 #include <unity.h>
 
@@ -10,6 +10,7 @@
 #include "util/civil_time.h"
 #include "util/crc32.h"
 #include "util/sha256.h"
+#include "util/wifi_scan.h"
 
 void setUp() {}
 void tearDown() {}
@@ -141,6 +142,49 @@ static void test_constant_time_equal() {
   TEST_ASSERT_FALSE(util::constantTimeEqual(a, b, 4));
 }
 
+static util::ScanEntry scan(const char* ssid, int rssi, bool secured = true) {
+  util::ScanEntry e;
+  strncpy(e.ssid, ssid, util::kMaxSsidLength);
+  e.rssi = rssi;
+  e.secured = secured;
+  return e;
+}
+
+static void test_pick_networks_dedupes_sorts_and_drops_hidden() {
+  const util::ScanEntry in[] = {scan("home", -70), scan("", -40),     scan("cafe", -50, false),
+                                scan("home", -45), scan("work", -80), scan("cafe", -60)};
+  util::ScanEntry out[8];
+  const size_t n = util::pickNetworks(in, 6, out, 8);
+  TEST_ASSERT_EQUAL(3, n);
+  TEST_ASSERT_EQUAL_STRING("home", out[0].ssid);
+  TEST_ASSERT_EQUAL(-45, out[0].rssi);  // the strongest access point for the name wins
+  TEST_ASSERT_EQUAL_STRING("cafe", out[1].ssid);
+  TEST_ASSERT_FALSE(out[1].secured);
+  TEST_ASSERT_EQUAL_STRING("work", out[2].ssid);
+}
+
+static void test_pick_networks_keeps_strongest_within_cap() {
+  const util::ScanEntry in[] = {scan("a", -90), scan("b", -60), scan("c", -70), scan("d", -50),
+                                scan("e", -60)};
+  util::ScanEntry out[3];
+  const size_t n = util::pickNetworks(in, 5, out, 3);
+  TEST_ASSERT_EQUAL(3, n);
+  TEST_ASSERT_EQUAL_STRING("d", out[0].ssid);
+  TEST_ASSERT_EQUAL_STRING("b", out[1].ssid);  // ties keep scan order
+  TEST_ASSERT_EQUAL_STRING("e", out[2].ssid);
+  TEST_ASSERT_EQUAL(0, util::pickNetworks(in, 0, out, 3));
+  TEST_ASSERT_EQUAL(0, util::pickNetworks(in, 5, out, 0));
+}
+
+static void test_signal_bars_thresholds() {
+  TEST_ASSERT_EQUAL(4, util::signalBars(-30));
+  TEST_ASSERT_EQUAL(4, util::signalBars(-55));
+  TEST_ASSERT_EQUAL(3, util::signalBars(-56));
+  TEST_ASSERT_EQUAL(3, util::signalBars(-67));
+  TEST_ASSERT_EQUAL(2, util::signalBars(-75));
+  TEST_ASSERT_EQUAL(1, util::signalBars(-76));
+}
+
 int main(int, char**) {
   UNITY_BEGIN();
   RUN_TEST(test_crc32_matches_zlib_check_value);
@@ -153,5 +197,8 @@ int main(int, char**) {
   RUN_TEST(test_hmac_sha256_vectors);
   RUN_TEST(test_pbkdf2_sha256_vectors);
   RUN_TEST(test_constant_time_equal);
+  RUN_TEST(test_pick_networks_dedupes_sorts_and_drops_hidden);
+  RUN_TEST(test_pick_networks_keeps_strongest_within_cap);
+  RUN_TEST(test_signal_bars_thresholds);
   return UNITY_END();
 }
