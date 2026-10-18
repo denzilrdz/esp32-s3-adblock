@@ -6,6 +6,14 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Wi-Fi setup could save a secured network without its password: the board then
+  couldn't join, fell back to setup mode and stopped answering DNS. Setup is now two
+  steps: tap a network, then a page with its name filled in asks for the password
+  (required for secured networks, 8 to 63 characters), and the board checks it before
+  saving. If a saved network doesn't join, the setup page says which one failed.
+
 ## [0.2.1] - 2026-10-18
 
 Two fixes found testing v0.2.0 on hardware. Update from the dashboard (it offers the

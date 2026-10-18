@@ -114,13 +114,21 @@ class PortalPageTest(unittest.TestCase):
         self.assertNotIn("<script", head)
         self.assertEqual(external_loads(head), [])
 
-    def test_no_preselected_network(self):
-        # Regression: with the first network preselected, a hidden SSID typed under
-        # "Other" was saved as that network instead.
+    def test_two_step_join_asks_for_the_password(self):
+        # Regressions: a hidden SSID typed under "Other" was saved as a preselected
+        # network, and a secured network could be saved without a password (it never
+        # joined and took DNS down). Networks are now buttons that open a join page,
+        # which asks for the password, and the board checks it before saving.
         src = (ROOT / "src/web/portal.cpp").read_text(encoding="utf-8")
         loop = src[src.index('portalNetworks = "";') : src.index("uint8_t mac[6];")]
         self.assertNotIn("checked", loop)
-        self.assertIn("other.checked=true", src)
+        self.assertIn("<button class=net name=s", loop)
+        self.assertIn('server.on("/join"', src)
+        self.assertIn('" required minlength=8"', src)
+        save = src[src.index('server.on("/wifisave"') :]
+        self.assertLess(
+            save.index("util::checkCredentials"), save.index('prefs.putString("pass"')
+        )
 
 
 class InstallerSiteTest(unittest.TestCase):

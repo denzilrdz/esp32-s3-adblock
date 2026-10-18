@@ -35,6 +35,40 @@ size_t pickNetworks(const ScanEntry* in, size_t n, ScanEntry* out, size_t cap) {
   return count;
 }
 
+namespace {
+
+bool isHex(char c) {
+  return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+}
+
+bool validPassphrase(const char* p, size_t len) {
+  if (len >= 8 && len <= 63) return true;
+  if (len != 64) return false;
+  for (size_t i = 0; i < len; i++)
+    if (!isHex(p[i])) return false;
+  return true;
+}
+
+}  // namespace
+
+CredentialCheck checkCredentials(size_t ssidLength, const char* password, size_t passwordLength,
+                                 WifiSecurity security) {
+  if (ssidLength == 0 || ssidLength > kMaxSsidLength) return CredentialCheck::kBadName;
+  switch (security) {
+    case WifiSecurity::kOpen: return CredentialCheck::kOk;
+    case WifiSecurity::kOther:
+      if (passwordLength == 0) return CredentialCheck::kNeedPassword;
+      return passwordLength <= kMaxPassphraseLength ? CredentialCheck::kOk : CredentialCheck::kBadPassword;
+    case WifiSecurity::kPsk:
+      if (passwordLength == 0) return CredentialCheck::kNeedPassword;
+      break;
+    case WifiSecurity::kUnknown:
+      if (passwordLength == 0) return CredentialCheck::kOk;  // hidden open network
+      break;
+  }
+  return validPassphrase(password, passwordLength) ? CredentialCheck::kOk : CredentialCheck::kBadPassword;
+}
+
 int signalBars(int rssi) {
   if (rssi >= -55) return 4;
   if (rssi >= -67) return 3;

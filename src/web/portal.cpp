@@ -50,10 +50,10 @@ const char kHead[] PROGMEM =
     "h1{font-size:22px;margin:18px 0 4px}p{color:var(--ink2);margin:0 0 18px}"
     ".card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:6px;margin:0 0 "
     "16px}"
-    ".net{display:flex;align-items:center;gap:12px;min-height:52px;padding:8px "
-    "12px;border-radius:9px;cursor:pointer}"
-    ".net+.net{border-top:1px solid var(--line)}.net:has(input:checked){background:var(--sel)}"
-    ".net input{width:20px;height:20px;margin:0;accent-color:var(--accent);flex:none}"
+    ".net{display:flex;align-items:center;gap:12px;min-height:52px;padding:8px 12px;border-radius:9px;"
+    "cursor:pointer;width:100%;margin:0;border:0;background:none;color:var(--ink);font:inherit;"
+    "font-weight:400;text-align:left;text-decoration:none}.net:hover{background:var(--sel)}"
+    ".net+.net{border-top:1px solid var(--line);border-radius:0}.net i{color:var(--muted);font-style:normal}"
     ".net span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.net "
     "svg{flex:none;color:var(--ink2)}"
     "label.f{display:block;font-size:14px;color:var(--ink2);margin:14px 0 6px}"
@@ -64,7 +64,9 @@ const char kHead[] PROGMEM =
     "button{width:100%;min-height:50px;margin-top:20px;border:0;border-radius:10px;background:var(--accent);"
     "color:var(--accent-ink);font:inherit;font-weight:650;cursor:pointer}"
     ".hint{font-size:13px;color:var(--muted)}ol{padding-left:22px;color:var(--ink2)}li{margin:6px 0}"
-    "a{color:var(--accent)}.ok{color:var(--good)}.err{color:var(--bad)}"
+    "a{color:var(--accent)}.ok{color:var(--good)}.err{color:var(--bad)}input[readonly]{color:var(--ink2)}"
+    ".warn{border-left:4px solid #fab219;background:var(--sel);border-radius:8px;padding:10px 12px;"
+    "color:var(--ink)}"
     "</style><main><div class=brand><svg width=22 height=22 viewBox='0 0 24 24' aria-hidden=true>"
     "<path fill=currentColor d='M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5l-8-3Zm-1.2 13.6L7.4 "
     "12.2l1.4-1.4 "
@@ -136,31 +138,94 @@ void forgetWifi() {
   prefs.end();
 }
 
+namespace {
+
+util::WifiSecurity securityOf(wifi_auth_mode_t mode) {
+  switch (mode) {
+    case WIFI_AUTH_OPEN:
+    case WIFI_AUTH_OWE: return util::WifiSecurity::kOpen;
+    case WIFI_AUTH_WPA_PSK:
+    case WIFI_AUTH_WPA2_PSK:
+    case WIFI_AUTH_WPA_WPA2_PSK:
+    case WIFI_AUTH_WPA3_PSK:
+    case WIFI_AUTH_WPA2_WPA3_PSK:
+    case WIFI_AUTH_WAPI_PSK:
+    case WIFI_AUTH_WPA3_EXT_PSK:
+    case WIFI_AUTH_WPA3_EXT_PSK_MIXED_MODE: return util::WifiSecurity::kPsk;
+    default: return util::WifiSecurity::kOther;  // WEP, enterprise, DPP
+  }
+}
+
+// Step 2: the chosen network's name (filled in, or typed for "Other") and its password.
+String joinPage(const String& ssid, util::WifiSecurity sec, bool listed, const char* error) {
+  using util::WifiSecurity;
+  const String name = htmlEscape(ssid);
+  String h = "<p><a href=/>&lsaquo; All networks</a></p><h1>";
+  h += listed ? "Join &ldquo;" + name + "&rdquo;" : String("Other network");
+  h += "</h1>";
+  if (error) h += "<p class=warn>" + String(error) + "</p>";
+  h += "<form method=POST action=/wifisave><label class=f for=s>Network name</label>";
+  if (listed)
+    h += "<input class=t id=s name=s value='" + name + "' readonly>";
+  else
+    h += "<input class=t id=s name=s value='" + name +
+         "' required maxlength=32 autocapitalize=off autocomplete=off spellcheck=false" +
+         (error ? "" : " autofocus") + ">";
+  if (sec == WifiSecurity::kOpen) {
+    h += "<p class=hint style='margin:10px 0 0'>Open network: no password needed.</p>";
+  } else {
+    h += "<label class=f for=p>Password</label><input class=t id=p name=p type=password maxlength=64 "
+         "autocomplete=current-password";
+    if (sec == WifiSecurity::kPsk) h += " required minlength=8";
+    if (sec == WifiSecurity::kOther) h += " required";
+    if (sec == WifiSecurity::kUnknown) h += " minlength=8";
+    if (listed || error) h += " autofocus";
+    h += "><p class=hint style='margin:6px 0 0'>";
+    h += sec == WifiSecurity::kUnknown ? "Leave empty for an open network; otherwise 8 or more characters."
+                                       : "The Wi-Fi password, 8 or more characters.";
+    h += "</p><label class=show><input type=checkbox onchange=\"p.type=this.checked?'text':'password'\">"
+         "Show password</label>";
+  }
+  return h + "<button>Connect</button></form>";
+}
+
+}  // namespace
+
 [[noreturn]] void runSetupPortal(WebServer& server, const char* apPrefix, const char* hostname) {
+  using util::WifiSecurity;
   portalHostname = hostname;
+  // Shown when a saved network didn't join (wrong password, out of range).
+  String lastSsid;
+  if (hasCredentials()) {
+    prefs.begin("wifi", true);
+    lastSsid = prefs.getString("ssid", "");
+    prefs.end();
+    if (!lastSsid.length()) lastSsid = WIFI_SSID;
+  }
   const int n = WiFi.scanNetworks();  // scan while still in STA mode
+  // Setup mode only (this function never returns): the listed networks and their
+  // security, so the next step asks for the right password.
+  constexpr size_t kScanMax = 30, kShowMax = 15;
+  std::unique_ptr<util::ScanEntry[]> picked(new util::ScanEntry[kShowMax]);
+  size_t shown = 0;
   {
-    // Setup mode only: the scan buffers live on the heap just while the list is built,
-    // instead of taking ~2 KB of RAM for good in normal operation.
-    constexpr size_t kScanMax = 30, kShowMax = 15;
-    std::unique_ptr<util::ScanEntry[]> scanned(new util::ScanEntry[kScanMax]),
-        picked(new util::ScanEntry[kShowMax]);
+    std::unique_ptr<util::ScanEntry[]> scanned(new util::ScanEntry[kScanMax]);
     size_t count = 0;
     for (int i = 0; i < n && count < kScanMax; i++, count++) {
       strncpy(scanned[count].ssid, WiFi.SSID(i).c_str(), util::kMaxSsidLength);
       scanned[count].ssid[util::kMaxSsidLength] = 0;
       scanned[count].rssi = WiFi.RSSI(i);
-      scanned[count].secured = WiFi.encryptionType(i) != WIFI_AUTH_OPEN;
+      scanned[count].security = securityOf(WiFi.encryptionType(i));
     }
     WiFi.scanDelete();
-    const size_t shown = util::pickNetworks(scanned.get(), count, picked.get(), kShowMax);
-    portalNetworks = "";
-    for (size_t i = 0; i < shown; i++) {
-      const String name = htmlEscape(picked[i].ssid);
-      portalNetworks += "<label class=net><input type=radio name=s value='" + name + "' required><span>" +
-                        name + "</span>" + (picked[i].secured ? kLock : "") + bars(picked[i].rssi) +
-                        "</label>";
-    }
+    shown = util::pickNetworks(scanned.get(), count, picked.get(), kShowMax);
+  }
+  portalNetworks = "";
+  for (size_t i = 0; i < shown; i++) {
+    const String name = htmlEscape(picked[i].ssid);
+    portalNetworks += "<button class=net name=s value='" + name + "'><span>" + name + "</span>" +
+                      (picked[i].security != WifiSecurity::kOpen ? kLock : "") + bars(picked[i].rssi) +
+                      "<i aria-hidden=true>&rsaquo;</i></button>";
   }
   uint8_t mac[6];
   WiFi.macAddress(mac);
@@ -171,39 +236,54 @@ void forgetWifi() {
   const IPAddress apIP = WiFi.softAPIP();
   dnsPortal.start(53, "*", apIP);  // catch-all -> phones pop the captive portal
 
-  auto root = [&server]() {
-    String html =
-        "<h1>Connect to Wi-Fi</h1><p>Pick your home network and enter its password. The blocker restarts "
-        "and joins it.</p><form method=POST action=/wifisave><div class=card>";
-    html += portalNetworks;
-    // Nothing is preselected: typing a name selects "Other", so a hidden network can't be
-    // saved as the first listed one by mistake (without JS, `required` makes them pick).
-    html += "<label class=net><input type=radio name=s value='' id=other";
-    html += portalNetworks.length() ? "" : " checked";
+  // A listed network, or nullptr for one typed by hand.
+  auto find = [&picked, &shown](const String& ssid) -> const util::ScanEntry* {
+    for (size_t i = 0; i < shown; i++)
+      if (ssid == picked[i].ssid) return &picked[i];
+    return nullptr;
+  };
+  // Step 1: tap a network (plain buttons and links: works without JavaScript).
+  auto root = [&server, &lastSsid]() {
+    String html = "<h1>Connect to Wi-Fi</h1>";
+    if (lastSsid.length())
+      html += "<p class=warn>Couldn't join <b>" + htmlEscape(lastSsid) +
+              "</b>. Check the password, or pick another network.</p>";
+    html += "<p>Tap your home network. The blocker restarts and joins it.</p>";
+    if (portalNetworks.length())
+      html += "<form action=/join><div class=card>" + portalNetworks + "</div></form>";
+    else
+      html += "<p class=warn>No networks found. Move closer to the router, or enter the name by hand.</p>";
     html +=
-        "><span>Other network&hellip;</span></label></div>"
-        "<label class=f for=o>Network name <span class=hint>(only for &ldquo;Other&rdquo;)</span></label>"
-        "<input class=t id=o name=o maxlength=32 autocapitalize=off autocomplete=off spellcheck=false "
-        "oninput='if(this.value)other.checked=true'>"
-        "<label class=f for=p>Password</label>"
-        "<input class=t id=p name=p type=password maxlength=64 autocomplete=current-password>"
-        "<label class=show><input type=checkbox onchange=\"p.type=this.checked?'text':'password'\">"
-        "Show password</label><button>Connect</button></form>"
-        "<p class=hint style=margin-top:18px>Not listed? Move closer to the router, or choose Other and type "
-        "the name. Only 2.4 GHz networks work.</p>";
+        "<div class=card><a class=net href=/join><span>Other network&hellip;</span><i "
+        "aria-hidden=true>&rsaquo;</i></a></div>"
+        "<p class=hint>Only 2.4 GHz networks work. Hidden network? Use Other.</p>";
     sendPage(server, 200, html);
   };
   server.on("/", root);
-  server.on("/wifisave", HTTP_POST, [&server]() {
-    String ss = server.arg("s");
-    if (!ss.length()) ss = server.arg("o");  // "Other network"
-    const String pw = server.arg("p");
-    if (!ss.length() || ss.length() > 32 || pw.length() > 64) {
-      sendPage(server, 400,
-               "<h1 class=err>Check the network name</h1><p>Pick a network, or choose Other and type its "
-               "name (up to 32 characters). Passwords are up to 64 characters.</p><a href=/>Back</a>");
+  server.on("/join", HTTP_GET, [&server, &find]() {
+    const String ss = server.arg("s");
+    const util::ScanEntry* e = ss.length() ? find(ss) : nullptr;
+    sendPage(server, 200, joinPage(ss, e ? e->security : WifiSecurity::kUnknown, e != nullptr, nullptr));
+  });
+  server.on("/wifisave", HTTP_POST, [&server, &find]() {
+    const String ss = server.arg("s");
+    String pw = server.arg("p");
+    const util::ScanEntry* e = find(ss);
+    const WifiSecurity sec = e ? e->security : WifiSecurity::kUnknown;
+    const char* error = nullptr;
+    switch (util::checkCredentials(ss.length(), pw.c_str(), pw.length(), sec)) {
+      case util::CredentialCheck::kOk: break;
+      case util::CredentialCheck::kBadName: error = "Enter the network name (up to 32 characters)."; break;
+      case util::CredentialCheck::kNeedPassword: error = "This network needs its password."; break;
+      case util::CredentialCheck::kBadPassword:
+        error = "Wi-Fi passwords are 8 to 63 characters (or a 64-digit hex key).";
+        break;
+    }
+    if (error) {  // nothing saved: ask again, keeping the name
+      sendPage(server, 400, joinPage(ss, sec, e != nullptr, error));
       return;
     }
+    if (sec == WifiSecurity::kOpen) pw = "";
     prefs.begin("wifi", false);
     prefs.putString("ssid", ss);
     prefs.putString("pass", pw);

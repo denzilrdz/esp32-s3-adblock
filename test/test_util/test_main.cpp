@@ -143,10 +143,11 @@ static void test_constant_time_equal() {
 }
 
 static util::ScanEntry scan(const char* ssid, int rssi, bool secured = true) {
+  using util::WifiSecurity;
   util::ScanEntry e;
   strncpy(e.ssid, ssid, util::kMaxSsidLength);
   e.rssi = rssi;
-  e.secured = secured;
+  e.security = secured ? WifiSecurity::kPsk : WifiSecurity::kOpen;
   return e;
 }
 
@@ -159,7 +160,7 @@ static void test_pick_networks_dedupes_sorts_and_drops_hidden() {
   TEST_ASSERT_EQUAL_STRING("home", out[0].ssid);
   TEST_ASSERT_EQUAL(-45, out[0].rssi);  // the strongest access point for the name wins
   TEST_ASSERT_EQUAL_STRING("cafe", out[1].ssid);
-  TEST_ASSERT_FALSE(out[1].secured);
+  TEST_ASSERT_EQUAL(static_cast<int>(util::WifiSecurity::kOpen), static_cast<int>(out[1].security));
   TEST_ASSERT_EQUAL_STRING("work", out[2].ssid);
 }
 
@@ -185,6 +186,37 @@ static void test_signal_bars_thresholds() {
   TEST_ASSERT_EQUAL(1, util::signalBars(-76));
 }
 
+static int check(size_t ssidLen, const char* pw, util::WifiSecurity sec) {
+  return static_cast<int>(util::checkCredentials(ssidLen, pw, strlen(pw), sec));
+}
+
+static void test_check_credentials() {
+  using util::CredentialCheck;
+  using util::WifiSecurity;
+  const int ok = static_cast<int>(CredentialCheck::kOk),
+            need = static_cast<int>(CredentialCheck::kNeedPassword),
+            bad = static_cast<int>(CredentialCheck::kBadPassword),
+            name = static_cast<int>(CredentialCheck::kBadName);
+  const std::string hex64(64, 'a'), notHex = std::string(63, 'a') + "g", tooLong(65, 'a');
+  // Regression: a secured network saved with an empty password never joined and took DNS down.
+  TEST_ASSERT_EQUAL(need, check(4, "", WifiSecurity::kPsk));
+  TEST_ASSERT_EQUAL(bad, check(4, "short", WifiSecurity::kPsk));
+  TEST_ASSERT_EQUAL(ok, check(4, "12345678", WifiSecurity::kPsk));
+  TEST_ASSERT_EQUAL(ok, check(4, std::string(63, 'x').c_str(), WifiSecurity::kPsk));
+  TEST_ASSERT_EQUAL(ok, check(4, hex64.c_str(), WifiSecurity::kPsk));
+  TEST_ASSERT_EQUAL(bad, check(4, notHex.c_str(), WifiSecurity::kPsk));
+  TEST_ASSERT_EQUAL(bad, check(4, tooLong.c_str(), WifiSecurity::kPsk));
+  TEST_ASSERT_EQUAL(ok, check(4, "", WifiSecurity::kOpen));
+  TEST_ASSERT_EQUAL(ok, check(4, "ignored", WifiSecurity::kOpen));
+  TEST_ASSERT_EQUAL(need, check(4, "", WifiSecurity::kOther));
+  TEST_ASSERT_EQUAL(ok, check(4, "wep13", WifiSecurity::kOther));
+  TEST_ASSERT_EQUAL(ok, check(4, "", WifiSecurity::kUnknown));
+  TEST_ASSERT_EQUAL(bad, check(4, "short", WifiSecurity::kUnknown));
+  TEST_ASSERT_EQUAL(ok, check(4, "longenough", WifiSecurity::kUnknown));
+  TEST_ASSERT_EQUAL(name, check(0, "12345678", WifiSecurity::kPsk));
+  TEST_ASSERT_EQUAL(name, check(33, "12345678", WifiSecurity::kPsk));
+}
+
 int main(int, char**) {
   UNITY_BEGIN();
   RUN_TEST(test_crc32_matches_zlib_check_value);
@@ -200,5 +232,6 @@ int main(int, char**) {
   RUN_TEST(test_pick_networks_dedupes_sorts_and_drops_hidden);
   RUN_TEST(test_pick_networks_keeps_strongest_within_cap);
   RUN_TEST(test_signal_bars_thresholds);
+  RUN_TEST(test_check_credentials);
   return UNITY_END();
 }
