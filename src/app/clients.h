@@ -7,6 +7,8 @@
 #include <cstdint>
 #include <vector>
 
+#include "clients/ban_list.h"
+#include "clients/pause_timer.h"
 #include "platform/rtos.h"
 
 namespace app {
@@ -23,7 +25,9 @@ struct ClientInfo {
 class ClientTable {
  public:
   static constexpr int kMaxClients = 96;
-  static constexpr int kMaxBans = 32;
+  static constexpr int kMaxBans = clients::BanList::kMax;
+
+  enum class BanResult { kBanned, kUnbanned, kListFull };
 
   void loadBans();  // from /banned.txt
 
@@ -34,7 +38,7 @@ class ClientTable {
   bool blockingOn();
 
   // Web / maintenance -------------------------------------------------------------
-  bool toggleBan(uint32_t ip);
+  BanResult toggleBan(uint32_t ip);
   void pause(uint32_t seconds);  // 0 = until resumed
   void resume();
   uint32_t resumeInSeconds();
@@ -51,16 +55,13 @@ class ClientTable {
     uint8_t macTries = 0;
   };
   Entry* find(uint32_t ip, bool create);  // caller holds mutex_
-  bool isBanListed(uint32_t ip) const;
-  void saveBans();
+  void saveBans();                        // caller holds mutex_
 
   platform::Mutex mutex_;
   Entry entries_[kMaxClients];
   int count_ = 0;
-  uint32_t bans_[kMaxBans] = {0};
-  int banCount_ = 0;
-  bool blockingOn_ = true;
-  uint32_t resumeAt_ = 0;  // millis(); 0 = paused indefinitely
+  clients::BanList bans_;  // the only source of truth for bans (persisted)
+  clients::PauseTimer pause_;
   uint32_t totalBlocked_ = 0;
   uint32_t totalAllowed_ = 0;
 };

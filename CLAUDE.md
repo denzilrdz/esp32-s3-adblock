@@ -51,7 +51,7 @@ port troubleshooting: skill `build-flash`.
 
 ```
 lib/core/      portable C++17 logic, NO Arduino/IDF headers (tested natively)
-  dns/ blocklist/ cache/ upstream/ sched/ update/ config/ auth/ hal/ util/
+  dns/ blocklist/ cache/ upstream/ sched/ update/ config/ auth/ clients/ hal/ util/
 src/           ESP32-only: main.cpp (composition root), platform/ (HAL impls: TLS,
                transports, LittleFS, NVS, HTTP), tasks/ (DNS service tasks),
                app/ (blocklist manager, client table, DNS policy),

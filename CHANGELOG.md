@@ -8,6 +8,16 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- A banned device could be silently unbanned: after a restart, changing any ban
+  rewrote the list from the devices seen since boot, dropping banned devices that were
+  offline. The ban list is now kept on its own and only changes when you ban or unban.
+- A ban didn't apply once the board had seen 96 devices (the client table was full),
+  and banning a device that wasn't in the table answered "unbanned". Bans now apply
+  regardless, and a full ban list (32) says so.
+- The dashboard's client table no longer reorders itself while you use it (it was
+  sorted by activity and redrawn every few seconds, so a Ban click could land on the
+  wrong device). Clients are listed by IP.
+
 - Wi-Fi setup could save a secured network without its password: the board then
   couldn't join, fell back to setup mode and stopped answering DNS. Setup is now two
   steps: tap a network, then a page with its name filled in asks for the password

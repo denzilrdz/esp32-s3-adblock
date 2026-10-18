@@ -1,6 +1,7 @@
 #include "app/clients.h"
 
 #include <LittleFS.h>
+#include <esp_timer.h>
 #include <lwip/etharp.h>
 #include <lwip/netif.h>
 #include <lwip/tcpip.h>
@@ -12,6 +13,10 @@ namespace app {
 namespace {
 
 constexpr const char* kBanFile = "/banned.txt";
+
+uint64_t nowMs() {
+  return static_cast<uint64_t>(esp_timer_get_time() / 1000);
+}
 
 // ARP lookups must run inside lwIP's thread (tcpip_callback); results are copied
 // back by the maintenance task. No application lock is taken in the lwIP thread.
@@ -49,51 +54,42 @@ ClientTable::Entry* ClientTable::find(uint32_t ip, bool create) {
   Entry& e = entries_[count_++];
   e = Entry{};
   e.info.ip = ip;
-  e.info.banned = isBanListed(ip);
+  e.info.banned = bans_.contains(ip);
   e.macPending = true;
   return &e;
 }
 
-bool ClientTable::isBanListed(uint32_t ip) const {
-  for (int i = 0; i < banCount_; i++)
-    if (bans_[i] == ip) return true;
-  return false;
-}
-
 void ClientTable::loadBans() {
   platform::LockGuard g(mutex_);
-  banCount_ = 0;
   File f = LittleFS.open(kBanFile, "r");
   if (!f) return;
-  while (f.available() && banCount_ < kMaxBans) {
-    String l = f.readStringUntil('\n');
-    l.trim();
-    IPAddress ip;
-    if (l.length() && ip.fromString(l)) bans_[banCount_++] = static_cast<uint32_t>(ip);
-  }
+  char buf[clients::BanList::kMaxTextBytes + 64];  // a little slack for CR/spaces
+  const size_t n = f.read(reinterpret_cast<uint8_t*>(buf), sizeof(buf));
   f.close();
+  bans_.parse(buf, n);
+  for (int i = 0; i < count_; i++) entries_[i].info.banned = bans_.contains(entries_[i].info.ip);
 }
 
 void ClientTable::saveBans() {
-  banCount_ = 0;
-  for (int i = 0; i < count_ && banCount_ < kMaxBans; i++)
-    if (entries_[i].info.banned) bans_[banCount_++] = entries_[i].info.ip;
+  char buf[clients::BanList::kMaxTextBytes];
+  const size_t n = bans_.serialize(buf, sizeof(buf));
   File f = LittleFS.open(kBanFile, "w");
   if (!f) return;
-  for (int i = 0; i < banCount_; i++) f.println(IPAddress(bans_[i]).toString());
+  f.write(reinterpret_cast<const uint8_t*>(buf), n);
   f.close();
 }
 
 bool ClientTable::checkBanned(uint32_t ip) {
   platform::LockGuard g(mutex_);
+  const bool banned = bans_.contains(ip);  // also when the client table is full
   Entry* e = find(ip, true);
-  if (!e) return false;
-  e->info.lastSeenMs = millis();
-  if (e->info.banned) {
-    e->info.blocked++;
-    totalBlocked_++;
+  if (e) {
+    e->info.lastSeenMs = millis();
+    e->info.banned = banned;
+    if (banned) e->info.blocked++;
   }
-  return e->info.banned;
+  if (banned) totalBlocked_++;
+  return banned;
 }
 
 void ClientTable::record(uint32_t ip, bool blocked) {
@@ -110,43 +106,37 @@ void ClientTable::record(uint32_t ip, bool blocked) {
 
 bool ClientTable::blockingOn() {
   platform::LockGuard g(mutex_);
-  return blockingOn_;
+  return pause_.blockingOn(nowMs());
 }
 
-bool ClientTable::toggleBan(uint32_t ip) {
+ClientTable::BanResult ClientTable::toggleBan(uint32_t ip) {
   platform::LockGuard g(mutex_);
-  Entry* e = find(ip, true);
-  if (!e) return false;
-  e->info.banned = !e->info.banned;
+  const bool ban = !bans_.contains(ip);
+  if (ban && !bans_.add(ip)) return BanResult::kListFull;
+  if (!ban) bans_.remove(ip);
+  if (Entry* e = find(ip, false)) e->info.banned = ban;
   saveBans();
-  return e->info.banned;
+  return ban ? BanResult::kBanned : BanResult::kUnbanned;
 }
 
 void ClientTable::pause(uint32_t seconds) {
   platform::LockGuard g(mutex_);
-  blockingOn_ = false;
-  resumeAt_ = seconds ? (millis() + seconds * 1000UL) | 1 : 0;
+  pause_.pause(nowMs(), seconds);
 }
 
 void ClientTable::resume() {
   platform::LockGuard g(mutex_);
-  blockingOn_ = true;
-  resumeAt_ = 0;
+  pause_.resume();
 }
 
 uint32_t ClientTable::resumeInSeconds() {
   platform::LockGuard g(mutex_);
-  if (blockingOn_ || !resumeAt_) return 0;
-  const int32_t left = static_cast<int32_t>(resumeAt_ - millis());
-  return left > 0 ? static_cast<uint32_t>(left) / 1000 : 0;
+  return pause_.resumeInSeconds(nowMs());
 }
 
 void ClientTable::tick() {
   platform::LockGuard g(mutex_);
-  if (!blockingOn_ && resumeAt_ && static_cast<int32_t>(millis() - resumeAt_) >= 0) {
-    blockingOn_ = true;
-    resumeAt_ = 0;
-  }
+  pause_.blockingOn(nowMs());  // ends a timed pause that is due
 }
 
 void ClientTable::resolvePendingMacs() {

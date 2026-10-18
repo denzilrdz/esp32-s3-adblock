@@ -102,6 +102,8 @@ lib/core/                     portable C++17, unit-tested natively (pio test -e 
   update/     updater.{h,cpp}     download -> validate -> swap, boot recovery
   config/     config.{h,cpp}      settings, validation, NVS, upstream chain builder
   auth/       auth.{h,cpp}        password hashing, setup code, lockout, Host/Origin
+  clients/    ban_list.{h,cpp}    banned IPs, the only source of truth (/banned.txt)
+              pause_timer.h       pause blocking for N s or until resumed (64-bit ms)
   hal/        clock.h, random.h, kv_store.h, file_system.h, http_client.h,
               logger.h            hardware-abstraction interfaces
   util/       crc32, sha256 (+HMAC, PBKDF2), civil_time, bytes
@@ -114,7 +116,8 @@ src/                          ESP32 only (Arduino core 3.3.12 / ESP-IDF 5.5)
               tls_stream.* (mbedTLS + lwIP), transports.* (DoT, DoH, UDP)
   tasks/      dns_service.*       dns_io, dns_tcp and dns_up tasks
   app/        blocklist_manager.* list install/update, rules, status
-              clients.*           client table, bans, pause, MAC lookups
+              clients.*           client table (stats, MACs) using clients::BanList
+                                  and PauseTimer; bans apply even if the table is full
               app_policy.h        the DNS policy used by the tasks
   web/        dashboard.*         REST API + security checks
               page.h              dashboard page (design rules: skill web-ui)

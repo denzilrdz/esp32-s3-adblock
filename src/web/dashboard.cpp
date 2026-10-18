@@ -357,8 +357,13 @@ void Dashboard::handleBan() {
     sendText(400, "invalid IP");
     return;
   }
-  const bool banned = ctx_.clients->toggleBan(static_cast<uint32_t>(ip));
-  sendText(200, banned ? "banned" : "unbanned");
+  switch (ctx_.clients->toggleBan(static_cast<uint32_t>(ip))) {
+    case app::ClientTable::BanResult::kBanned: sendText(200, "banned"); break;
+    case app::ClientTable::BanResult::kUnbanned: sendText(200, "unbanned"); break;
+    case app::ClientTable::BanResult::kListFull:
+      sendText(409, "ban list full (" + String(app::ClientTable::kMaxBans) + "): unban a client first");
+      break;
+  }
 }
 
 void Dashboard::handlePause() {
