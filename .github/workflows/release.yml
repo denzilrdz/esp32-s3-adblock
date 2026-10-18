@@ -113,7 +113,8 @@ jobs:
       - name: Assemble installer site
         run: |
           v="${GITHUB_REF_NAME}"
-          cp installer/index.html site/
+          sed "s/__VERSION__/${v#v}/g" installer/index.html > site/index.html
+          cp installer/404.html site/
           cp "dist/factory-esp32s3-${v}.bin" site/factory-esp32s3.bin
           sed "s/__VERSION__/${v#v}/" installer/manifest.json > site/manifest.json
           # Dashboard "Check for updates": the browser fetches these from Pages (release

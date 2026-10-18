@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Not found · AdBlock</title>
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'"
+    />
+    <style>
+      :root {
+        --page: #f6f6f4;
+        --ink: #0b0b0b;
+        --ink2: #52514e;
+        --accent: #256abf;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --page: #0d0d0d;
+          --ink: #f0efec;
+          --ink2: #c3c2b7;
+          --accent: #3987e5;
+        }
+      }
+
+      body {
+        margin: 0;
+        background: var(--page);
+        color: var(--ink);
+        font:
+          16px/1.55 system-ui,
+          -apple-system,
+          "Segoe UI",
+          sans-serif;
+      }
+
+      main {
+        max-width: 520px;
+        margin: 0 auto;
+        padding: 72px 16px;
+      }
+
+      p {
+        color: var(--ink2);
+      }
+
+      a {
+        color: var(--accent);
+      }
+    </style>
+  </head>
+
+  <body>
+    <main>
+      <h1>Page not found</h1>
+      <p>This site only hosts the AdBlock web installer and the files the dashboard downloads for updates.</p>
+      <p><a href="/esp32-s3-adblock/">Go to the installer</a></p>
+    </main>
+  </body>
+</html>

@@ -3,9 +3,13 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="description" content="Flash the ESP32-S3 DNS ad blocker from your browser." />
     <title>AdBlock Installer</title>
     <!-- Scripts only from this site: esp-web-tools is vendored (and hash-checked) by the
-     release workflow, so a CDN compromise cannot change what this page flashes. -->
+     release workflow, so a CDN compromise cannot change what this page flashes.
+     No inline script either: release.yml stamps __VERSION__ into this file.
+     Design rules: .claude/skills/web-ui. -->
     <meta
       http-equiv="Content-Security-Policy"
       content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'"
@@ -13,12 +17,35 @@
     <script type="module" src="vendor/esp-web-tools/install-button.js"></script>
     <style>
       :root {
-        --bg: #0d1117;
-        --card: #161b22;
-        --line: #30363d;
-        --fg: #c9d1d9;
-        --dim: #8b949e;
-        --ok: #3fb950;
+        color-scheme: light;
+        --page: #f6f6f4;
+        --surface: #fcfcfb;
+        --raised: #f0efec;
+        --line: #e1e0d9;
+        --ink: #0b0b0b;
+        --ink2: #52514e;
+        --muted: #76746e;
+        --accent: #256abf;
+        --accent-ink: #fff;
+        --good: #0ca30c;
+        --warn-wash: #fdf3dc;
+        --warn: #fab219;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          color-scheme: dark;
+          --page: #0d0d0d;
+          --surface: #1a1a19;
+          --raised: #242423;
+          --line: #2c2c2a;
+          --ink: #f0efec;
+          --ink2: #c3c2b7;
+          --muted: #9a988f;
+          --accent: #3987e5;
+          --accent-ink: #06121f;
+          --warn-wash: #2b2210;
+        }
       }
 
       * {
@@ -27,94 +54,388 @@
 
       body {
         margin: 0;
-        background: var(--bg);
-        color: var(--fg);
+        background: var(--page);
+        color: var(--ink);
         font:
-          16px/1.5 system-ui,
+          16px/1.55 system-ui,
+          -apple-system,
+          "Segoe UI",
           sans-serif;
       }
 
       main {
-        max-width: 640px;
-        margin: 40px auto;
-        padding: 0 16px;
-      }
-
-      h1 {
-        font-size: 24px;
-      }
-
-      h1 b {
-        color: var(--ok);
-      }
-
-      .card {
-        background: var(--card);
-        border: 1px solid var(--line);
-        border-radius: 10px;
-        padding: 18px 20px;
-        margin: 18px 0;
-      }
-
-      ol {
-        padding-left: 20px;
-      }
-
-      code {
-        background: #21262d;
-        padding: 1px 5px;
-        border-radius: 4px;
-      }
-
-      .dim {
-        color: var(--dim);
+        max-width: 720px;
+        margin: 0 auto;
+        padding: 40px 16px 56px;
       }
 
       a {
-        color: #58a6ff;
+        color: var(--accent);
+      }
+
+      code {
+        background: var(--raised);
+        padding: 1px 6px;
+        border-radius: 5px;
+        font-size: 0.9em;
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-weight: 650;
+        font-size: 18px;
+      }
+
+      .brand svg {
+        color: var(--good);
+      }
+
+      h1 {
+        font-size: clamp(28px, 6vw, 38px);
+        line-height: 1.15;
+        margin: 22px 0 10px;
+      }
+
+      h2 {
+        font-size: 18px;
+        margin: 0 0 12px;
+      }
+
+      .lead {
+        color: var(--ink2);
+        font-size: 17px;
+        margin: 0 0 18px;
+      }
+
+      .chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin: 0 0 26px;
+        padding: 0;
+        list-style: none;
+      }
+
+      .chips li {
+        border: 1px solid var(--line);
+        background: var(--surface);
+        border-radius: 99px;
+        padding: 3px 12px;
+        font-size: 13px;
+        color: var(--ink2);
+      }
+
+      .card {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 22px;
+        margin: 0 0 18px;
+      }
+
+      .install {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 14px 22px;
+        align-items: center;
+        justify-content: space-between;
+      }
+
+      .install p {
+        margin: 0;
+        color: var(--ink2);
+        flex: 1 1 260px;
+      }
+
+      .install b {
+        color: var(--ink);
+      }
+
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 48px;
+        padding: 0 22px;
+        border: 0;
+        border-radius: 10px;
+        background: var(--accent);
+        color: var(--accent-ink);
+        font: inherit;
+        font-weight: 650;
+        cursor: pointer;
+      }
+
+      .btn:focus-visible,
+      a:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+      }
+
+      .note {
+        display: block;
+        flex-basis: 100%;
+        background: var(--warn-wash);
+        border-left: 4px solid var(--warn);
+        border-radius: 8px;
+        padding: 10px 14px;
+        font-size: 14px;
+      }
+
+      /* Before esp-web-tools loads, every slot shows; it reveals the right one itself. */
+      esp-web-install-button:not(:defined) [slot="unsupported"],
+      esp-web-install-button:not(:defined) [slot="not-allowed"] {
+        display: none;
+      }
+
+      .note + .note {
+        margin-top: 10px;
+      }
+
+      ol.steps {
+        list-style: none;
+        counter-reset: s;
+        margin: 0;
+        padding: 0;
+      }
+
+      ol.steps > li {
+        counter-increment: s;
+        position: relative;
+        padding: 0 0 18px 46px;
+      }
+
+      ol.steps > li:last-child {
+        padding-bottom: 0;
+      }
+
+      ol.steps > li::before {
+        content: counter(s);
+        position: absolute;
+        left: 0;
+        top: -2px;
+        width: 30px;
+        height: 30px;
+        border-radius: 50%;
+        display: grid;
+        place-items: center;
+        background: var(--raised);
+        border: 1px solid var(--line);
+        font-weight: 650;
+        font-size: 14px;
+      }
+
+      ol.steps > li:not(:last-child)::after {
+        content: "";
+        position: absolute;
+        left: 15px;
+        top: 32px;
+        bottom: 2px;
+        width: 1px;
+        background: var(--line);
+      }
+
+      ol.steps li > b {
+        display: block;
+      }
+
+      ol.steps li > span {
+        color: var(--ink2);
+      }
+
+      details {
+        border-top: 1px solid var(--line);
+        padding: 12px 0 0;
+        margin-top: 4px;
+      }
+
+      details + details {
+        margin-top: 12px;
+      }
+
+      summary {
+        cursor: pointer;
+        font-weight: 600;
+      }
+
+      details ul {
+        color: var(--ink2);
+        padding-left: 20px;
+        margin: 10px 0 0;
+      }
+
+      details li {
+        margin: 6px 0;
+      }
+
+      .grid {
+        display: grid;
+        gap: 14px;
+        grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr));
+      }
+
+      .grid a {
+        display: block;
+        text-decoration: none;
+        color: inherit;
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 14px 16px;
+      }
+
+      .grid a:hover {
+        border-color: var(--accent);
+      }
+
+      .grid b {
+        color: var(--accent);
+      }
+
+      .grid span {
+        display: block;
+        color: var(--ink2);
+        font-size: 14px;
+      }
+
+      footer {
+        color: var(--muted);
+        font-size: 13px;
+        margin-top: 30px;
       }
     </style>
   </head>
 
   <body>
     <main>
-      <h1>&#128737; <b>AdBlock</b> web installer</h1>
-      <p>
-        Flash the DNS ad blocker onto an <b>ESP32-S3 with 16 MB flash and 8 MB octal PSRAM</b> (DevKitC-1
-        N16R8) straight from the browser. Works in Chrome or Edge on a desktop (Web Serial).
+      <div class="brand">
+        <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true">
+          <path
+            fill="currentColor"
+            d="M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5l-8-3Zm-1.2 13.6L7.4 12.2l1.4-1.4 2 2 4.4-4.4 1.4 1.4-5.8 5.8Z"
+          />
+        </svg>
+        AdBlock
+      </div>
+      <h1>Block ads for every device on your network</h1>
+      <p class="lead">
+        Flash the DNS ad blocker onto an ESP32-S3 straight from your browser. It blocks ads and trackers for
+        every device and forwards everything else over encrypted DNS.
       </p>
-      <div class="card">
-        <ol>
+      <ul class="chips" aria-label="Requirements">
+        <li>Version __VERSION__</li>
+        <li>ESP32-S3 DevKitC-1 N16R8</li>
+        <li>16 MB flash · 8 MB PSRAM</li>
+        <li>Chrome or Edge on a desktop</li>
+      </ul>
+
+      <section class="card install" aria-label="Install">
+        <p>
+          <b>Connect the board, then click Install.</b> Pick the serial port; erasing the device is
+          recommended for a first install. Takes about a minute.
+        </p>
+        <esp-web-install-button manifest="manifest.json">
+          <button slot="activate" class="btn">
+            <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                fill="currentColor"
+                d="M11 3h2v10l3.5-3.5 1.4 1.4L12 16.8l-5.9-5.9 1.4-1.4L11 13V3ZM5 19h14v2H5z"
+              />
+            </svg>
+            Install AdBlock
+          </button>
+          <span slot="unsupported" class="note"
+            >This browser can't talk to USB serial devices. Open this page in <b>Chrome</b> or <b>Edge</b> on
+            a desktop (Web Serial).</span
+          >
+          <span slot="not-allowed" class="note"
+            >Web Serial needs a secure page: open this installer over <b>https://</b>.</span
+          >
+        </esp-web-install-button>
+      </section>
+
+      <section class="card">
+        <h2>Steps</h2>
+        <ol class="steps">
           <li>
-            Connect the board with a data USB cable (on the DevKitC-1, use the port marked <code>UART</code>).
+            <b>Plug in the board</b>
+            <span>Use a data USB cable and, on the DevKitC-1, the port marked <code>UART</code>.</span>
           </li>
           <li>
-            Click the button and pick the serial port. Erasing the device is recommended for a first install.
+            <b>Install</b>
+            <span>Click <i>Install AdBlock</i>, pick the serial port and wait for it to finish.</span>
           </li>
           <li>
-            When it finishes, join the <code>S3-AdBlock-XXXX</code> Wi-Fi from a phone and pick your network.
+            <b>Join it to your Wi-Fi</b>
+            <span
+              >From a phone, join the <code>S3-AdBlock-XXXX</code> network. A setup page opens; pick your
+              network and enter its password.</span
+            >
           </li>
           <li>
-            Read the one-time dashboard setup code from the board's log: click the button again, pick the
-            port, then <b>Logs &amp; Console</b> (press <b>Reset Device</b> there if it stays empty). Don't
-            choose <i>Install</i> again.
+            <b>Get the dashboard setup code</b>
+            <span
+              >Click the button again, pick the port, then <b>Logs &amp; Console</b> (press
+              <b>Reset Device</b> there if it stays empty). Don't choose <i>Install</i> again. Open
+              <code>http://s3adblock.local</code> and set a password with that code.</span
+            >
+          </li>
+          <li>
+            <b>Point your router's DNS at the board</b>
+            <span
+              >See the
+              <a href="https://github.com/denzilrdz/esp32-s3-adblock/blob/main/docs/ROUTER_SETUP.md"
+                >router setup guide</a
+              >, including the IPv6 caveat.</span
+            >
           </li>
         </ol>
-        <p class="dim">
-          No serial port appears? Use a data cable (not charge-only) and, if the board's red LED stays off or
-          blinks, turn the USB-C plug over: some boards only work one way round. If it can't connect, hold
-          <b>BOOT</b>, tap <b>RST</b>, release <b>BOOT</b> and try again.
-        </p>
-        <esp-web-install-button manifest="manifest.json"></esp-web-install-button>
-      </div>
-      <p class="dim">
-        Then point your router's DNS at the device. See the
-        <a href="https://github.com/denzilrdz/esp32-s3-adblock#readme">README</a> and the
-        <a href="https://github.com/denzilrdz/esp32-s3-adblock/blob/main/docs/ROUTER_SETUP.md"
-          >router setup guide</a
+      </section>
+
+      <section class="card">
+        <h2>Troubleshooting</h2>
+        <details>
+          <summary>No serial port appears</summary>
+          <ul>
+            <li>Use a data cable, not a charge-only one.</li>
+            <li>
+              If the board's red LED stays off or blinks, turn the USB-C plug over: some boards only work one
+              way round.
+            </li>
+          </ul>
+        </details>
+        <details>
+          <summary>It can't connect or the install fails</summary>
+          <ul>
+            <li>Hold <b>BOOT</b>, tap <b>RST</b>, release <b>BOOT</b> and try again.</li>
+            <li>Close other programs using the port (serial monitors, the Arduino IDE).</li>
+          </ul>
+        </details>
+        <details>
+          <summary>Already running AdBlock?</summary>
+          <ul>
+            <li>
+              No need to come back here: the dashboard checks for new versions when it opens and installs them
+              over the air, keeping your settings.
+            </li>
+          </ul>
+        </details>
+      </section>
+
+      <div class="grid">
+        <a href="https://github.com/denzilrdz/esp32-s3-adblock#readme"
+          ><b>README</b><span>Features, hardware and how it works</span></a
         >
-        (including the IPv6 caveat).
-      </p>
+        <a href="https://github.com/denzilrdz/esp32-s3-adblock/releases/tag/v__VERSION__"
+          ><b>Release notes</b><span>What's new in v__VERSION__</span></a
+        >
+        <a href="https://github.com/denzilrdz/esp32-s3-adblock/blob/main/docs/ROUTER_SETUP.md"
+          ><b>Router setup</b><span>Make every device use the blocker</span></a
+        >
+      </div>
+      <footer>Open source (MIT). Fork of esp32-c3-adblock.</footer>
     </main>
   </body>
 </html>
