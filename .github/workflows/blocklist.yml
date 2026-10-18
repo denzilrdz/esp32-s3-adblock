@@ -6,7 +6,7 @@ name: blocklist
 # are not re-downloaded).
 on:
   schedule:
-    - cron: "47 18 * * *" # daily 18:47 UTC (off the hour, when scheduled runs are less delayed)
+    - cron: "30 18 * * *" # 18:30 UTC = 00:00 IST, 3 h before boards update at 03:00 IST
   workflow_dispatch:
 
 permissions: {}
