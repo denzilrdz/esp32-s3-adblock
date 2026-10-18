@@ -6,6 +6,11 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-10-18
+
+Two fixes found testing v0.2.0 on hardware. Update from the dashboard (it offers the
+update when it opens); settings are kept.
+
 ### Fixed
 
 - Wi-Fi setup page: a hidden network typed under _Other network_ could be saved as the
@@ -13,6 +18,11 @@ All notable changes to this project are documented here. The format follows
   name selects _Other network_.
 - Dashboard chart: on a short time span the x-axis could show the same time twice. Ticks
   now fall on round times (every 5 s, 1 min, 5 min, ...).
+
+### Changed
+
+- The Wi-Fi setup page's scan buffers are allocated only in setup mode, giving back
+  about 2 KB of RAM in normal operation.
 
 ## [0.2.0] - 2026-10-18
 
@@ -199,7 +209,8 @@ password setup.
   flash are required), upstream's 40-bit blocklist format, the Japanese README,
   the C3 web-installer binaries and the C3 SuperMini enclosure.
 
-[Unreleased]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.1.5...v0.2.0
 [0.1.5]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.1.3...v0.1.4
