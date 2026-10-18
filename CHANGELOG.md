@@ -6,6 +6,11 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-10-18
+
+Faster recovery after an internet outage, and a daily blocklist. Update from the
+dashboard (_Device → Check for updates_); settings are kept.
+
 ### Fixed
 
 - After an internet outage (e.g. ISP maintenance) lookups could keep failing for up to
@@ -164,7 +169,8 @@ password setup.
   flash are required), upstream's 40-bit blocklist format, the Japanese README,
   the C3 web-installer binaries and the C3 SuperMini enclosure.
 
-[Unreleased]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.1.4...HEAD
+[Unreleased]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.1.5...HEAD
+[0.1.5]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.1.1...v0.1.2
