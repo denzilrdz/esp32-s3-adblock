@@ -22,6 +22,19 @@ void UpstreamHealth::onSuccess(uint32_t latencyMs) {
   stats_.lastLatencyMs = latencyMs;
 }
 
+void UpstreamHealth::reset() {
+  state_ = HealthState::kUnknown;
+  failures_ = 0;
+  backoffMs_ = 0;
+  nextProbeMs_ = 0;
+}
+
+void UpstreamHealth::capBackoff(uint64_t nowMs, uint32_t maxMs) {
+  if (state_ != HealthState::kDown && state_ != HealthState::kProbing) return;
+  if (backoffMs_ > maxMs) backoffMs_ = maxMs;
+  if (nextProbeMs_ > nowMs + maxMs) nextProbeMs_ = nowMs + maxMs;
+}
+
 void UpstreamHealth::onFailure(uint64_t nowMs, uint32_t random) {
   stats_.failed++;
   failures_++;

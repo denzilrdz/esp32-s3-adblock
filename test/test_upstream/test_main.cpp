@@ -556,6 +556,114 @@ static void test_failed_doh_does_not_reconnect_for_each_queued_query() {
   TEST_ASSERT_EQUAL(0, fwd->inFlight());
 }
 
+// --- local internet outage (all upstreams fail at once) --------------------------------
+
+static FakeTransport* const* allTransports() {
+  static FakeTransport* t[4];
+  t[0] = dot1.get(), t[1] = dot2.get(), t[2] = doh.get(), t[3] = plain.get();
+  return t;
+}
+
+// Drives queries until every upstream is Down (what an ISP outage does).
+static void takeEverythingDown() {
+  for (int i = 0; i < 4; i++) downAll(*allTransports()[i]);
+  for (int i = 0; i < 12; i++) {
+    fwd->submit(500 + i, query("outage" + std::to_string(i) + ".example"));
+    fwd->poll(0);
+    fakeClock.advanceMs(200);
+  }
+  for (int u = 0; u < 4; u++)
+    TEST_ASSERT_EQUAL_MESSAGE(static_cast<int>(HealthState::kDown),
+                              static_cast<int>(fwd->upstreamStatus(u).state), allTransports()[u]->name());
+}
+
+static void test_outage_keeps_probing_often_so_recovery_is_fast() {
+  // Found on hardware: during an ISP outage every upstream backed off towards 5 min,
+  // so lookups kept failing for minutes after the internet was back.
+  const upstream::ForwarderConfig cfg;
+  takeEverythingDown();
+  for (int i = 0; i < 40; i++) {  // a long outage: many more failed probes
+    fakeClock.advanceMs(cfg.outageProbeMs + 2000);
+    fwd->submit(600 + i, query("still-down" + std::to_string(i) + ".example"));
+    fwd->poll(0);
+  }
+  for (FakeTransport* t : {dot1.get(), dot2.get(), doh.get(), plain.get()})
+    t->mode = FakeTransport::Mode::kAnswer;
+  fakeClock.advanceMs(cfg.outageProbeMs + 2000);  // internet back: next probe is due
+  sink.results.clear();
+  fwd->submit(700, query("back.example"));
+  fwd->poll(0);
+  TEST_ASSERT_EQUAL(1, sink.results.size());
+  TEST_ASSERT_TRUE(sink.results[0].ok);
+  TEST_ASSERT_TRUE(sink.results[0].authenticated);  // encrypted again, not plain
+}
+
+static void test_recovery_after_outage_resets_the_others_to_unknown() {
+  takeEverythingDown();
+  for (FakeTransport* t : {dot1.get(), dot2.get(), doh.get(), plain.get()})
+    t->mode = FakeTransport::Mode::kAnswer;
+  fakeClock.advanceMs(upstream::ForwarderConfig{}.outageProbeMs + 2000);
+  fwd->submit(800, query("first.example"));
+  fwd->poll(0);
+  TEST_ASSERT_EQUAL(static_cast<int>(HealthState::kUp), static_cast<int>(fwd->upstreamStatus(0).state));
+  for (int u = 1; u < 4; u++)  // not tried since the outage: "unknown", not a stale "down"
+    TEST_ASSERT_EQUAL_MESSAGE(static_cast<int>(HealthState::kUnknown),
+                              static_cast<int>(fwd->upstreamStatus(u).state), allTransports()[u]->name());
+  TEST_ASSERT_EQUAL(1, logger.count(hal::LogLevel::kInfo, "connectivity restored"));
+}
+
+static void test_one_dead_provider_still_backs_off_normally() {
+  // Only the primary is down; the others answer. That is the provider's problem, not
+  // ours: its backoff keeps growing and the healthy upstream's successes don't reset it.
+  downAll(*dot1);
+  for (int i = 0; i < 3; i++) {
+    fwd->submit(900 + i, query("p" + std::to_string(i) + ".example"));
+    fwd->poll(0);
+  }
+  TEST_ASSERT_EQUAL(static_cast<int>(HealthState::kDown), static_cast<int>(fwd->upstreamStatus(0).state));
+  uint32_t lastBackoff = 0;
+  for (int probe = 0; probe < 6; probe++) {
+    fakeClock.advanceMs(fwd->upstreamStatus(0).backoffMs + fwd->upstreamStatus(0).backoffMs / 4 + 10);
+    fwd->submit(950 + probe, query("probe" + std::to_string(probe) + ".example"));
+    fwd->poll(0);
+    TEST_ASSERT_EQUAL(static_cast<int>(HealthState::kDown), static_cast<int>(fwd->upstreamStatus(0).state));
+    TEST_ASSERT_TRUE(fwd->upstreamStatus(0).backoffMs > lastBackoff);  // 2, 4, 8 ... s
+    lastBackoff = fwd->upstreamStatus(0).backoffMs;
+  }
+  TEST_ASSERT_TRUE(lastBackoff > upstream::ForwarderConfig{}.outageProbeMs);  // not capped
+  TEST_ASSERT_EQUAL(0, logger.count(hal::LogLevel::kInfo, "connectivity restored"));
+}
+
+static void test_plain_upstream_state_isnt_left_stale_after_encrypted_returns() {
+  // Found on hardware: after an outage, queries sent to plain DNS during the outage
+  // timed out just after recovery and marked it "down". Plain DNS is only used while
+  // every encrypted upstream is down, so nothing ever retried it: it showed "down"
+  // forever. Plain upstreams are only judged while plain fallback is in use, and go
+  // back to "unknown" when encrypted DNS returns.
+  downAll(*dot1);
+  downAll(*dot2);
+  downAll(*doh);
+  for (int i = 0; i < 5; i++) {  // all encrypted Down: plain fallback starts
+    fwd->submit(i, query("e" + std::to_string(i) + ".example"));
+    fwd->poll(0);
+  }
+  TEST_ASSERT_TRUE(fwd->plainFallbackActive());
+  plain->holdReplies = true;  // the next plain answer never arrives (outage)
+  fwd->submit(50, query("in-flight.example"));
+  fwd->poll(0);
+  TEST_ASSERT_EQUAL(1, fwd->inFlight());
+  dot1->mode = FakeTransport::Mode::kAnswer;  // encrypted DNS is back
+  fakeClock.advanceMs(1300);
+  fwd->submit(51, query("encrypted-again.example"));
+  fwd->poll(0);
+  TEST_ASSERT_FALSE(fwd->plainFallbackActive());
+  TEST_ASSERT_EQUAL(static_cast<int>(HealthState::kUnknown), static_cast<int>(fwd->upstreamStatus(3).state));
+  fakeClock.advanceMs(1500);  // the plain query from before now times out
+  fwd->poll(0);
+  TEST_ASSERT_EQUAL(0, fwd->inFlight());
+  TEST_ASSERT_EQUAL(static_cast<int>(HealthState::kUnknown), static_cast<int>(fwd->upstreamStatus(3).state));
+}
+
 int main(int, char**) {
   UNITY_BEGIN();
   RUN_TEST(test_health_goes_down_after_three_failures_and_backs_off);
@@ -585,5 +693,9 @@ int main(int, char**) {
   RUN_TEST(test_deadline_does_not_blame_an_upstream_that_had_no_time_to_answer);
   RUN_TEST(test_deadline_blames_an_upstream_that_had_time_to_answer);
   RUN_TEST(test_failed_doh_does_not_reconnect_for_each_queued_query);
+  RUN_TEST(test_outage_keeps_probing_often_so_recovery_is_fast);
+  RUN_TEST(test_recovery_after_outage_resets_the_others_to_unknown);
+  RUN_TEST(test_one_dead_provider_still_backs_off_normally);
+  RUN_TEST(test_plain_upstream_state_isnt_left_stale_after_encrypted_returns);
   return UNITY_END();
 }

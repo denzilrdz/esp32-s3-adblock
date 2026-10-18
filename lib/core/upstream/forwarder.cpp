@@ -36,6 +36,7 @@ UpstreamStatus Forwarder::upstreamStatus(size_t i) const {
   st.authenticated = transports_[i]->authenticated();
   st.connected = transports_[i]->connected();
   st.state = health_[i].state();
+  st.backoffMs = health_[i].backoffMs();
   st.stats = health_[i].stats();
   return st;
 }
@@ -46,21 +47,55 @@ void Forwarder::recordSuccess(int u, uint32_t latencyMs) {
   if (before != HealthState::kUp)
     log_.log(LogLevel::kInfo, kTag, "%s: %s -> up (%u ms)", transports_[u]->name(), healthStateName(before),
              static_cast<unsigned>(latencyMs));
+  if (outage_) {
+    // First answer after every upstream was down: the failures were most likely our own
+    // connection, so don't leave the others "down" on stale evidence.
+    outage_ = false;
+    for (size_t i = 0; i < count_; i++)
+      if (static_cast<int>(i) != u && health_[i].state() != HealthState::kUp) health_[i].reset();
+    log_.log(LogLevel::kInfo, kTag, "connectivity restored via %s: other upstreams back to unknown",
+             transports_[u]->name());
+  }
   if (plainActive_ && transports_[u]->authenticated()) {
     plainActive_ = false;
+    // Plain upstreams are only used during fallback: whatever state they were left in
+    // ("up" or "down") would otherwise be shown forever. Not in use: "unknown".
+    for (size_t i = 0; i < count_; i++)
+      if (!transports_[i]->authenticated()) health_[i].reset();
     log_.log(LogLevel::kInfo, kTag, "encrypted upstream %s restored; plain DNS fallback off",
              transports_[u]->name());
   }
 }
 
 void Forwarder::recordFailure(int u) {
+  // A plain upstream is only judged while plain fallback is in use: outside it, a failure
+  // is a leftover (e.g. a query from an outage timing out after recovery).
+  if (!transports_[u]->authenticated() && !plainActive_) return;
+  const uint64_t now = clock_.monotonicMs();
   const HealthState before = health_[u].state();
-  health_[u].onFailure(clock_.monotonicMs(), random_.next32());
+  health_[u].onFailure(now, random_.next32());
+  const bool everythingDown = allDown();
+  if (everythingDown)  // cap first, so the log below shows the real retry delay
+    for (size_t i = 0; i < count_; i++) health_[i].capBackoff(now, cfg_.outageProbeMs);
   const HealthState after = health_[u].state();
   if (after != before)
     log_.log(after == HealthState::kDown ? LogLevel::kWarn : LogLevel::kInfo, kTag,
              "%s: %s -> %s (retry in %u ms)", transports_[u]->name(), healthStateName(before),
              healthStateName(after), static_cast<unsigned>(health_[u].backoffMs()));
+  if (everythingDown && !outage_) {
+    outage_ = true;
+    log_.log(LogLevel::kWarn, kTag,
+             "every upstream is failing: internet connection down? retrying every %u s",
+             static_cast<unsigned>(cfg_.outageProbeMs / 1000));
+  }
+}
+
+bool Forwarder::allDown() const {
+  for (size_t i = 0; i < count_; i++) {
+    const HealthState st = health_[i].state();
+    if (st != HealthState::kDown && st != HealthState::kProbing) return false;
+  }
+  return count_ > 0;
 }
 
 bool Forwarder::allEncryptedDown(uint64_t now) const {

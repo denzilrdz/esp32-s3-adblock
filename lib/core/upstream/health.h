@@ -47,6 +47,11 @@ class UpstreamHealth {
   void onSuccess(uint32_t latencyMs);
   // `random` supplies the jitter (any 32-bit value).
   void onFailure(uint64_t nowMs, uint32_t random);
+  // Back to Unknown, keeping the stats: its recent failures weren't its own fault (e.g.
+  // the local internet connection was down).
+  void reset();
+  // While Down/Probing: next probe no later than nowMs + maxMs, backoff at most maxMs.
+  void capBackoff(uint64_t nowMs, uint32_t maxMs);
 
   uint32_t consecutiveFailures() const { return failures_; }
   uint32_t backoffMs() const { return backoffMs_; }

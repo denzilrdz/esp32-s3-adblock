@@ -35,6 +35,10 @@ struct ForwarderConfig {
   // task well inside the 5 s task watchdog when every upstream is unreachable.
   uint32_t maxBlockingMs = 4000;
   uint32_t idleCloseMs = 9000;  // servers drop idle DoT after ~10 s
+  // When every upstream is Down at once the local internet connection is the likely
+  // cause (ISP outage), not the providers: probe at least this often so lookups recover
+  // within seconds of it coming back, instead of after a backoff of up to 5 min.
+  uint32_t outageProbeMs = 10000;
   bool allowPlainFallback = true;
   dns::UpstreamQueryOptions query;  // padding, AD request
   HealthConfig health;
@@ -57,6 +61,7 @@ struct UpstreamStatus {
   bool authenticated = false;
   bool connected = false;
   HealthState state = HealthState::kUnknown;
+  uint32_t backoffMs = 0;  // current retry delay while Down
   HealthStats stats;
 };
 
@@ -104,6 +109,7 @@ class Forwarder {
 
   int selectUpstream(const Slot& s, uint64_t now);
   bool allEncryptedDown(uint64_t now) const;
+  bool allDown() const;  // every upstream Down or Probing
   bool busy(int u) const;
   void trySend(Slot& s);
   void handleReply(int u, uint8_t* msg, size_t len);
@@ -125,6 +131,7 @@ class Forwarder {
   IForwarderSink& sink_;
   Slot slots_[kMaxInFlight];
   bool plainActive_ = false;
+  bool outage_ = false;  // every upstream went down at once (see outageProbeMs)
   uint64_t callStartMs_ = 0;
   uint8_t txBuf_[512];
   uint8_t rxBuf_[kMaxAnswer];

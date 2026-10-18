@@ -6,6 +6,14 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- After an internet outage (e.g. ISP maintenance) lookups could keep failing for up to
+  5 minutes once the connection was back, because every provider had backed off. When
+  every upstream fails at once the board now retries every 10 s, recovers within
+  seconds, and resets the other upstreams to "unknown" instead of leaving a stale
+  "down" on the dashboard (plain DNS too, once encrypted DNS is back).
+
 ### Changed
 
 - The default blocklist is now rebuilt daily (was weekly). If nothing changed, the

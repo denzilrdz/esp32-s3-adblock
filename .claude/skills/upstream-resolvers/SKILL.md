@@ -79,6 +79,10 @@ created at boot in `startDnsService()`).
   3 s. A full handshake measured ~1.5 s on the S3: don't lower the total below ~2.5 s.
 - Blame at the deadline only if the upstream had `hedgeAfterMs` since the send; a
   failed transport reroutes every query assigned to it (incl. queued DoH ones).
+- Outage (every upstream Down): retries capped at `outageProbeMs` (10 s); the first
+  success resets the others to Unknown; plain upstreams are only judged during
+  fallback and reset to Unknown when encrypted DNS returns. Test on hardware by
+  unplugging the router's WAN cable for ~2 min.
 - Test failover on hardware: Primary = custom with IP `192.0.2.1` (never answers),
   Secondary = quad9; certificate check: custom IP `1.1.1.1` with a wrong TLS name.
 - At most `kMaxRepliesPerPoll` (64) replies are read per transport per `poll()`, so

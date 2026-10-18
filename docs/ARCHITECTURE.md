@@ -473,6 +473,14 @@ timeout)`, `close()`, plus `pipelined()`. Implementations:
 - **Deadlines:** a query has 2.5 s in total. If the active upstream does not answer
   within 1.2 s, the query is re-sent once to the next healthy upstream. At the
   deadline the client gets SERVFAIL (upstream sent nothing, W8).
+- **Local internet outage** (every upstream fails at once, tested by unplugging the
+  router's WAN cable): the failures are most likely our own connection, not the
+  providers. While every upstream is Down, retries are capped at `outageProbeMs`
+  (10 s) instead of backing off to 5 min, so lookups recover within seconds. The
+  first answer after that resets the other upstreams to Unknown. Plain upstreams are
+  only judged while plain fallback is in use, and go back to Unknown when encrypted
+  DNS returns, so the dashboard never shows a stale "down" for a path nothing uses.
+  A single provider failing on its own keeps its normal, growing backoff.
 - **Unreachable upstreams** (all found while testing on hardware):
   - The TCP stage of a connect is capped at 1 s (`TlsStream`); the full connect
     budget (3 s) is for the TLS handshake. A blackholed upstream then fails fast
