@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-18
+
+A redesigned dashboard with live charts, a friendlier Wi-Fi setup page and a new web
+installer. Update from the dashboard (_Device → Check for updates_ on older versions);
+settings are kept. From this version the dashboard checks for updates by itself.
+
 ### Changed
 
 - Redesigned dashboard: a block-rate headline, stat tiles with trend lines, a live
@@ -185,7 +191,8 @@ password setup.
   flash are required), upstream's 40-bit blocklist format, the Japanese README,
   the C3 web-installer binaries and the C3 SuperMini enclosure.
 
-[Unreleased]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.1.5...HEAD
+[Unreleased]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.1.5...v0.2.0
 [0.1.5]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.1.2...v0.1.3
