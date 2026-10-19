@@ -39,11 +39,13 @@ blocklist every day on its own**. No Raspberry Pi, no SD card, no OS to patch.
 | **Tiny and low-power**                 | Runs from any stable 5 V USB supply; no computer to keep running.                                             |
 
 > [!NOTE]
-> **Project status: early release (v0.2.3).** Tested on an ESP32-S3-DevKitC-1 (N16R8):
-> Wi-Fi setup, DNS-over-TLS, blocking, the blocklist download and its "not modified"
-> check, failover to Quad9 when the primary is unreachable, plain-DNS fallback on and
-> off, dashboard firmware updates and automatic rollback of a bad update. Expect some
-> rough edges; please [report issues](https://github.com/denzilrdz/esp32-s3-adblock/issues).
+> **Early release, in daily use on an ESP32-S3-DevKitC-1 (N16R8).** Tested on
+> hardware: Wi-Fi setup (including hidden networks and a wrong password),
+> DNS-over-TLS, blocking and bans, the daily blocklist update and its "not modified"
+> check, failover to Quad9 and recovery after an internet outage, plain-DNS fallback on
+> and off, the dashboard, over-the-air updates and automatic rollback of a bad update.
+> Expect some rough edges; please
+> [report issues](https://github.com/denzilrdz/esp32-s3-adblock/issues).
 
 ## Contents
 
