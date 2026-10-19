@@ -43,7 +43,7 @@ Leave the ISP router as it is and plug a second router's **WAN/Internet** port i
 one of its LAN ports. The second router runs its own network, which you fully control:
 
 1. Second router: **Router** mode (not access point), internet type **Dynamic IP**.
-2. Join the blocker to the second router's Wi-Fi (dashboard _Forget Wi-Fi_, or hold
+2. Join the blocker to the second router's Wi-Fi (dashboard _Device → Maintenance → Forget Wi-Fi_, or hold
    BOOT while powering on, then pick the new network on its setup page).
 3. Reserve the blocker's IP (by its MAC) in the second router's DHCP settings.
 4. Make that router hand out the blocker as DNS, with no secondary DNS.
@@ -94,7 +94,7 @@ skipping your network's DNS.
 - **Android:** Settings → Network → **Private DNS** must be **Off** or **Automatic**.
   A hostname there (e.g. `dns.google`) bypasses the blocker.
 - **Apple devices:** iCloud Private Relay bypasses local DNS for Safari. The
-  dashboard option _Disable iCloud Private Relay on this network_ answers Apple's
+  dashboard setting _Disable iCloud Private Relay on this network_ answers Apple's
   opt-out domains so devices fall back to normal DNS (off by default).
 
 ## 5. Devices with hard-coded DNS

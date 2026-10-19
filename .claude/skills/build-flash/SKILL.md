@@ -73,7 +73,7 @@ downloads it itself).
 
 ## OTA
 
-- Dashboard: _Device → Flash firmware_ with `.pio/build/esp32s3/firmware.bin`.
+- Dashboard: _Device → Install a firmware file manually → Flash firmware_ with `.pio/build/esp32s3/firmware.bin`.
 - Network: `pio run -e esp32s3 -t upload --upload-port s3adblock.local --upload-protocol espota --upload-flags="--auth=<OTA_PASS>"`.
 
 A new image must be healthy (Wi-Fi + DNS running 60 s) within 5 minutes or the

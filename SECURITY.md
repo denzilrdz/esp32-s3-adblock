@@ -35,7 +35,7 @@ Known, documented limits (see [docs/ARCHITECTURE.md §9](docs/ARCHITECTURE.md)):
 - Firmware images are not signed. OTA updates need the dashboard password (or
   `OTA_PASS`), and release files come with SHA-256 checksums and build-provenance
   attestations, but the device itself does not verify a signature. The dashboard's
-  _Check for updates_ downloads firmware from this project's GitHub Pages site, so it
+  update check (_Device → Download & install_) downloads firmware from this project's GitHub Pages site, so it
   trusts GitHub and TLS the same way the web installer does.
 - TLS certificates (upstream DNS, blocklist download) are checked against the CA bundle
   and the server name, but not their validity dates: the prebuilt mbedTLS is built

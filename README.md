@@ -80,7 +80,9 @@ data cable, a **2.4 GHz Wi-Fi** network and **admin access to your router**.
 ### 1. Flash
 
 Open the **[web installer](https://denzilrdz.github.io/esp32-s3-adblock/)** in Chrome
-or Edge, plug the board in (DevKitC-1: the port marked **UART**), click _Install_.
+or Edge, plug the board in (DevKitC-1: the port marked **UART**), click **Install
+AdBlock** and pick the serial port (erasing the device is recommended for a first
+install). It takes about a minute.
 
 <details>
 <summary><b>Or build and flash from source</b> (macOS/Linux/Windows with PlatformIO)</summary>
@@ -100,19 +102,24 @@ Needs [PlatformIO](https://platformio.org/) (CLI or the VS Code extension) and P
 ### 2. Connect it to Wi-Fi
 
 On first boot the device opens an access point **`S3-AdBlock-XXXX`**. Join it from a
-phone; a setup page appears. Tap your network (or _Other network_ for a hidden one)
-and enter its password; the device
-restarts and joins it. (Or put `WIFI_SSID`/`WIFI_PASS` in `src/secrets.h`.) Hold the
+phone; a setup page appears. Tap your network (only 2.4 GHz networks work; _Other
+network_ for a hidden one) and enter its password; the device restarts and joins it. (Or put `WIFI_SSID`/`WIFI_PASS` in `src/secrets.h`.) Hold the
 **BOOT** button while powering on to forget Wi-Fi.
 
 ### 3. Set the dashboard password
 
-The serial console (`pio device monitor`, or the web installer's _Logs_) prints a
-**one-time setup code**. Open `http://s3adblock.local` (or the device IP), log in with
-user `admin` and the setup code, and set a real password (10+ characters). While
-you're there, set your **time zone** under _Settings_ (default `UTC0`) so the daily
-list update runs at night for you. Until you
-do, nothing can be changed, so nobody else on your network can claim the device.
+The serial console prints a **one-time setup code**. To see it, click **Install
+AdBlock** in the web installer again, pick the port and choose _Logs & Console_ (not
+_Install_; press _Reset Device_ if it stays empty), or run `pio device monitor`.
+
+Open `http://s3adblock.local` (or the device IP). The _Set a dashboard password_ banner
+asks for the setup code and a new password (10+ characters); when the browser asks you
+to log in, use user `admin` and the same setup code (from then on, your new
+password). Until a password is set, nothing can be changed, so nobody else on your
+network can claim the device.
+
+While you're there, set your **time zone** under _Settings → Privacy & blocking_
+(default `UTC0`) so the daily list update runs at night for you.
 
 ### 4. Point your network at it
 
@@ -137,8 +144,8 @@ $ dig @192.168.1.50 example.com +short
 ```
 
 The first name is blocked; the second gets a real answer, fetched over DNS-over-TLS.
-After the router change, the dashboard's client table should fill up with your devices
-and the "blocked" counter should start rising.
+After the router change, the dashboard's _Clients_ tab should fill up with your devices
+and the _Overview_ should show a rising share of queries blocked.
 
 ## Features
 
@@ -260,18 +267,18 @@ python3 tools/build_blocklist.py my.bin                       # default sources
 python3 tools/build_blocklist.py my.bin hosts.txt https://...  # hosts files, domain lists, AdGuard ||rules^
 ```
 
-Upload `my.bin` on the dashboard, or host it on HTTPS and set it as the list URL. For a
+Upload `my.bin` under _Blocklist & rules → Upload list_, or host it on HTTPS and set it as the list URL. For a
 bigger list, Hagezi's `pro-onlydomains.txt` (~370k) fits easily on the S3.
 
 ## Updating firmware
 
 - **From the dashboard (v0.1.2 and later):** the dashboard checks for a newer release
   when it opens (since v0.2.0; older versions: _Device → Check for updates_) and shows
-  a banner when there is one. _Device → Download & install_ fetches it into the browser
-  from this project's GitHub Pages site and installs it through the normal upload. Settings, Wi-Fi and the
-  blocklist are kept. Forks: build with `-DUPDATE_BASE_URL=\"https://<you>.github.io/<repo>/\"`.
-- **Manual file:** _Device → Install a firmware file manually_ with **`firmware-esp32s3-vX.Y.Z.bin`** from a
-  [release](https://github.com/denzilrdz/esp32-s3-adblock/releases) (not the larger
+  a banner when there is one. _Device → Download & install_ fetches it into the
+  browser from this project's GitHub Pages site and installs it through the normal
+  upload. Settings, Wi-Fi and the blocklist are kept. Forks: build with `-DUPDATE_BASE_URL=\"https://<you>.github.io/<repo>/\"`.
+- **Manual file:** _Device → Install a firmware file manually → Flash firmware_ with
+  **`firmware-esp32s3-vX.Y.Z.bin`** from a [release](https://github.com/denzilrdz/esp32-s3-adblock/releases) (not the larger
   `factory-…` image, which is for first installs; the board rejects it). Settings, Wi-Fi
   and the blocklist are kept. v0.1.0 can't update itself this way: install v0.1.1 or
   later over USB once (see the [changelog](CHANGELOG.md)).
@@ -299,10 +306,12 @@ or doesn't get there within 5 minutes, the device rolls back to the previous ver
 | Symptom                                | Fix                                                                                                                                                |
 | -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Ads still show on some devices         | They use another DNS (IPv6, private DNS, hard-coded). Check the client table and [ROUTER_SETUP.md §6](docs/ROUTER_SETUP.md#6-check-that-it-works). |
-| Dashboard says **PLAIN DNS**           | Ports 853 and 443 to 1.1.1.1/9.9.9.9 fail from your network. Check with `kdig @1.1.1.1 +tls example.com` from a computer.                          |
+| Dashboard shows **Plain DNS in use**   | Ports 853 and 443 to 1.1.1.1/9.9.9.9 fail from your network. Check with `kdig @1.1.1.1 +tls example.com` from a computer.                          |
 | "clock not synced" stays               | NTP (UDP 123) to 162.159.200.1 / pool.ntp.org is blocked; the daily update waits for the clock.                                                    |
 | Blocklist "invalid list"               | The URL isn't a format-v2 file (`tools/build_blocklist.py` output), or the download was cut off. The old list stays active.                        |
 | Can't log in, "too many failed logins" | Wait (30 s to 5 min) or use another device. Forgot the password: erase flash (`pio run -e esp32s3 -t erase`) and flash again.                      |
+| Installer finds no serial port         | Use a data USB cable, not a charge-only one. If the board's LED stays off, turn the USB-C plug over (some boards work one way round only).         |
+| Installer can't connect or fails       | Hold **BOOT**, tap **RST**, release **BOOT**, try again. Close other programs using the port (serial monitors, the Arduino IDE).                   |
 | Board boot-loops after flashing        | Wrong memory type: N16R8 must use `qio_opi` (the `esp32s3` env does).                                                                              |
 | Random reboots                         | Power: try another USB cable/port. Check the reset reason in the boot log.                                                                         |
 

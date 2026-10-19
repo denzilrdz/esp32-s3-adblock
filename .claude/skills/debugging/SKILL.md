@@ -26,7 +26,7 @@ pio device monitor -e esp32s3        # 115200 baud, filters: esp32_exception_dec
 
 - Lines look like `[I][up] cloudflare-dot: unknown -> up (180 ms)`. Tags: `dns`, `up`
   (upstream), `bl` (blocklist), `time`, `wifi`, `web`, `ota`, `boot`.
-- Log level: dashboard _Settings → Log_ (error/warn/info/debug), stored in NVS and
+- Log level: dashboard _Settings → Log level_ (error/warn/info/debug), stored in NVS and
   applied live. Use debug only temporarily.
 - Boot banner: `[adblock] v<version> booting (<hostname>, PSRAM <n> KB)`, then the
   setup code (if no password is set), list size and `ready`.
@@ -50,7 +50,7 @@ pio device monitor -e esp32s3        # 115200 baud, filters: esp32_exception_dec
 
 ## Memory
 
-- `/api/stats` (and the dashboard _Device_ card) reports `heap` (internal free),
+- `/api/stats` (and the dashboard's _Device → Health_) reports `heap` (internal free),
   `heapMin` (lowest since boot) and `psram` (free PSRAM).
 - Warning signs:
   - **heapMin < 40 KB**: TLS handshakes will fail (each session needs ~45 KB of
@@ -98,7 +98,7 @@ for i in $(seq 50); do dig @<ip> +short r$i.example.com & done; wait   # burst
   after 9 s; resumption should make reconnects cheap). The dashboard's upstream table
   shows each upstream's state, OK/fail counts and last latency; `[up]` log lines show
   state changes.
-- Dashboard **PLAIN DNS** banner → ports 853 and 443 to 1.1.1.1/9.9.9.9 are blocked
+- Dashboard **Plain DNS in use** banner → ports 853 and 443 to 1.1.1.1/9.9.9.9 are blocked
   or failing. Test from the Mac: `kdig @1.1.1.1 +tls example.com` (knot) or
   `openssl s_client -connect 1.1.1.1:853 -servername cloudflare-dns.com`.
 - Clients bypassing the blocker → IPv6 RDNSS or browser DoH (docs/ROUTER_SETUP.md).

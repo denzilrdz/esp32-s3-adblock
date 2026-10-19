@@ -117,7 +117,7 @@ jobs:
           cp installer/404.html site/
           cp "dist/factory-esp32s3-${v}.bin" site/factory-esp32s3.bin
           sed "s/__VERSION__/${v#v}/" installer/manifest.json > site/manifest.json
-          # Dashboard "Check for updates": the browser fetches these from Pages (release
+          # Dashboard update check: the browser fetches these from Pages (release
           # downloads send no CORS headers) and uploads the firmware to the device.
           cp "dist/firmware-esp32s3-${v}.bin" site/firmware-esp32s3.bin
           # installer/min-update-from: oldest version that may install this release from

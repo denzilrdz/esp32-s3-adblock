@@ -9,7 +9,7 @@ body:
     id: version
     attributes:
       label: Firmware version
-      description: Shown on the dashboard header and in the boot log (e.g. v0.1.0 or a commit).
+      description: Shown under Device → Health on the dashboard and in the boot log (e.g. v0.1.0 or a commit).
     validations:
       required: true
   - type: dropdown
