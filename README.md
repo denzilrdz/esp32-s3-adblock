@@ -106,7 +106,9 @@ Needs [PlatformIO](https://platformio.org/) (CLI or the VS Code extension) and P
 On first boot the device opens an access point **`S3-AdBlock-XXXX`**. Join it from a
 phone; a setup page appears. Tap your network (only 2.4 GHz networks work; _Other
 network_ for a hidden one) and enter its password; the device restarts and joins it. (Or put `WIFI_SSID`/`WIFI_PASS` in `src/secrets.h`.) Hold the
-**BOOT** button while powering on to forget Wi-Fi.
+**BOOT** button while powering on to forget Wi-Fi. Once it has joined a network, it
+waits for that network at boot (retrying every 5 s) instead of opening the setup
+network, so a router that starts slowly after a power cut is fine.
 
 ### 3. Set the dashboard password
 

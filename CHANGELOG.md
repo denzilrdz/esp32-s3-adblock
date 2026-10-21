@@ -6,6 +6,14 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- A board that has joined its Wi-Fi before no longer opens the setup network when that
+  network is missing at boot (e.g. the router is still starting after a power cut). It
+  retries every 5 seconds until the network is back. The setup network still opens for
+  new or mistyped credentials, and for a known network that keeps rejecting the
+  password.
+
 ## [0.2.3] - 2026-10-18
 
 A Wi-Fi setup fix. Update from the dashboard (_Device → Check for updates_);

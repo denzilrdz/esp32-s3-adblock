@@ -7,6 +7,7 @@
 #include <memory>
 
 #include "secrets.h"
+#include "util/wifi_join.h"
 #include "util/wifi_scan.h"
 
 namespace web {
@@ -17,6 +18,8 @@ Preferences prefs;
 DNSServer dnsPortal;
 String portalNetworks;  // radio list of scanned networks
 const char* portalHostname = "";
+// Last station disconnect reason (wifi_err_reason_t), set from the Wi-Fi event task.
+volatile uint16_t lastDisconnectReason = 0;
 
 bool secretsConfigured() {
   return WIFI_SSID && *WIFI_SSID && strcmp(WIFI_SSID, "YOUR_WIFI_SSID") != 0;
@@ -115,6 +118,7 @@ bool connectWifi() {
   prefs.begin("wifi", true);
   const String ss = prefs.getString("ssid", "");
   const String pw = prefs.getString("pass", "");
+  const bool joinedBefore = prefs.getBool("joined", false);
   prefs.end();
   const char* ssid = ss.length() ? ss.c_str() : WIFI_SSID;
   const char* pass = ss.length() ? pw.c_str() : WIFI_PASS;
@@ -122,14 +126,34 @@ bool connectWifi() {
   Serial.printf("WiFi: connecting to \"%s\"%s\n", ssid, ss.length() ? " (provisioned)" : " (secrets.h)");
   WiFi.mode(WIFI_STA);
   WiFi.setSleep(false);  // power save adds DNS latency
-  WiFi.begin(ssid, pass);
-  const uint32_t t0 = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - t0 < 30000) {
-    delay(250);
-    Serial.print(".");
+  WiFi.onEvent([](arduino_event_id_t,
+                  arduino_event_info_t info) { lastDisconnectReason = info.wifi_sta_disconnected.reason; },
+               ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
+  util::JoinRetryPolicy policy(joinedBefore);
+  for (int attempt = 1;; attempt++) {
+    lastDisconnectReason = 0;
+    WiFi.begin(ssid, pass);
+    const uint32_t t0 = millis(), limit = attempt == 1 ? 30000 : 15000;
+    while (WiFi.status() != WL_CONNECTED && millis() - t0 < limit) {
+      delay(250);
+      Serial.print(".");
+    }
+    Serial.println();
+    if (WiFi.status() == WL_CONNECTED) {
+      if (!joinedBefore) {  // from now on a missing network is waited for, not set up again
+        prefs.begin("wifi", false);
+        prefs.putBool("joined", true);
+        prefs.end();
+      }
+      return true;
+    }
+    const uint16_t reason = lastDisconnectReason;
+    if (policy.onFailure(util::classifyDisconnect(reason)) == util::JoinAction::kSetupPortal) return false;
+    Serial.printf("WiFi: \"%s\" not joined (reason %u, attempt %d); retrying in 5 s\n", ssid, reason,
+                  attempt);
+    WiFi.disconnect();
+    delay(5000);
   }
-  Serial.println();
-  return WiFi.status() == WL_CONNECTED;
 }
 
 void forgetWifi() {
@@ -304,6 +328,7 @@ String joinPage(const String& ssid, util::WifiSecurity sec, bool listed, const c
     prefs.begin("wifi", false);
     prefs.putString("ssid", ss);
     prefs.putString("pass", pw);
+    prefs.putBool("joined", false);  // new credentials: a failed join opens setup again
     prefs.end();
     sendPage(
         server, 200,

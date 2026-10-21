@@ -6,7 +6,10 @@
 
 namespace web {
 
-// Tries NVS credentials, then secrets.h. Blocks up to 30 s.
+// Tries NVS credentials, then secrets.h. Credentials that have never joined give up
+// after 30 s (false -> setup portal). Once they have joined, a missing network (router
+// off or booting) is retried every 5 s until it appears; only repeated password
+// rejections give up.
 bool connectWifi();
 // Clears saved Wi-Fi credentials (BOOT held at power-on, or dashboard "Forget Wi-Fi").
 void forgetWifi();
