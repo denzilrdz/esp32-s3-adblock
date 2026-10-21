@@ -5,7 +5,7 @@ sinkhole for the ESP32-S3 (WROOM-1-N16R8: 16 MB flash, 8 MB octal PSRAM). It is 
 fork of [M-Abozaid/esp32-c3-adblock](https://github.com/M-Abozaid/esp32-c3-adblock)
 (MIT). Read it before changing anything in `lib/core/` or `src/tasks/`.
 
-Status: **implemented in v0.2.3, running on an ESP32-S3-DevKitC-1 (N16R8).** Items
+Status: **implemented in v0.2.4, running on an ESP32-S3-DevKitC-1 (N16R8).** Items
 marked _(verify on hardware)_ are confirmed against the toolchain and SDK sources but
 not yet measured on the board.
 

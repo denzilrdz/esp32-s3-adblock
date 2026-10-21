@@ -6,6 +6,11 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.4] - 2026-10-21
+
+A Wi-Fi reliability fix. Update from the dashboard (_Device → Check for updates_);
+settings and bans are kept.
+
 ### Changed
 
 - A board that has joined its Wi-Fi before no longer opens the setup network when that
@@ -251,7 +256,8 @@ password setup.
   flash are required), upstream's 40-bit blocklist format, the Japanese README,
   the C3 web-installer binaries and the C3 SuperMini enclosure.
 
-[Unreleased]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.2.3...HEAD
+[Unreleased]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.2.4...HEAD
+[0.2.4]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.2.0...v0.2.1
