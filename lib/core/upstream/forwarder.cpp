@@ -110,6 +110,22 @@ bool Forwarder::busy(int u) const {
   return false;
 }
 
+bool Forwarder::roomToConnect(int u, bool makeRoom) {
+  if (transports_[u]->connected() || transports_[u]->kind() == TransportKind::kUdp) return true;
+  uint32_t open = 0;
+  int idlest = -1;
+  for (size_t i = 0; i < count_; i++) {
+    const int v = static_cast<int>(i);
+    if (transports_[i]->kind() == TransportKind::kUdp || !transports_[i]->connected()) continue;
+    open++;
+    if (!busy(v) && (idlest < 0 || lastActivityMs_[i] < lastActivityMs_[idlest])) idlest = v;
+  }
+  if (open < cfg_.maxTlsConnections) return true;
+  if (idlest < 0) return false;  // every connection has queries in flight: wait
+  if (makeRoom) transports_[idlest]->close();
+  return true;
+}
+
 int Forwarder::selectUpstream(const Slot& s, uint64_t now) {
   for (size_t i = 0; i < count_; i++) {
     if ((s.tried >> i) & 1u) continue;
@@ -196,7 +212,13 @@ void Forwarder::trySend(Slot& s) {
       // A connect can block for connectTimeoutMs. Only start one if it still fits
       // the blocking budget of this call; otherwise retry on the next poll().
       if (clock_.monotonicMs() - callStartMs_ + cfg_.connectTimeoutMs > cfg_.maxBlockingMs) return;
+      if (!roomToConnect(u, true)) return;  // at the TLS limit: retry on the next poll()
       if (t->connect(cfg_.connectTimeoutMs) != IoStatus::kOk) {
+        // TCP failures (no route, blackhole) are routine during an outage; a TLS-stage
+        // error (e.g. -0x7F00 out of memory, a bad certificate) is worth seeing.
+        if (t->lastError() != 0)
+          log_.log(LogLevel::kWarn, kTag, "%s: TLS connect failed (error -0x%04x)", t->name(),
+                   static_cast<unsigned>(-t->lastError()));
         t->close();
         recordFailure(u);
         reroute(s);
@@ -238,6 +260,7 @@ void Forwarder::failTransport(int u) {
 
 void Forwarder::handleReply(int u, uint8_t* msg, size_t len) {
   if (len < dns::kHeaderSize) return;
+  lastReplyMs_[u] = clock_.monotonicMs();
   const uint16_t id = static_cast<uint16_t>((msg[0] << 8) | msg[1]);
   Slot* match = nullptr;
   for (Slot& s : slots_) {
@@ -328,8 +351,12 @@ void Forwarder::poll(uint32_t waitMs) {
     if (!s.needsSend && now >= s.hedgeAtMs && s.attempts == 1) {
       Slot probe = s;
       probe.tried |= 1u << s.upstream;
-      if (selectUpstream(probe, now) < 0) continue;  // nowhere better: keep waiting
-      recordFailure(s.upstream);
+      const int next = selectUpstream(probe, now);
+      if (next < 0 || !roomToConnect(next, false)) continue;  // nowhere better: keep waiting
+      // Only blame an upstream that has gone silent. One that answered anything since
+      // this query was sent is alive, just slow (e.g. a congested link right after the
+      // internet comes back); marking it down would push every query onto the next one.
+      if (lastReplyMs_[s.upstream] <= s.sentMs) recordFailure(s.upstream);
       reroute(s);
       trySend(s);
     }

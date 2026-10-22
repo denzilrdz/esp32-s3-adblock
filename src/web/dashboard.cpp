@@ -241,8 +241,8 @@ void Dashboard::handleStats() {
        ",\"updateUrl\":" + q(UPDATE_BASE_URL);
   j += ",\"ip\":" + q(WiFi.localIP().toString()) + ",\"rssi\":" + String(WiFi.RSSI());
   j += ",\"uptime\":" + q(uptime) + ",\"heap\":" + String(ESP.getFreeHeap()) +
-       ",\"heapMin\":" + String(ESP.getMinFreeHeap()) + ",\"psram\":" + String(ESP.getFreePsram()) +
-       ",\"temp\":" + String(temperatureRead(), 1);
+       ",\"heapMin\":" + String(ESP.getMinFreeHeap()) + ",\"heapBlock\":" + String(ESP.getMaxAllocHeap()) +
+       ",\"psram\":" + String(ESP.getFreePsram()) + ",\"temp\":" + String(temperatureRead(), 1);
   j += ",\"setupRequired\":" + String(b(ctx_.passwords->mustChange()));
   j += ",\"timeSynced\":" + String(b(bl.timeSynced)) + ",\"now\":" + q(formatTime(time(nullptr)));
   j += ",\"blocking\":" + String(b(ctx_.clients->blockingOn())) +

@@ -664,6 +664,115 @@ static void test_plain_upstream_state_isnt_left_stale_after_encrypted_returns() 
   TEST_ASSERT_EQUAL(static_cast<int>(HealthState::kUnknown), static_cast<int>(fwd->upstreamStatus(3).state));
 }
 
+// --- after a power cut: slow internet, many queries, scarce internal RAM -------------
+
+static int tlsConnected() {
+  return (dot1->connected() ? 1 : 0) + (dot2->connected() ? 1 : 0) + (doh->connected() ? 1 : 0);
+}
+
+static void test_hedges_dont_mark_a_slow_but_answering_upstream_down() {
+  // Found on hardware: right after a power cut the restored internet was slow, so
+  // queries hedged and each hedge counted as a failure of an upstream that was still
+  // answering. Every upstream was marked down in turn. A reply of any kind since the
+  // query was sent means the upstream is alive: hedge, but don't blame it.
+  dot1->holdReplies = true;
+  dot2->holdReplies = true;  // the hedge target is slow too: nothing is answered early
+  for (int round = 0; round < 4; round++) {
+    fwd->submit(10 + round * 2, query("first" + std::to_string(round) + ".example"));
+    fwd->poll(0);
+    fakeClock.advanceMs(500);
+    fwd->submit(11 + round * 2, query("second" + std::to_string(round) + ".example"));
+    fwd->poll(0);
+    fakeClock.advanceMs(500);
+    dot1->inbox.push_back(dot1->held.front());  // only the first query's answer arrives
+    dot1->held.pop_front();
+    fwd->poll(0);
+    fakeClock.advanceMs(1250);  // the second query is due for a hedge
+    fwd->poll(0);
+    dot1->held.clear();
+    dot2->release();
+    fwd->poll(0);
+    fakeClock.advanceMs(2000);
+    fwd->poll(0);
+  }
+  TEST_ASSERT_EQUAL(4, dot2->sent.size());  // every second query was hedged
+  TEST_ASSERT_EQUAL_UINT32(0, fwd->upstreamStatus(0).stats.failed);
+  TEST_ASSERT_EQUAL(static_cast<int>(HealthState::kUp), static_cast<int>(fwd->upstreamStatus(0).state));
+}
+
+static void test_tls_connections_are_capped_closing_the_idlest() {
+  // Found on hardware: with no limit, failover opened a TLS session to upstream after
+  // upstream (~45 KB of internal RAM each) until handshakes failed and packets were
+  // dropped; only a reboot recovered. At most maxTlsConnections stay open.
+  upstream::ForwarderConfig cfg;
+  cfg.health.baseBackoffMs = 60000;  // keep both DoT upstreams down for the whole test
+  build(cfg);
+  dot1->mode = dot2->mode = FakeTransport::Mode::kSilent;  // connected, never answer
+  for (int i = 0; i < 3; i++) fwd->submit(20 + i, query("q" + std::to_string(i) + ".example"));
+  fwd->poll(0);
+  fakeClock.advanceMs(1200);
+  fwd->poll(0);  // hedged to dot2: dot1 blamed down
+  fakeClock.advanceMs(1300);
+  fwd->poll(0);  // deadline: dot2 blamed down; both still connected and now idle
+  TEST_ASSERT_EQUAL(2, tlsConnected());
+  TEST_ASSERT_EQUAL(static_cast<int>(HealthState::kDown), static_cast<int>(fwd->upstreamStatus(0).state));
+  TEST_ASSERT_EQUAL(static_cast<int>(HealthState::kDown), static_cast<int>(fwd->upstreamStatus(1).state));
+  sink.results.clear();
+  fwd->submit(30, query("third.example"));
+  fwd->poll(0);  // goes to DoH: the longest-idle connection (dot1) is closed first
+  TEST_ASSERT_EQUAL(1, dot1->closes);
+  TEST_ASSERT_EQUAL(0, dot2->closes);
+  TEST_ASSERT_EQUAL(2, tlsConnected());
+  TEST_ASSERT_EQUAL(1, sink.results.size());
+  TEST_ASSERT_TRUE(sink.results[0].ok);
+}
+
+static void test_no_new_tls_connection_while_every_open_one_is_busy() {
+  upstream::ForwarderConfig cfg;
+  cfg.maxTlsConnections = 1;
+  build(cfg);
+  dot1->holdReplies = true;
+  fwd->submit(40, query("slow.example"));
+  fwd->poll(0);
+  fakeClock.advanceMs(1300);
+  fwd->poll(0);  // hedge due, but dot2 would need a second connection: keep waiting
+  TEST_ASSERT_EQUAL(0, dot2->connects);
+  TEST_ASSERT_EQUAL(1, tlsConnected());
+  dot1->release();
+  fwd->poll(0);
+  TEST_ASSERT_EQUAL(1, sink.results.size());
+  TEST_ASSERT_TRUE(sink.results[0].ok);  // the slow answer still reached the client
+
+  // A new query for another upstream waits until the open one is idle, then replaces it.
+  dot1->mode = FakeTransport::Mode::kSilent;
+  for (int i = 0; i < 3; i++) {  // dot1 times out three times: down, connection left open
+    fwd->submit(41 + i, query("s" + std::to_string(i) + ".example"));
+    fwd->poll(0);
+    fakeClock.advanceMs(2600);
+    fwd->poll(0);
+  }
+  TEST_ASSERT_EQUAL(0, dot2->connects);
+  TEST_ASSERT_TRUE(dot1->connected());
+  sink.results.clear();
+  fwd->submit(50, query("after.example"));
+  fwd->poll(0);
+  TEST_ASSERT_EQUAL(1, dot2->connects);
+  TEST_ASSERT_FALSE(dot1->connected());
+  TEST_ASSERT_TRUE(sink.results.size() == 1 && sink.results[0].ok);
+}
+
+static void test_tls_stage_connect_errors_are_logged() {
+  downAll(*dot1);
+  fwd->submit(60, query("tcp.example"));  // TCP-level failure (no TLS error): routine
+  fwd->poll(0);
+  TEST_ASSERT_EQUAL(0, logger.count(hal::LogLevel::kWarn, "TLS connect failed"));
+  dot1->tlsError = -0x7F00;  // MBEDTLS_ERR_SSL_ALLOC_FAILED
+  fakeClock.advanceMs(100);
+  fwd->submit(61, query("tls.example"));
+  fwd->poll(0);
+  TEST_ASSERT_EQUAL(1, logger.count(hal::LogLevel::kWarn, "cf-dot: TLS connect failed (error -0x7f00)"));
+}
+
 int main(int, char**) {
   UNITY_BEGIN();
   RUN_TEST(test_health_goes_down_after_three_failures_and_backs_off);
@@ -697,5 +806,9 @@ int main(int, char**) {
   RUN_TEST(test_recovery_after_outage_resets_the_others_to_unknown);
   RUN_TEST(test_one_dead_provider_still_backs_off_normally);
   RUN_TEST(test_plain_upstream_state_isnt_left_stale_after_encrypted_returns);
+  RUN_TEST(test_hedges_dont_mark_a_slow_but_answering_upstream_down);
+  RUN_TEST(test_tls_connections_are_capped_closing_the_idlest);
+  RUN_TEST(test_no_new_tls_connection_while_every_open_one_is_busy);
+  RUN_TEST(test_tls_stage_connect_errors_are_logged);
   return UNITY_END();
 }

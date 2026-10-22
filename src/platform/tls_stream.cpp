@@ -156,6 +156,7 @@ int TlsStream::bioRecv(void* ctx, unsigned char* buf, size_t len) {
 
 bool TlsStream::connect(uint32_t timeoutMs) {
   close();
+  lastError_ = 0;
   const uint64_t start = nowMs();
   const uint64_t deadline = start + timeoutMs;
   if (!setupConfig() || !openSocket(timeoutMs < kTcpConnectMs ? timeoutMs : kTcpConnectMs)) return false;

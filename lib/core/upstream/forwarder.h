@@ -8,6 +8,8 @@
 //    replies must match ID and question (late or forged replies are ignored).
 //  - A query unanswered after hedgeAfterMs is re-sent to the next healthy upstream;
 //    at totalDeadlineMs the client gets SERVFAIL via the sink.
+//  - At most maxTlsConnections DoT/DoH connections are open at once: a new one first
+//    closes the longest-idle one, or waits until one is idle.
 //
 // Driven by the upstream task: submit() new queries, call poll() in a loop.
 // Not thread-safe; owned by one task.
@@ -39,6 +41,11 @@ struct ForwarderConfig {
   // cause (ISP outage), not the providers: probe at least this often so lookups recover
   // within seconds of it coming back, instead of after a backoff of up to 5 min.
   uint32_t outageProbeMs = 10000;
+  // Each TLS session takes ~45 KB of internal RAM (mbedTLS can't use PSRAM here).
+  // Found on hardware: after a power cut the slow, just-restored internet made every
+  // query hedge, a connection opened to each upstream in turn, and internal RAM ran
+  // out (failed handshakes, dropped packets) until a reboot. ARCHITECTURE.md §11.
+  uint32_t maxTlsConnections = 2;
   bool allowPlainFallback = true;
   dns::UpstreamQueryOptions query;  // padding, AD request
   HealthConfig health;
@@ -111,6 +118,9 @@ class Forwarder {
   bool allEncryptedDown(uint64_t now) const;
   bool allDown() const;  // every upstream Down or Probing
   bool busy(int u) const;
+  // True if `u` is connected, isn't TLS, or a TLS connection may be opened for it
+  // (under the limit, or an idle one can be closed; closed now if `makeRoom`).
+  bool roomToConnect(int u, bool makeRoom);
   void trySend(Slot& s);
   void handleReply(int u, uint8_t* msg, size_t len);
   void failTransport(int u);
@@ -124,6 +134,7 @@ class Forwarder {
   ITransport* transports_[kMaxUpstreams] = {};
   UpstreamHealth health_[kMaxUpstreams];
   uint64_t lastActivityMs_[kMaxUpstreams] = {};
+  uint64_t lastReplyMs_[kMaxUpstreams] = {};  // any reply, matched or late: it's alive
   size_t count_;
   const hal::IClock& clock_;
   hal::IRandom& random_;

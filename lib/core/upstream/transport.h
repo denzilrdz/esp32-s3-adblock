@@ -36,6 +36,8 @@ class ITransport {
   // Receives one complete DNS message. Blocks up to timeoutMs (0 = poll).
   virtual IoStatus receive(uint8_t* buf, size_t cap, size_t& len, uint32_t timeoutMs) = 0;
   virtual void close() = 0;
+  // Error code of the last failed TLS step (mbedTLS, negative), 0 if none or not TLS.
+  virtual int lastError() const { return 0; }
 };
 
 }  // namespace upstream

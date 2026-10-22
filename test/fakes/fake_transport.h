@@ -66,6 +66,7 @@ class FakeTransport final : public upstream::ITransport {
     if (connected_) closes++;
     connected_ = false;
   }
+  int lastError() const override { return tlsError; }
 
   // Delivers replies held back with holdReplies, newest first if reversed.
   void release(bool reversed = false) {
@@ -99,6 +100,7 @@ class FakeTransport final : public upstream::ITransport {
   std::deque<testdns::Bytes> held;
   int connects = 0;
   int closes = 0;
+  int tlsError = 0;  // reported by lastError(), e.g. -0x7F00 for a failed TLS allocation
 
  private:
   const char* name_;

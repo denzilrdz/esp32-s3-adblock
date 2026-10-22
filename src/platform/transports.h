@@ -26,6 +26,7 @@ class DotTransport final : public upstream::ITransport {
   upstream::IoStatus send(const uint8_t* msg, size_t len) override;
   upstream::IoStatus receive(uint8_t* buf, size_t cap, size_t& len, uint32_t timeoutMs) override;
   void close() override;
+  int lastError() const override { return tls_.lastError(); }
 
  private:
   const char* name_;
@@ -50,6 +51,7 @@ class DohTransport final : public upstream::ITransport {
   upstream::IoStatus send(const uint8_t* msg, size_t len) override;
   upstream::IoStatus receive(uint8_t* buf, size_t cap, size_t& len, uint32_t timeoutMs) override;
   void close() override;
+  int lastError() const override { return tls_.lastError(); }
 
  private:
   const char* name_;

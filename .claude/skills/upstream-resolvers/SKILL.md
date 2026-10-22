@@ -70,7 +70,11 @@ created at boot in `startDnsService()`).
 ## Timing
 
 - Total deadline 2.5 s per query.
-- Hedge to the next healthy upstream after 1.2 s.
+- Hedge to the next healthy upstream after 1.2 s. The hedge blames the first upstream
+  only if it sent no reply at all since the query went out (slow is not down).
+- At most `maxTlsConnections` (2) DoT/DoH connections at once: a new one closes the
+  longest-idle one, or waits if all are busy (no hedge then). ~45 KB internal RAM
+  each; an uncapped cascade after a power cut exhausted it until a reboot.
 - SERVFAIL at the deadline.
 - Blocking budget: one `submit()`/`poll()` call starts a connect only if it fits in
   `maxBlockingMs` (4 s); `dns_up` feeds the watchdog after **each** call (a queue of

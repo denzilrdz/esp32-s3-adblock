@@ -475,7 +475,17 @@ timeout)`, `close()`, plus `pipelined()`. Implementations:
   ECDHE and certificate cost _(verify on hardware: resumed handshake time)_.
 - **Deadlines:** a query has 2.5 s in total. If the active upstream does not answer
   within 1.2 s, the query is re-sent once to the next healthy upstream. At the
-  deadline the client gets SERVFAIL (upstream sent nothing, W8).
+  deadline the client gets SERVFAIL (upstream sent nothing, W8). A hedge counts as a
+  failure only if the upstream sent no reply at all since the query went out: one
+  that is answering other queries is slow, not down.
+- **TLS connection limit:** at most `maxTlsConnections` (2) DoT/DoH connections are
+  open at once (internal RAM, §11). A new one first closes the longest-idle one; if
+  every open one has queries in flight, the query waits (and a hedge isn't sent).
+  Found after a power cut: the restored internet was slow, every query hedged, each
+  hedge marked a working upstream down, a connection was opened to each upstream in
+  turn and internal RAM ran out (failed handshakes, dropped packets) until a reboot.
+  A TLS-stage connect error is logged with its mbedTLS code (`-0x7f00` = out of
+  memory); `/api/stats` reports the largest free internal block (`heapBlock`).
 - **Local internet outage** (every upstream fails at once, tested by unplugging the
   router's WAN cable): the failures are most likely our own connection, not the
   providers. While every upstream is Down, retries are capped at `outageProbeMs`
@@ -696,8 +706,10 @@ automatically. This is a circuit-breaker with exponential backoff.
 | Web server, mDNS, ArduinoOTA, misc                                                                          | ≈ 30 KB     |
 | **Headroom**                                                                                                | ≈ 60–100 KB |
 
-At most two TLS sessions may exist at once. The updater downloads only while at most
-one DNS session is open.
+The forwarder keeps at most two TLS sessions open (`maxTlsConnections`). The daily
+blocklist download adds a third for its duration. A TLS session needs two 16 KB
+blocks in one piece each, so watch the largest free block (`heapBlock` in
+`/api/stats`), not only the free total.
 
 ### PSRAM (8 MB)
 

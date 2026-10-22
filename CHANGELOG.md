@@ -6,6 +6,17 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- DNS could stay slow or stop answering after a power cut until the board was
+  restarted. The internet is slow for a while after the router comes back, and every
+  slow answer counted as a failure, so the board opened an encrypted connection to
+  one DNS provider after another until it ran out of memory. It now keeps at most two
+  encrypted connections open, and a provider that is still answering is no longer
+  marked down for being slow.
+- The dashboard's _Free heap_ line also shows the largest free memory block, and a
+  failed encrypted connection is logged with its error code.
+
 ## [0.2.4] - 2026-10-21
 
 A Wi-Fi reliability fix. Update from the dashboard (_Device → Check for updates_);

@@ -34,6 +34,8 @@ class TlsStream {
   StreamStatus read(uint8_t* buf, size_t cap, size_t& got, uint32_t timeoutMs);
   // Sends close_notify (best effort) and frees the connection; keeps the session.
   void close();
+  // mbedTLS error of the last failed step (negative), 0 if none since connect().
+  int lastError() const { return lastError_; }
 
  private:
   static int bioSend(void* ctx, const unsigned char* buf, size_t len);
