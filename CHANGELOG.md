@@ -6,14 +6,19 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.5] - 2026-10-22
+
+A DNS reliability fix for power cuts. Update from the dashboard (_Device → Check for
+updates_); settings and bans are kept.
+
 ### Fixed
 
 - DNS could stay slow or stop answering after a power cut until the board was
   restarted. The internet is slow for a while after the router comes back, and every
-  slow answer counted as a failure, so the board opened an encrypted connection to
-  one DNS provider after another until it ran out of memory. It now keeps at most two
-  encrypted connections open, and a provider that is still answering is no longer
-  marked down for being slow.
+  slow answer counted as a failure, so working DNS providers were marked down one
+  after another and the board could open an encrypted connection to each of them,
+  enough to run out of memory. It now keeps at most two encrypted connections open,
+  and a provider that is still answering is no longer marked down for being slow.
 - The dashboard's _Free heap_ line also shows the largest free memory block, and a
   failed encrypted connection is logged with its error code.
 
@@ -267,7 +272,8 @@ password setup.
   flash are required), upstream's 40-bit blocklist format, the Japanese README,
   the C3 web-installer binaries and the C3 SuperMini enclosure.
 
-[Unreleased]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.2.4...HEAD
+[Unreleased]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.2.5...HEAD
+[0.2.5]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.2.4...v0.2.5
 [0.2.4]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.2.1...v0.2.2
