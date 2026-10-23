@@ -1,6 +1,7 @@
 #include "diag/restart.h"
 
 #include <cstdio>
+#include <cstring>
 
 namespace diag {
 
@@ -63,11 +64,56 @@ size_t formatBacktrace(const CrashRecord& r, char* out, size_t cap) {
   return len;
 }
 
+void condensePanicReason(const char* raw, char* out, size_t cap) {
+  if (!out || cap == 0) return;
+  out[0] = 0;
+  if (!raw) return;
+  static const char kList[] = ". The following tasks/users did not reset the watchdog in time:";
+  size_t n = 0;
+  auto put = [&](char c) {
+    if (n + 1 < cap) out[n++] = c;
+  };
+  const char* p = raw;
+  const char* list = strstr(raw, kList);
+  if (list) {
+    for (; p < list; p++) put(*p);
+    put(':');
+    p = list + sizeof(kList) - 1;
+  }
+  bool first = true, space = false;
+  for (; *p; p++) {
+    if (list && p[0] == '\n' && p[1] == ' ' && p[2] == '-' && p[3] == ' ') {  // next culprit
+      put(first ? ' ' : ',');
+      if (!first) put(' ');
+      first = false;
+      space = false;
+      p += 3;
+      continue;
+    }
+    if (*p == '\n' || *p == '\r') {
+      space = true;
+      continue;
+    }
+    if (space && n) put(' ');
+    space = false;
+    put(*p);
+  }
+  while (n && out[n - 1] == ' ') n--;
+  out[n] = 0;
+}
+
 void describe(const RestartInfo& info, char* out, size_t cap) {
   if (!out || cap == 0) return;
   const char* name = resetCauseName(info.cause);
+  const bool watchdog =
+      info.cause == ResetCause::kTaskWatchdog || info.cause == ResetCause::kInterruptWatchdog;
   if (info.cause == ResetCause::kSoftware && info.note[0]) {
     snprintf(out, cap, "%s: %s", name, info.note);
+  } else if (info.crashThisBoot() && watchdog) {
+    // "Task watchdog got triggered: dns_up (CPU 1)" -> name the culprits only.
+    const char* why = info.crash.reason;
+    const char* colon = strchr(why, ':');
+    snprintf(out, cap, "%s%s%s", name, colon ? ":" : (*why ? ": " : ""), colon ? colon + 1 : why);
   } else if (info.crashThisBoot()) {
     const char* why = info.crash.reason[0] ? info.crash.reason : "";
     if (info.crash.task[0])

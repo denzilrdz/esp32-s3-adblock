@@ -70,7 +70,9 @@ diag::RestartInfo readRestartInfo() {
       c.corrupted = s.exc_bt_info.corrupted;
       const size_t sha = strnlen(reinterpret_cast<const char*>(s.app_elf_sha256), sizeof(s.app_elf_sha256));
       memcpy(c.elfSha, s.app_elf_sha256, sha < sizeof(c.elfSha) - 1 ? sha : sizeof(c.elfSha) - 1);
-      if (esp_core_dump_get_panic_reason(c.reason, sizeof(c.reason)) != ESP_OK) c.reason[0] = 0;
+      char raw[256];  // multi-line; the culprit list comes last
+      if (esp_core_dump_get_panic_reason(raw, sizeof(raw)) == ESP_OK)
+        diag::condensePanicReason(raw, c.reason, sizeof(c.reason));
     }
   }
   return info;

@@ -88,11 +88,23 @@ static void test_describe_restart() {
   TEST_ASSERT_EQUAL_STRING("restarted by the firmware: Wi-Fi down for 10 min", out);
 
   info = diag::RestartInfo{};
-  info.cause = ResetCause::kTaskWatchdog;
+  info.cause = ResetCause::kPanic;
   info.crash = sampleCrash();
+  strcpy(info.crash.reason, "LoadProhibited");
   TEST_ASSERT_TRUE(info.crashThisBoot());
   diag::describe(info, out, sizeof(out));
-  TEST_ASSERT_EQUAL_STRING("crash (task watchdog) in task dns_up: Task watchdog got triggered", out);
+  TEST_ASSERT_EQUAL_STRING("crash in task dns_up: LoadProhibited", out);
+
+  // Watchdog: the task in the record is only whoever ran when it fired (IDLE1 on the
+  // board, 2026-10-23); the culprits are in the reason.
+  info.cause = ResetCause::kTaskWatchdog;
+  strcpy(info.crash.task, "IDLE1");
+  strcpy(info.crash.reason, "Task watchdog got triggered: dns_up (CPU 1)");
+  diag::describe(info, out, sizeof(out));
+  TEST_ASSERT_EQUAL_STRING("crash (task watchdog): dns_up (CPU 1)", out);
+  strcpy(info.crash.reason, "Task watchdog got triggered");
+  diag::describe(info, out, sizeof(out));
+  TEST_ASSERT_EQUAL_STRING("crash (task watchdog): Task watchdog got triggered", out);
 
   // A record left from an earlier crash doesn't explain a later firmware update.
   info.cause = ResetCause::kSoftware;
@@ -212,12 +224,38 @@ static void test_liveness_concurrent_beats_never_false_alarm() {
   TEST_ASSERT_EQUAL(0, alarms.load());
 }
 
+static void test_condense_task_watchdog_panic_text() {
+  char out[96];
+  // Exactly what the board reported (it was cut off at 96 chars before culprits).
+  diag::condensePanicReason(
+      "Task watchdog got triggered. The following tasks/users did not reset the "
+      "watchdog in time:\n - dns_up (CPU 1)\n",
+      out, sizeof(out));
+  TEST_ASSERT_EQUAL_STRING("Task watchdog got triggered: dns_up (CPU 1)", out);
+  diag::condensePanicReason(
+      "Task watchdog got triggered. The following tasks/users did not reset the "
+      "watchdog in time:\n - IDLE0 (CPU 0)\n - web (CPU 0)\n",
+      out, sizeof(out));
+  TEST_ASSERT_EQUAL_STRING("Task watchdog got triggered: IDLE0 (CPU 0), web (CPU 0)", out);
+  diag::condensePanicReason("abort() was called at PC 0x42001234\non core 1", out, sizeof(out));
+  TEST_ASSERT_EQUAL_STRING("abort() was called at PC 0x42001234 on core 1", out);
+  char tiny[12];
+  diag::condensePanicReason(
+      "Task watchdog got triggered. The following tasks/users did not reset the "
+      "watchdog in time:\n - dns_up (CPU 1)\n",
+      tiny, sizeof(tiny));
+  TEST_ASSERT_EQUAL_STRING("Task watchd", tiny);  // truncated, still terminated
+  diag::condensePanicReason(nullptr, out, sizeof(out));
+  TEST_ASSERT_EQUAL_STRING("", out);
+}
+
 int main(int, char**) {
   UNITY_BEGIN();
   RUN_TEST(test_reset_cause_follows_idf_order);
   RUN_TEST(test_only_panics_and_watchdogs_count_as_crashes);
   RUN_TEST(test_backtrace_is_ready_for_addr2line);
   RUN_TEST(test_describe_restart);
+  RUN_TEST(test_condense_task_watchdog_panic_text);
   RUN_TEST(test_liveness_flags_only_silent_armed_activities);
   RUN_TEST(test_liveness_survives_the_32_bit_millisecond_wrap);
   RUN_TEST(test_liveness_checker_is_watched_too);

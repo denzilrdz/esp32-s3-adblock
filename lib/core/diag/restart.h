@@ -62,7 +62,17 @@ struct RestartInfo {
 };
 
 // One line, e.g. "power on", "restarted by the firmware: Wi-Fi down for 10 min",
-// "crash (task watchdog) in task dns_up: Task watchdog got triggered".
+// "crash in task dns_up: LoadProhibited ...", "crash (task watchdog): dns_up (CPU 1)".
+// For a watchdog crash the task named in the record is only whichever task happened
+// to run when the watchdog fired, so the line names the tasks that didn't check in.
 void describe(const RestartInfo& info, char* out, size_t cap);
+
+// ESP-IDF's panic text for a task watchdog is long and multi-line:
+//   "Task watchdog got triggered. The following tasks/users did not reset the
+//    watchdog in time:\n - dns_up (CPU 1)\n - IDLE0 (CPU 0)\n"
+// Condensed to one line that fits CrashRecord::reason with the culprits first:
+//   "Task watchdog got triggered: dns_up (CPU 1), IDLE0 (CPU 0)".
+// Other texts only get their newlines turned into spaces. Always NUL-terminates.
+void condensePanicReason(const char* raw, char* out, size_t cap);
 
 }  // namespace diag
