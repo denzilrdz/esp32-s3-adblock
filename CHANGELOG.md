@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.6] - 2026-10-23
+
+The dashboard now asks for a password before showing anything. Update from the
+dashboard (_Device → Check for updates_); settings and bans are kept. After the
+update, reload the dashboard tab once to get the login screen.
+
 ### Security
 
 - The dashboard now opens on a login screen. Before, anyone on your network could see
@@ -280,7 +286,8 @@ password setup.
   flash are required), upstream's 40-bit blocklist format, the Japanese README,
   the C3 web-installer binaries and the C3 SuperMini enclosure.
 
-[Unreleased]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.2.5...HEAD
+[Unreleased]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.2.6...HEAD
+[0.2.6]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.2.5...v0.2.6
 [0.2.5]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.2.4...v0.2.5
 [0.2.4]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.2.2...v0.2.3
