@@ -7,6 +7,7 @@
 
 #include <ctime>
 
+#include "platform/restart_info.h"
 #include "platform/watchdog.h"
 #include "web/page.h"
 #include "web/portal.h"
@@ -222,13 +223,13 @@ void Dashboard::begin() {
     sendText(200, "Wi-Fi forgotten; rebooting into the setup portal");
     forgetWifi();
     delay(500);
-    ESP.restart();
+    platform::restart("Wi-Fi forgotten (dashboard)");
   });
   s.on("/api/reboot", HTTP_POST, [this]() {
     if (!guard(Access::kAuth)) return;
     sendText(200, "rebooting");
     delay(500);
-    ESP.restart();
+    platform::restart("Reboot button (dashboard)");
   });
   s.on(
       "/api/blocklist/upload", HTTP_POST, [this]() { handleListUploadDone(); },
@@ -263,6 +264,23 @@ void Dashboard::handleStats() {
        ",\"heapMin\":" + String(ESP.getMinFreeHeap()) + ",\"heapBlock\":" + String(ESP.getMaxAllocHeap()) +
        ",\"psram\":" + String(ESP.getFreePsram()) + ",\"temp\":" + String(temperatureRead(), 1);
   j += ",\"setupRequired\":" + String(b(ctx_.passwords->mustChange()));
+  if (ctx_.restart) {
+    const diag::RestartInfo& r = *ctx_.restart;
+    char why[160];
+    diag::describe(r, why, sizeof(why));
+    j += ",\"restart\":{\"cause\":" + q(diag::resetCauseName(r.cause)) + ",\"summary\":" + q(why) +
+         ",\"crash\":";
+    if (r.crash.present) {
+      char bt[200];
+      diag::formatBacktrace(r.crash, bt, sizeof(bt));
+      j += "{\"thisBoot\":" + String(b(r.crashThisBoot())) + ",\"task\":" + q(r.crash.task) +
+           ",\"reason\":" + q(r.crash.reason) + ",\"backtrace\":" + q(bt) +
+           ",\"corrupted\":" + b(r.crash.corrupted) + ",\"elf\":" + q(r.crash.elfSha) + "}";
+    } else {
+      j += "null";
+    }
+    j += "}";
+  }
   j += ",\"timeSynced\":" + String(b(bl.timeSynced)) + ",\"now\":" + q(formatTime(time(nullptr)));
   j += ",\"blocking\":" + String(b(ctx_.clients->blockingOn())) +
        ",\"resumeIn\":" + String(ctx_.clients->resumeInSeconds());
@@ -344,7 +362,7 @@ void Dashboard::handleSetConfig() {
   if (restart) {
     sendText(200, "saved; restarting to apply DNS settings");
     delay(500);
-    ESP.restart();
+    platform::restart("DNS settings changed");
   }
   if (ctx_.applyLive) ctx_.applyLive(next);
   sendText(200, "saved");
@@ -535,7 +553,7 @@ void Dashboard::handleFirmwareUploadDone() {
            ok ? "firmware accepted; rebooting (rolls back if unhealthy)" : "firmware update failed");
   if (ok) {
     delay(500);
-    ESP.restart();
+    platform::restart("firmware update (dashboard)");
   }
 }
 

@@ -332,6 +332,10 @@ function render(s){const d=s.dns,bl=s.blocklist;
  const q=s.rssi>=-55?'excellent':s.rssi>=-67?'good':s.rssi>=-75?'fair':'weak',qp=Math.max(5,Math.min(100,(s.rssi+95)*100/60));
  const PSRAM=8388608,used=Math.max(0,PSRAM-s.psram);
  const dv=el('dl',undefined,'kv');for(const [k,v] of [['Address',s.hostname+'.local · '+s.ip],['Firmware','v'+s.version],['Uptime',s.uptime],['Temperature',s.temp+' °C'],['Free heap',fmt(s.heap)+' B (lowest '+fmt(s.heapMin)+' B, largest block '+fmt(s.heapBlock)+' B)']])dv.append(el('dt',k),el('dd',v));
+ // Why it last restarted; a crash record can be older than the last restart (it stays in flash).
+ const rs=s.restart;if(rs){dv.append(el('dt','Last restart'),el('dd',rs.summary));const c=rs.crash;
+  if(c){dv.append(el('dt','Crash record'),el('dd',(c.thisBoot?'':'earlier crash · ')+'task '+(c.task||'?')+(c.reason?' · '+c.reason:'')));
+   if(c.backtrace)dv.append(el('dt','Backtrace'),el('dd',c.backtrace+(c.corrupted?' (incomplete)':''),'mono'))}}
  const m=(label,val,w,color)=>{const f=document.createDocumentFragment(),bar=el('div',undefined,'meter'),i=el('i');i.style.width=w+'%';if(color)i.style.background=color;bar.append(i);f.append(el('div',label,'hint'),bar);return f};
  $('dev').replaceChildren(m('Wi-Fi signal: '+q+' ('+s.rssi+' dBm)',null,qp,qp<35?'var(--warn)':null),m('PSRAM: '+mb(s.psram)+' free of 8 MB',null,100*used/PSRAM),dv)}
 

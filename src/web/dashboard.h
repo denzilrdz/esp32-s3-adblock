@@ -18,6 +18,7 @@
 #include "app/clients.h"
 #include "auth/auth.h"
 #include "config/config.h"
+#include "diag/restart.h"
 #include "hal/kv_store.h"
 #include "hal/logger.h"
 #include "tasks/dns_service.h"
@@ -32,6 +33,7 @@ struct DashboardContext {
   auth::PasswordStore* passwords = nullptr;
   auth::LoginGuard* logins = nullptr;
   auth::SessionStore* sessions = nullptr;
+  const diag::RestartInfo* restart = nullptr;  // read once at boot
   config::AppConfig* config = nullptr;
   hal::IKeyValueStore* kv = nullptr;
   hal::ILogger* log = nullptr;

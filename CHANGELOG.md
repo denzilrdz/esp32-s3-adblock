@@ -6,6 +6,14 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- _Device → Health_ shows why the board last restarted: power on, a power dip, a crash
+  or watchdog, or the firmware's own reason (for example "Wi-Fi down for 10 min",
+  "firmware update" or the Reboot button). After a crash it also shows the crash
+  record (the task, the reason and a backtrace for decoding), even one from before
+  this update, so a restart can be explained without a USB cable.
+
 ## [0.2.6] - 2026-10-23
 
 The dashboard now asks for a password before showing anything. Update from the

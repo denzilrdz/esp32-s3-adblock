@@ -33,6 +33,16 @@ pio device monitor -e esp32s3        # 115200 baud, filters: esp32_exception_dec
 
 ## Crash / backtrace
 
+- **Without a cable (v0.2.7+):** _Device → Health_ shows _Last restart_ (power on,
+  crash, watchdog, brownout, or the firmware's own reason such as "Wi-Fi down for 10
+  min") and, if the `coredump` partition holds one, the crash record: task, panic
+  reason and backtrace (`restart` in `/api/stats`). The record stays in flash until
+  the next crash, so it survives OTA updates; "earlier crash" means it predates the
+  last restart. Decode the backtrace with the ELF of the build that crashed
+  (`restart.crash.elf` = the leading digits of its ELF SHA-256; release assets carry
+  `firmware-<env>-vX.Y.Z.elf`). The boot log prints the same as `[boot] last restart:`.
+- Every deliberate restart goes through `platform::restart(why)`
+  (`src/platform/restart_info.h`), never `ESP.restart()`, so its reason is shown.
 - The monitor's `esp32_exception_decoder` filter turns `Backtrace: 0x...` into
   file:line if the ELF matches the running firmware. Keep `.pio/build/esp32s3/firmware.elf`
   from the build you flashed.

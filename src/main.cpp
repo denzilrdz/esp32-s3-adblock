@@ -26,6 +26,7 @@
 #include "platform/littlefs_fs.h"
 #include "platform/nvs_kv_store.h"
 #include "platform/psram.h"
+#include "platform/restart_info.h"
 #include "platform/serial_logger.h"
 #include "platform/transports.h"
 #include "platform/watchdog.h"
@@ -63,6 +64,7 @@ auth::PasswordStore* gPasswords = nullptr;
 auth::LoginGuard gLogins(gClock);
 auth::SessionStore gSessions(gClock, gRandom);
 web::Dashboard* gDashboard = nullptr;
+diag::RestartInfo gRestart;
 
 void feedWatchdog() {
   platform::feedWatchdog();  // also called from setup(), before loop() subscribes
@@ -148,6 +150,7 @@ void startOta() {
   }
   ArduinoOTA.setHostname(kHostname);  // pio run -t upload --upload-port <hostname>.local
   ArduinoOTA.setPassword(OTA_PASS);
+  ArduinoOTA.onEnd([]() { platform::noteRestart("firmware update (ArduinoOTA)"); });  // it reboots itself
   ArduinoOTA.begin();
 }
 
@@ -168,6 +171,7 @@ void maintainOtaHealth() {
     done = true;
   } else if (millis() > 300000) {
     gLog.log(hal::LogLevel::kError, "ota", "new firmware unhealthy after 5 min: rolling back");
+    platform::noteRestart("rollback: new firmware unhealthy");
     esp_ota_mark_app_invalid_rollback_and_reboot();
   }
 }
@@ -188,7 +192,7 @@ void superviseWifi() {
   } else if (millis() - downSince > 600000UL) {
     gLog.log(hal::LogLevel::kError, "wifi", "down for 10 min: rebooting");
     delay(200);
-    ESP.restart();
+    platform::restart("Wi-Fi down for 10 min");
   }
 }
 
@@ -220,6 +224,19 @@ void setup() {
   delay(300);
   Serial.printf("\n[adblock] v%s booting (%s, PSRAM %u KB)\n", FW_VERSION, kHostname,
                 static_cast<unsigned>(ESP.getPsramSize() / 1024));
+  gRestart = platform::readRestartInfo();
+  {
+    char why[160], bt[200];
+    diag::describe(gRestart, why, sizeof(why));
+    Serial.printf("[boot] last restart: %s\n", why);
+    if (gRestart.crash.present) {
+      diag::formatBacktrace(gRestart.crash, bt, sizeof(bt));
+      Serial.printf("[boot] crash record (%s): task %s, %s; backtrace %s%s\n",
+                    gRestart.crashThisBoot() ? "this restart" : "earlier", gRestart.crash.task,
+                    gRestart.crash.reason[0] ? gRestart.crash.reason : "no reason", bt,
+                    gRestart.crash.corrupted ? " (corrupted)" : "");
+    }
+  }
   if (!platform::havePsram())
     Serial.println(
         "[ERROR] No PSRAM found. This firmware needs an ESP32-S3 with octal PSRAM (N16R8); "
@@ -257,6 +274,7 @@ void setup() {
   ctx.passwords = gPasswords;
   ctx.logins = &gLogins;
   ctx.sessions = &gSessions;
+  ctx.restart = &gRestart;
   ctx.config = &gConfig;
   ctx.kv = &gKv;
   ctx.log = &gLog;

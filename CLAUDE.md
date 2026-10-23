@@ -51,7 +51,7 @@ port troubleshooting: skill `build-flash`.
 
 ```
 lib/core/      portable C++17 logic, NO Arduino/IDF headers (tested natively)
-  dns/ blocklist/ cache/ upstream/ sched/ update/ config/ auth/ clients/ hal/ util/
+  dns/ blocklist/ cache/ upstream/ sched/ update/ config/ auth/ clients/ diag/ hal/ util/
 src/           ESP32-only: main.cpp (composition root), platform/ (HAL impls: TLS,
                transports, LittleFS, NVS, HTTP), tasks/ (DNS service tasks),
                app/ (blocklist manager, client table, DNS policy),
@@ -145,6 +145,8 @@ native tests; pre-push = clang-tidy + esp32s3 firmware build.
 - **Dashboard login:** every `/api` route needs the session cookie from `POST /api/login`
   or Basic Auth (`curl -u admin:<password>`); only `/` is public. Never send
   `WWW-Authenticate` (the browser pop-up would cover the page's login form).
+- **Restarts:** call `platform::restart("why")` (`src/platform/restart_info.h`), never
+  `ESP.restart()`: the reason is kept in RTC memory and shown under _Device → Health_.
 - **IPv6 / browser secure DNS bypass** the blocker: docs/ROUTER_SETUP.md.
 - **GitHub Actions:** pin every action to a full commit SHA with a `# vX.Y.Z` comment,
   `persist-credentials: false` on checkout, per-job `permissions` with a comment per

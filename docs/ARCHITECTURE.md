@@ -102,7 +102,10 @@ lib/core/                     portable C++17, unit-tested natively (pio test -e 
   sched/      daily_scheduler.{h,cpp}  02:00 local trigger, retry, dedupe
   update/     updater.{h,cpp}     download -> validate -> swap, boot recovery
   config/     config.{h,cpp}      settings, validation, NVS, upstream chain builder
-  auth/       auth.{h,cpp}        password hashing, setup code, lockout, Host/Origin
+  auth/       auth.{h,cpp}        password hashing, setup code, lockout, Host/Origin,
+                                  login sessions
+  diag/       restart.{h,cpp}     restart cause names, crash-record summary and
+                                  backtrace text (filled by platform/restart_info)
   clients/    ban_list.{h,cpp}    banned IPs, the only source of truth (/banned.txt)
               pause_timer.h       pause blocking for N s or until resumed (64-bit ms)
   hal/        clock.h, random.h, kv_store.h, file_system.h, http_client.h,

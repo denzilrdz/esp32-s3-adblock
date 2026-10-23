@@ -6,6 +6,7 @@
 
 #include <memory>
 
+#include "platform/restart_info.h"
 #include "secrets.h"
 #include "util/wifi_join.h"
 #include "util/wifi_scan.h"
@@ -339,7 +340,7 @@ String joinPage(const String& ssid, util::WifiSecurity sec, bool listed, const c
             "<li>Point your router's DNS at the device.</li></ol><p class=hint>Wrong password? After "
             "about 30 seconds this setup network appears again so you can retry.</p>");
     delay(900);
-    ESP.restart();
+    platform::restart("Wi-Fi setup saved");
   });
   server.onNotFound(root);  // any captive-portal probe -> the form
   server.begin();
@@ -354,7 +355,7 @@ String joinPage(const String& ssid, util::WifiSecurity sec, bool listed, const c
     if (WiFi.softAPgetStationNum() > 0) t0 = millis();  // someone is setting it up
     if (configured && millis() - t0 > 180000UL) {
       Serial.println("[setup] retrying Wi-Fi");
-      ESP.restart();
+      platform::restart("setup portal: retrying Wi-Fi");
     }
   }
 }
