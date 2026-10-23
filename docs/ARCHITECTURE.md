@@ -239,14 +239,36 @@ Exceptions, both found on hardware (2026-10-23):
   ~10 s; at priority 3 that starved IDLE0, so one phone's Wi-Fi hiccup mid-request
   reset the board (`tools/http_stall.py` reproduces it). Those waits are bounded by the
   library (`WEBSERVER_MAX_LINE_WAIT` 2 s, `WEBSERVER_MAX_HEADER_WAIT` 4 s in
-  `platformio.ini`); a web task that stops for good is caught by a heartbeat that the
-  maintenance task checks (restart after 180 s, reason "web task stuck").
+  `platformio.ini`), and the 46 KB page is sent in pieces under a 20 s deadline
+  (`util::sendWithDeadline`): each byte sent resets NetworkClient's retry count, so a
+  client reading a trickle at a time could otherwise hold the task for hours.
 - **The blocklist download pauses the watchdog** (`platform::WatchdogPause` in
   `EspHttpClient::get`): `esp_http_client_open()` does DNS + TCP + TLS per redirect hop
   with no way to feed in between. A 5 min overall deadline bounds it instead.
 - **TLS handshakes** feed it from the BIO callbacks (each socket call ≤ 1 s), since one
   `mbedtls_ssl_handshake()` call runs the whole handshake; the handshake deadline is
   enforced there too.
+
+**Software watchdog** (`diag::LivenessMonitor`, wired in `src/main.cpp`): everything
+the hardware watchdog can't see has a backstop, so a real hang always ends in a
+restart whose reason names it (_Device → Health_):
+
+| Activity             | Beats                             | Limit  | Why the hardware watchdog misses it           |
+| -------------------- | --------------------------------- | ------ | --------------------------------------------- |
+| `web task`           | each loop, each upload chunk      | 10 min | not subscribed (above)                        |
+| `blocklist download` | armed for the whole `get()`       | 6 min  | paused; also a server trickling bytes forever |
+| `upstream task`      | each `dns_up` loop                | 30 s   | fed inside TLS I/O: an I/O livelock stays fed |
+| the checker itself   | `check()` every 5 s (`esp_timer`) | 30 s   | checked by the maintenance task (watched)     |
+
+Each limit sits above the slowest legitimate case (bounded slow clients: seconds;
+download: 5 min deadline; one `dns_up` loop: ≤ 4 s `maxBlockingMs`), so slowness never
+restarts the board; `test_netsim` checks the download limits against 90 days of bad
+internet. Activities are armed only once their task runs (boot may wait minutes for
+Wi-Fi). The check runs in the `esp_timer` task and prints with `esp_rom_printf`, not
+the logger, whose mutex a stuck task might hold. `dns_io`/`dns_tcp`, the maintenance
+task and IDLE0 stay on the hardware watchdog alone: they feed it only at the top of
+their loops. `tools/selftest_board.py` with the `esp32s3_selftest` build hangs each
+activity on the board and checks the restart reason.
 
 ---
 
@@ -620,6 +642,13 @@ automatically. This is a circuit-breaker with exponential backoff.
 - An attacker who can sniff the LAN can read the login password and session cookie
   (the dashboard is plain HTTP).
 - The setup access point is open during provisioning.
+- A LAN client that deliberately trickles a request body (a byte every few seconds)
+  holds the single web task: the dashboard is unavailable meanwhile (DNS is not
+  affected), and after 10 min the software watchdog restarts the board. Every
+  accidental slow-client case is bounded by seconds (§4.3).
+- The software watchdog runs in the `esp_timer` task. If that task died while the
+  blocklist download was stuck in its unwatched phase, nothing would restart the board
+  (two independent failures; a dead `esp_timer` also stops Wi-Fi and lwIP timers).
 
 **Controls:**
 

@@ -12,16 +12,17 @@
 #include <WiFi.h>
 #include <esp_netif.h>
 #include <esp_ota_ops.h>
+#include <esp_rom_sys.h>
 #include <esp_sntp.h>
 #include <esp_task_wdt.h>
-
-#include <atomic>
+#include <esp_timer.h>
 
 #include "app/app_policy.h"
 #include "app/blocklist_manager.h"
 #include "app/clients.h"
 #include "auth/auth.h"
 #include "config/config.h"
+#include "diag/liveness.h"
 #include "platform/esp_clock.h"
 #include "platform/esp_http.h"
 #include "platform/esp_random.h"
@@ -67,6 +68,62 @@ auth::LoginGuard gLogins(gClock);
 auth::SessionStore gSessions(gClock, gRandom);
 web::Dashboard* gDashboard = nullptr;
 diag::RestartInfo gRestart;
+
+// Software watchdog (lib/core/diag/liveness.h) for what the 5 s hardware one can't
+// cover. Limits: the web task's library-bounded waits are seconds, its slowest
+// legitimate call (a firmware upload) beats per chunk; a whole blocklist download
+// takes seconds (5 min overall deadline in esp_http.cpp, this is the backstop); one
+// upstream-task loop is bounded by ForwarderConfig::maxBlockingMs (4 s).
+diag::LivenessMonitor gLiveness(gClock);
+int gWebAlive = -1;
+int gDownloadAlive = -1;
+int gUpstreamAlive = -1;
+// Web: 10 min. Every slow-client case is bounded well below that (2 s per header line,
+// 4 s per request, ~10 s without send progress, 20 s per page), except a client
+// trickling a request body on purpose; this only catches a real hang (ARCHITECTURE §9).
+#ifndef ADBLOCK_SELFTEST
+constexpr uint32_t kWebStuckMs = 600000;
+constexpr uint32_t kDownloadStuckMs = 360000;
+constexpr uint32_t kUpstreamStuckMs = 30000;
+#else  // short limits so each self-test hang ends within seconds
+constexpr uint32_t kWebStuckMs = 20000;
+constexpr uint32_t kDownloadStuckMs = 20000;
+constexpr uint32_t kUpstreamStuckMs = 10000;
+#endif
+constexpr uint32_t kLivenessPeriodMs = 5000;
+constexpr uint32_t kCheckerStalledMs = 30000;  // the timer that runs check() stopped
+bool gLivenessRunning = false;                 // the timer started; judge it from now on
+esp_timer_handle_t gLivenessTimer = nullptr;
+
+#ifdef ADBLOCK_SELFTEST
+// Self-test hangs (env esp32s3_selftest, skill debugging). Each must end in a restart
+// whose reason names the hang: software watchdog ("<activity> stuck", "software
+// watchdog stopped") or hardware watchdog (crash record).
+std::atomic<int> gSelftestUpstream{0};
+std::atomic<bool> gSelftestDownload{false};
+
+void selftestSpin(void*) {
+  while (true) {  // never yields: starves IDLE0
+  }
+}
+
+void selftest(const String& what) {
+  esp_rom_printf("[W][selftest] hang %s\n", what.c_str());
+  if (what == "web") {
+    while (true) vTaskDelay(pdMS_TO_TICKS(100));  // the web task stops making progress
+  } else if (what == "download") {
+    gSelftestDownload.store(true);  // loop() hangs as if inside esp_http_client
+  } else if (what == "upstream") {
+    gSelftestUpstream.store(1);
+  } else if (what == "upstream-hw") {
+    gSelftestUpstream.store(2);
+  } else if (what == "checker") {
+    esp_timer_stop(gLivenessTimer);
+  } else if (what == "idle0") {
+    xTaskCreatePinnedToCore(selftestSpin, "selftest_spin", 2048, nullptr, 5, nullptr, 0);
+  }
+}
+#endif
 
 void feedWatchdog() {
   platform::feedWatchdog();  // also called from setup(), before loop() subscribes
@@ -128,8 +185,16 @@ void startDnsService() {
   cfg.forwarder.allowPlainFallback = gConfig.plainFallback;
   cfg.forwarder.query.padding = gConfig.padding;
   cfg.forwarder.query.requestAd = gConfig.passAd;
+  cfg.liveness = &gLiveness;
+  cfg.livenessId = gUpstreamAlive;
+#ifdef ADBLOCK_SELFTEST
+  cfg.selftestHang = &gSelftestUpstream;
+#endif
   gDns = new app::DnsService(cfg, *gPolicy, gClock, gRandom, gLog, chain, n);
-  if (!gDns->start()) gLog.log(hal::LogLevel::kError, "boot", "DNS service failed to start");
+  if (gDns->start())
+    gLiveness.arm(gUpstreamAlive);  // dns_up beats from its first loop on
+  else
+    gLog.log(hal::LogLevel::kError, "boot", "DNS service failed to start");
 }
 
 // web task (core 0): dashboard + ArduinoOTA, so a slow HTTP client or a blocklist
@@ -141,13 +206,11 @@ void startDnsService() {
 // to ~10 s. At priority 3 that starved IDLE0, and the 5 s watchdog restarted the board
 // whenever one phone's Wi-Fi hiccuped mid-request (reproduced 2026-10-23 with one
 // client trickling headers). Those waits are bounded by the library; a web task stuck
-// for good is caught by the heartbeat that loop() checks (kWebStuckMs).
-std::atomic<uint32_t> gWebBeat{0};
-constexpr uint32_t kWebStuckMs = 180000;  // above the slowest firmware upload
-
+// for good is caught by the software watchdog (gWebAlive, kWebStuckMs).
 void webTask(void*) {
+  gLiveness.arm(gWebAlive);
   while (true) {
-    gWebBeat.store(millis());
+    gLiveness.beat(gWebAlive);
     gServer.handleClient();
     ArduinoOTA.handle();
     vTaskDelay(pdMS_TO_TICKS(2));
@@ -163,6 +226,7 @@ void startOta() {
   ArduinoOTA.setHostname(kHostname);  // pio run -t upload --upload-port <hostname>.local
   ArduinoOTA.setPassword(OTA_PASS);
   ArduinoOTA.onEnd([]() { platform::noteRestart("firmware update (ArduinoOTA)"); });  // it reboots itself
+  ArduinoOTA.onProgress([](unsigned, unsigned) { gLiveness.beat(gWebAlive); });       // runs in the web task
   ArduinoOTA.begin();
 }
 
@@ -220,6 +284,30 @@ void clearWifiIfBootHeld() {
   }
 }
 
+// Runs every kLivenessPeriodMs in the esp_timer task, independent of the tasks it
+// watches (the maintenance task may be inside a download with its watchdog paused).
+void livenessCheck(void*) {
+  const char* stuck = gLiveness.check();
+  if (!stuck) return;
+  char why[sizeof(diag::RestartInfo::note)];
+  snprintf(why, sizeof(why), "%s stuck", stuck);
+  // ROM printf, not gLog: the stuck task may hold the logger's mutex, and blocking on
+  // it here would leave nothing to restart the board. The reason survives in RTC memory.
+  esp_rom_printf("[E][boot] %s: rebooting\n", why);
+  platform::restart(why);
+}
+
+void startLivenessChecks() {
+  gLiveness.check();  // first run before loop() starts judging the checker
+  esp_timer_create_args_t args = {};
+  args.callback = livenessCheck;
+  args.name = "liveness";
+  gLivenessRunning =
+      esp_timer_create(&args, &gLivenessTimer) == ESP_OK &&
+      esp_timer_start_periodic(gLivenessTimer, static_cast<uint64_t>(kLivenessPeriodMs) * 1000) == ESP_OK;
+  if (!gLivenessRunning) gLog.log(hal::LogLevel::kError, "boot", "software watchdog could not start");
+}
+
 }  // namespace
 
 // Firmware rollback: Arduino would mark a freshly OTA-flashed image valid at boot. We
@@ -237,6 +325,11 @@ void setup() {
   Serial.printf("\n[adblock] v%s booting (%s, PSRAM %u KB)\n", FW_VERSION, kHostname,
                 static_cast<unsigned>(ESP.getPsramSize() / 1024));
   gRestart = platform::readRestartInfo();
+  // Armed only once each task runs: setup() may wait minutes for Wi-Fi first.
+  gWebAlive = gLiveness.add("web task", kWebStuckMs, false);
+  gDownloadAlive = gLiveness.add("blocklist download", kDownloadStuckMs, false);  // armed by get()
+  gUpstreamAlive = gLiveness.add("upstream task", kUpstreamStuckMs, false);
+  gHttp.setLiveness(&gLiveness, gDownloadAlive);
   {
     char why[160], bt[200];
     diag::describe(gRestart, why, sizeof(why));
@@ -287,6 +380,11 @@ void setup() {
   ctx.logins = &gLogins;
   ctx.sessions = &gSessions;
   ctx.restart = &gRestart;
+  ctx.alive = []() { gLiveness.beat(gWebAlive); };
+  ctx.clock = &gClock;
+#ifdef ADBLOCK_SELFTEST
+  ctx.selftest = selftest;
+#endif
   ctx.config = &gConfig;
   ctx.kv = &gKv;
   ctx.log = &gLog;
@@ -297,8 +395,8 @@ void setup() {
   gDashboard->begin();
   gServer.begin();
   startOta();
-  gWebBeat.store(millis());
   xTaskCreatePinnedToCore(webTask, "web", 8192, nullptr, tskIDLE_PRIORITY, nullptr, 0);
+  startLivenessChecks();
   gLog.log(hal::LogLevel::kInfo, "boot", "ready: DNS :53, dashboard http://%s.local", kHostname);
 }
 
@@ -317,11 +415,10 @@ void loop() {
     gClients.resolvePendingMacs();
     superviseWifi();
     maintainOtaHealth();
-    if (millis() - gWebBeat.load() > kWebStuckMs) {
-      gLog.log(hal::LogLevel::kError, "web", "web task stuck for %lu s: rebooting",
-               static_cast<unsigned long>(kWebStuckMs / 1000));
+    if (gLivenessRunning && gLiveness.checkerStalled(kCheckerStalledMs)) {  // who watches the watchdog
+      gLog.log(hal::LogLevel::kError, "boot", "software watchdog stopped running: rebooting");
       delay(200);
-      platform::restart("web task stuck");
+      platform::restart("software watchdog stopped");
     }
   }
   static uint32_t lastResolverFix = 0;
@@ -330,5 +427,12 @@ void loop() {
     pointResolverToSelf();
   }
   gBlocklist->loop();  // daily update (feeds the watchdog itself)
+#ifdef ADBLOCK_SELFTEST
+  if (gSelftestDownload.load()) {  // what EspHttpClient::get() does around a stuck open()
+    platform::WatchdogPause noWatchdog;
+    gLiveness.arm(gDownloadAlive);
+    while (true) vTaskDelay(pdMS_TO_TICKS(100));
+  }
+#endif
   delay(50);
 }

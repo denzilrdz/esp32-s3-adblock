@@ -9,6 +9,7 @@
 
 #include "platform/restart_info.h"
 #include "platform/watchdog.h"
+#include "util/send_deadline.h"
 #include "web/page.h"
 #include "web/portal.h"
 
@@ -23,6 +24,8 @@ constexpr const char* kCsrfHeader = "X-Requested-With";
 constexpr const char* kCsrfValue = "adblock";
 constexpr const char* kUploadTmp = "/upload.tmp";
 constexpr const char* kSessionCookie = "ab_session";
+constexpr size_t kPageSendPiece = 1436;  // one TCP segment
+constexpr uint32_t kPageSendBudgetMs = 20000;
 
 // Where the dashboard's "Check for updates" looks for update.json and the firmware
 // (published to GitHub Pages by release.yml: Pages sends CORS headers, release
@@ -110,6 +113,34 @@ bool parseBasicAuth(const String& header, String& user, String& pass) {
 
 }  // namespace
 
+// The page (46 KB, several TCP send buffers) goes out in pieces under one deadline: a
+// client reading a trickle at a time would otherwise hold the single web task for hours
+// (each byte sent resets NetworkClient's retry count). Normal clients take well under
+// a second; a cut-off page just reloads.
+void Dashboard::sendPage() {
+  WebServer& s = *ctx_.server;
+  const size_t len = sizeof(kPage) - 1;
+  s.setContentLength(len);
+  s.send(200, "text/html", "");
+  const util::SendResult r =
+      util::sendWithDeadline(len, kPageSendPiece, kPageSendBudgetMs, *ctx_.clock, [&](size_t off, size_t n) {
+        s.sendContent_P(kPage + off, n);
+        if (ctx_.alive) ctx_.alive();
+        return s.client().connected();
+      });
+  if (!r.complete) {
+    ctx_.log->log(LogLevel::kWarn, kTag, "page send to %s cut off after %u of %u bytes (slow client)",
+                  s.client().remoteIP().toString().c_str(), static_cast<unsigned>(r.sent),
+                  static_cast<unsigned>(len));
+    s.client().stop();
+  }
+}
+
+void Dashboard::uploadProgress() {
+  platform::feedWatchdog();  // skipped while the web task is off the hardware watchdog
+  if (ctx_.alive) ctx_.alive();
+}
+
 void Dashboard::sendText(int code, const String& text) {
   ctx_.server->send(code, "text/plain", text);
 }
@@ -190,7 +221,7 @@ void Dashboard::begin() {
     static const String csp = pageCsp();
     ctx_.server->sendHeader("Content-Security-Policy", csp);
     ctx_.server->sendHeader("X-Frame-Options", "DENY");
-    ctx_.server->send_P(200, "text/html", kPage);
+    sendPage();
   });
   s.on("/api/stats", HTTP_GET, [this]() { handleStats(); });
   s.on("/api/config", HTTP_GET, [this]() { handleGetConfig(); });
@@ -225,6 +256,15 @@ void Dashboard::begin() {
     delay(500);
     platform::restart("Wi-Fi forgotten (dashboard)");
   });
+#ifdef ADBLOCK_SELFTEST
+  s.on("/api/selftest", HTTP_POST, [this]() {
+    if (!guard(Access::kAuth)) return;
+    const String what = ctx_.server->arg("hang");
+    sendText(200, "self-test: hanging " + what);
+    ctx_.server->client().stop();  // the answer must leave before a web-task hang
+    if (ctx_.selftest) ctx_.selftest(what);
+  });
+#endif
   s.on("/api/reboot", HTTP_POST, [this]() {
     if (!guard(Access::kAuth)) return;
     sendText(200, "rebooting");
@@ -486,7 +526,7 @@ void Dashboard::handleListUpload() {
       break;
     }
     case UPLOAD_FILE_WRITE:
-      platform::feedWatchdog();  // the whole upload runs inside one handleClient() call
+      uploadProgress();  // the whole upload runs inside one handleClient() call
       if (uploadAuthorized_ && file && file.write(u.buf, u.currentSize) != u.currentSize) {
         file.close();
         uploadResult_ = "not enough flash";
@@ -530,10 +570,10 @@ void Dashboard::handleFirmwareUpload() {
     // The whole upload (and each sector erase) runs inside one handleClient() call: a
     // 1.3 MB image over a weak link took longer than the 5 s task watchdog and panicked
     // the web task mid-upload (found on hardware, 2026-10-15).
-    platform::feedWatchdog();
+    uploadProgress();
     if (Update.write(u.buf, u.currentSize) != u.currentSize) Update.printError(Serial);
   } else if (u.status == UPLOAD_FILE_END) {
-    platform::feedWatchdog();  // end() hashes and verifies the image before activating it
+    uploadProgress();  // end() hashes and verifies the image before activating it
     if (Update.end(true))
       ctx_.log->log(LogLevel::kInfo, "ota", "firmware %u bytes OK", u.totalSize);
     else

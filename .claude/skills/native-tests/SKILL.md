@@ -28,9 +28,12 @@ test/
   test_updater/test_main.cpp     ETag, validation, atomic swap, corrupt download
   test_config/test_main.cpp      settings validation, NVS round trip, upstream chain
   test_auth/test_main.cpp        password hashing, setup code, lockout, Host/Origin, sessions
-  test_diag/test_main.cpp        restart cause names, crash summary, backtrace text
+  test_diag/test_main.cpp        restart cause names, crash summary, backtrace text,
+                                 software watchdog (LivenessMonitor)
+  test_soak/test_main.cpp        DNS pipeline soak under ASan (-DSOAK_SCALE=10 for long)
+  test_netsim/test_main.cpp      90 days of bad internet: scheduler + updater + watchdog
   test_local_zones/test_main.cpp localhost, canary domains, private reverse zones
-  test_util/test_main.cpp        CRC-32, civil time, SHA-256/HMAC/PBKDF2 vectors
+  test_util/test_main.cpp        CRC-32, civil time, SHA-256/HMAC/PBKDF2 vectors, paced send
 ```
 
 Each `test_<area>` folder is a separate binary. Only folders starting `test_` are run.

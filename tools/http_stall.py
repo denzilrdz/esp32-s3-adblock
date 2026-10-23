@@ -1,9 +1,12 @@
 """Slow HTTP client against the dashboard: checks that one slow device can't reset the board.
 
-usage: python3 tools/http_stall.py <board-ip> [hold-seconds] [stall|trickle]
+usage: python3 tools/http_stall.py <board-ip> [hold-seconds] [stall|trickle|slowread]
 
-stall:   full request, then never read the 46 KB answer (blocked send)
-trickle: request headers one short line per second, never finished (slow parse)
+stall:    full request, then never read the 46 KB answer (blocked send)
+trickle:  request headers one short line per second, never finished (slow parse)
+slowread: full request, then read the answer a few bytes a second; reports when the
+          dashboard answers other clients again (from v0.2.8 the page send to the slow
+          reader is cut off after 20 s; before, it held the web task for hours)
 
 A phone that sleeps or roams mid-request looks like this. Up to v0.2.7 the web task
 busy-waited at priority 3 and starved IDLE0, so the 5 s task watchdog reset the board
@@ -36,16 +39,34 @@ def dns_alive():
             return False
 
 
+def web_answers():
+    """True if another client gets the page within 2 s (the web task serves one at a time)."""
+    try:
+        with socket.create_connection((IP, 80), timeout=2) as w:
+            w.settimeout(2)
+            w.sendall(
+                (
+                    "GET / HTTP/1.1\r\nHost: %s\r\nConnection: close\r\n\r\n" % IP
+                ).encode()
+            )
+            return w.recv(12).startswith(b"HTTP/1.1 200")
+    except OSError:
+        return False
+
+
 print("DNS alive before:", dns_alive(), flush=True)
 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 s.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 1024)  # tiny window, then never read
 s.connect((IP, 80))
-if MODE == "stall":
+if MODE in ("stall", "slowread"):
     s.sendall(("GET / HTTP/1.1\r\nHost: %s\r\nConnection: close\r\n\r\n" % IP).encode())
 else:
     s.sendall(("GET / HTTP/1.1\r\nHost: %s\r\n" % IP).encode())
 start = time.time()
 last_line = start
+got = 0
+freed_at = None
+last_probe = 0.0
 down_at = None
 while time.time() - start < HOLD:
     alive = dns_alive()
@@ -59,6 +80,17 @@ while time.time() - start < HOLD:
             flush=True,
         )
         down_at = -1
+    if MODE == "slowread":
+        s.settimeout(0.05)
+        try:
+            got += len(s.recv(16))  # a few bytes per loop: ~30 B/s
+        except OSError:
+            pass
+        if freed_at is None and t - last_probe >= 3:
+            last_probe = t
+            if web_answers():
+                freed_at = t
+                print("%5.1f s: dashboard answers other clients again" % t, flush=True)
     if MODE == "trickle" and time.time() - last_line >= 1 and time.time() - start < 12:
         try:
             s.sendall(b"X-Slow: 1\r\n")
@@ -67,6 +99,12 @@ while time.time() - start < HOLD:
         last_line = time.time()
     time.sleep(0.5)
 s.close()
+if MODE == "slowread":
+    print(
+        "slow reader: web task",
+        "freed after %.0f s" % freed_at if freed_at else "still held",
+        flush=True,
+    )
 print(
     "result:",
     "board restarted" if down_at == -1 else ("still down" if down_at else "no restart"),

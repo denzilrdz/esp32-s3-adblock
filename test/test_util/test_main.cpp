@@ -7,9 +7,11 @@
 #include <cstring>
 #include <string>
 
+#include "fakes/fake_clock.h"
 #include "util/bytes.h"
 #include "util/civil_time.h"
 #include "util/crc32.h"
+#include "util/send_deadline.h"
 #include "util/sha256.h"
 #include "util/wifi_join.h"
 #include "util/wifi_scan.h"
@@ -268,8 +270,53 @@ static void test_join_known_network_portal_after_repeated_password_rejections() 
   TEST_ASSERT_EQUAL(portal, static_cast<int>(policy.onFailure(JoinFailure::kPassword)));
 }
 
+static void test_send_with_deadline_sends_everything_in_pieces() {
+  FakeClock clock;
+  std::string out;
+  const std::string page(46000, 'p');
+  const util::SendResult r =
+      util::sendWithDeadline(page.size(), 1436, 20000, clock, [&](size_t off, size_t n) {
+        out.append(page, off, n);
+        clock.advanceMs(5);  // a normal client
+        return true;
+      });
+  TEST_ASSERT_TRUE(r.complete);
+  TEST_ASSERT_EQUAL(page.size(), r.sent);
+  TEST_ASSERT_TRUE(out == page);
+}
+
+static void test_send_with_deadline_gives_up_on_a_trickling_reader() {
+  // Each piece "succeeds" after 1 s (the client reads a little, so the library's own
+  // retry never gives up): the overall budget must end it.
+  FakeClock clock;
+  int pieces = 0;
+  const util::SendResult r = util::sendWithDeadline(46000, 1436, 20000, clock, [&](size_t, size_t) {
+    clock.advanceMs(1000);
+    pieces++;
+    return true;
+  });
+  TEST_ASSERT_FALSE(r.complete);
+  TEST_ASSERT_EQUAL(21, pieces);  // budget checked before each piece: 0..20 s
+  TEST_ASSERT_TRUE(r.sent < 46000);
+}
+
+static void test_send_with_deadline_stops_when_the_connection_goes() {
+  FakeClock clock;
+  int calls = 0;
+  const util::SendResult r = util::sendWithDeadline(10000, 1000, 20000, clock, [&](size_t, size_t) {
+    return ++calls < 3;  // third write fails
+  });
+  TEST_ASSERT_FALSE(r.complete);
+  TEST_ASSERT_EQUAL(2000, r.sent);
+  TEST_ASSERT_FALSE(util::sendWithDeadline(10, 0, 1000, clock, [](size_t, size_t) { return true; }).complete);
+  TEST_ASSERT_TRUE(util::sendWithDeadline(0, 100, 1000, clock, [](size_t, size_t) { return true; }).complete);
+}
+
 int main(int, char**) {
   UNITY_BEGIN();
+  RUN_TEST(test_send_with_deadline_sends_everything_in_pieces);
+  RUN_TEST(test_send_with_deadline_gives_up_on_a_trickling_reader);
+  RUN_TEST(test_send_with_deadline_stops_when_the_connection_goes);
   RUN_TEST(test_crc32_matches_zlib_check_value);
   RUN_TEST(test_crc32_incremental_equals_one_shot);
   RUN_TEST(test_crc32_empty_is_zero);

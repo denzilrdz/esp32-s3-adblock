@@ -504,9 +504,20 @@ void DnsService::upstreamLoop() {
       // before one feed exceeded the 5 s watchdog and crash-looped the board while
       // the primary upstream was down (found on hardware, 2026-10-15).
       esp_task_wdt_reset();
+      if (cfg_.liveness) cfg_.liveness->beat(cfg_.livenessId);
     }
     forwarder_->poll(forwarder_->inFlight() > 0 ? 10 : 0);
     esp_task_wdt_reset();
+    if (cfg_.liveness) cfg_.liveness->beat(cfg_.livenessId);
+#ifdef ADBLOCK_SELFTEST
+    if (cfg_.selftestHang && cfg_.selftestHang->load() == 1)
+      while (true) {  // an I/O livelock: the hardware watchdog stays fed
+        esp_task_wdt_reset();
+        vTaskDelay(pdMS_TO_TICKS(100));
+      }
+    if (cfg_.selftestHang && cfg_.selftestHang->load() == 2)
+      while (true) vTaskDelay(pdMS_TO_TICKS(100));  // a plain hang: hardware watchdog
+#endif
 
     const uint64_t now = clock_.monotonicMs();
     if (now - lastSnapshotMs_ >= 500) {

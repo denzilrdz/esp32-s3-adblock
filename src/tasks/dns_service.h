@@ -22,6 +22,7 @@
 #include <cstdint>
 
 #include "cache/response_cache.h"
+#include "diag/liveness.h"
 #include "dns/local_zones.h"
 #include "dns/message.h"
 #include "dns/query_policy.h"
@@ -47,6 +48,14 @@ struct DnsServiceConfig {
   uint8_t tcpMaxConns = 2;  // lwIP has 16 sockets in total; see ARCHITECTURE.md §11
   uint32_t tcpIdleMs = 10000;
   size_t replyCap = upstream::Forwarder::kMaxAnswer;  // per slot; >= 1232
+  // Software watchdog for the upstream task (its TLS I/O feeds the hardware one per
+  // socket call): beaten once per loop. Optional.
+  diag::LivenessMonitor* liveness = nullptr;
+  int livenessId = -1;
+#ifdef ADBLOCK_SELFTEST
+  // 1: spin feeding the hardware watchdog without progress; 2: stop feeding it.
+  std::atomic<int>* selftestHang = nullptr;
+#endif
 };
 
 struct DnsStats {

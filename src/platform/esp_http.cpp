@@ -52,6 +52,17 @@ hal::HttpGetResult EspHttpClient::get(const hal::HttpGetRequest& req, hal::IHttp
   // no chance to feed the 5 s task watchdog: one slow moment at the 03:00 update then
   // restarted the board. So the watchdog is paused and kMaxDownloadUs bounds the whole.
   WatchdogPause noWatchdog;
+  // ...and the software watchdog covers what the deadline below can't: a hang inside
+  // esp_http_client_open(), or one esp_http_client_read() kept alive for hours by a
+  // server trickling bytes (each socket read resets its 20 s timeout).
+  struct Armed {
+    diag::LivenessMonitor* m;
+    int id;
+    ~Armed() {
+      if (m) m->disarm(id);
+    }
+  } armed{liveness_, livenessId_};
+  if (liveness_) liveness_->arm(livenessId_);
   const int64_t startUs = esp_timer_get_time();
   hal::HttpGetResult result;
   if (!req.url || strncmp(req.url, "https://", 8) != 0) {  // HTTPS only, by design

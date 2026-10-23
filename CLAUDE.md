@@ -26,6 +26,7 @@ versions, not Arduino 2.x / IDF 4.4 docs.
 tools/setup-dev.sh                       # once: uv sync (.venv from uv.lock) + git hooks
 cp src/secrets.example.h src/secrets.h   # once: first-boot defaults (gitignored)
 pio run -e esp32s3                       # build firmware
+pio run -e esp32s3_selftest              # never released: hang hooks for tools/selftest_board.py
 pio run -e esp32s3 -t upload             # flash over USB
 pio device monitor -e esp32s3            # serial monitor (115200, exception decoder)
 pio test -e native                       # all native unit tests
@@ -85,7 +86,8 @@ docs/          ARCHITECTURE.md, ROUTER_SETUP.md
   aren't subscribed (IDF 5 logs an error otherwise). The `web` task is deliberately
   unwatched at idle priority (WebServer busy-waits; ARCHITECTURE.md §4.3): never raise
   its priority. A scope that can't feed (esp_http_client) uses `platform::WatchdogPause`
-  plus its own overall deadline.
+  plus its own overall deadline. Whatever the hardware watchdog can't see needs a
+  software one (`diag::LivenessMonitor` in main.cpp, table in ARCHITECTURE.md §4.3).
 - One task per socket: lwIP is built without full-duplex netconn.
 - `-Wall -Wextra` must stay clean (src/ and lib/core); native tests use `-Werror`.
 

@@ -6,6 +6,16 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- No hang goes unnoticed: whatever the 5 s hardware watchdog can't see (the dashboard,
+  the blocklist download, the encrypted-DNS task) now has a software watchdog, so a
+  real hang still restarts the board, with the reason shown under _Device → Health_
+  ("web task stuck", "blocklist download stuck", ...). Slow internet or a slow phone
+  never counts as a hang.
+- A device reading the dashboard page extremely slowly can no longer keep the
+  dashboard busy for everyone else (the page send is cut off after 20 s).
+
 ## [0.2.7] - 2026-10-23
 
 Fixes the board restarting on its own, and the dashboard now explains restarts.

@@ -19,6 +19,7 @@
 #include "auth/auth.h"
 #include "config/config.h"
 #include "diag/restart.h"
+#include "hal/clock.h"
 #include "hal/kv_store.h"
 #include "hal/logger.h"
 #include "tasks/dns_service.h"
@@ -37,9 +38,14 @@ struct DashboardContext {
   config::AppConfig* config = nullptr;
   hal::IKeyValueStore* kv = nullptr;
   hal::ILogger* log = nullptr;
+  const hal::IClock* clock = nullptr;
   const char* hostname = "";
   const char* version = "";
   std::function<void(const config::AppConfig&)> applyLive;  // timezone, log level
+  std::function<void()> alive;  // web task progress during long uploads (software watchdog)
+#ifdef ADBLOCK_SELFTEST
+  std::function<void(const String&)> selftest;  // POST /api/selftest?hang=<what>
+#endif
 };
 
 class Dashboard {
@@ -63,6 +69,8 @@ class Dashboard {
   bool hasSession();
   bool guard(Access access);  // sends the error response itself
   void sendText(int code, const String& text);
+  void uploadProgress();
+  void sendPage();  // feeds both watchdogs while one upload runs in handleClient()
 
   void handleStats();
   void handleGetConfig();
