@@ -52,6 +52,8 @@ class TlsStream {
   bool sslReady_ = false;
   bool haveSession_ = false;
   uint32_t lastHandshakeMs_ = 0;
+  // While a handshake runs: bioRecv/bioSend fail once this passes (0 = no limit).
+  uint64_t handshakeDeadlineMs_ = 0;
   int lastError_ = 0;
   mbedtls_ssl_config conf_;
   mbedtls_ssl_context ssl_;

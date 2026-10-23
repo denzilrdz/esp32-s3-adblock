@@ -4,6 +4,7 @@
 
 #include <esp_http_client.h>
 #include <esp_task_wdt.h>
+#include <esp_timer.h>
 #include <strings.h>
 
 #include <cstdio>
@@ -35,6 +36,10 @@ esp_err_t onEvent(esp_http_client_event_t* evt) {
   return ESP_OK;
 }
 
+// Upper bound for one whole download (all hops, the body included). The watchdog is
+// paused meanwhile (see get()), so this is what stops a stalled transfer.
+constexpr int64_t kMaxDownloadUs = 5LL * 60 * 1000 * 1000;
+
 bool isRedirect(int status) {
   return status == 301 || status == 302 || status == 303 || status == 307 || status == 308;
 }
@@ -42,6 +47,12 @@ bool isRedirect(int status) {
 }  // namespace
 
 hal::HttpGetResult EspHttpClient::get(const hal::HttpGetRequest& req, hal::IHttpBodySink& sink) {
+  // Every step below has a timeout (req.timeoutMs, up to 20 s per read), but the DNS
+  // lookup + TCP connect + TLS handshake inside esp_http_client_open(), per hop, give
+  // no chance to feed the 5 s task watchdog: one slow moment at the 03:00 update then
+  // restarted the board. So the watchdog is paused and kMaxDownloadUs bounds the whole.
+  WatchdogPause noWatchdog;
+  const int64_t startUs = esp_timer_get_time();
   hal::HttpGetResult result;
   if (!req.url || strncmp(req.url, "https://", 8) != 0) {  // HTTPS only, by design
     result.error = hal::HttpError::kConnect;
@@ -84,7 +95,6 @@ hal::HttpGetResult EspHttpClient::get(const hal::HttpGetRequest& req, hal::IHttp
     }
     result.contentLength = esp_http_client_fetch_headers(client);
     status = esp_http_client_get_status_code(client);
-    feedWatchdog();
     if (!isRedirect(status)) break;
     int discarded = 0;
     esp_http_client_flush_response(client, &discarded);
@@ -107,8 +117,7 @@ hal::HttpGetResult EspHttpClient::get(const hal::HttpGetRequest& req, hal::IHttp
     uint8_t buf[1024];
     while (true) {
       const int n = esp_http_client_read(client, reinterpret_cast<char*>(buf), sizeof(buf));
-      feedWatchdog();  // long downloads must not trip the watchdog
-      if (n < 0) {
+      if (n < 0 || esp_timer_get_time() - startUs > kMaxDownloadUs) {
         result.error = hal::HttpError::kTimeout;
         break;
       }

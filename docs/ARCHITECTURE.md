@@ -197,14 +197,14 @@ do microsecond work.
 
 ### 4.2 Task layout
 
-| Task                             | Core | Prio    | Stack | Watchdog | Role                                                                                                       |
-| -------------------------------- | ---- | ------- | ----- | -------- | ---------------------------------------------------------------------------------------------------------- |
-| lwIP `tcpip` / Wi-Fi (IDF)       | 0    | 18 / 23 | IDF   | —        | network stack                                                                                              |
-| `dns_io`                         | 1    | 10      | 6 KB  | yes      | UDP/53 receive, policy, cache, replies                                                                     |
-| `dns_up`                         | 1    | 8       | 12 KB | yes      | transports, chain, health, cache insert                                                                    |
-| `dns_tcp`                        | 0    | 5       | 6 KB  | yes      | TCP/53, ≤ 2 connections, 10 s idle (PSRAM boards only)                                                     |
-| `web`                            | 0    | 3       | 8 KB  | yes      | dashboard, REST API, ArduinoOTA                                                                            |
-| maintenance (Arduino `loopTask`) | 1    | 1       | 16 KB | yes      | Wi-Fi supervision, scheduler, blocklist update (HTTPS), MAC lookups, resolver re-pointing, OTA health mark |
+| Task                             | Core | Prio     | Stack | Watchdog       | Role                                                                                                       |
+| -------------------------------- | ---- | -------- | ----- | -------------- | ---------------------------------------------------------------------------------------------------------- |
+| lwIP `tcpip` / Wi-Fi (IDF)       | 0    | 18 / 23  | IDF   | —              | network stack                                                                                              |
+| `dns_io`                         | 1    | 10       | 6 KB  | yes            | UDP/53 receive, policy, cache, replies                                                                     |
+| `dns_up`                         | 1    | 8        | 12 KB | yes            | transports, chain, health, cache insert                                                                    |
+| `dns_tcp`                        | 0    | 5        | 6 KB  | yes            | TCP/53, ≤ 2 connections, 10 s idle (PSRAM boards only)                                                     |
+| `web`                            | 0    | 0 (idle) | 8 KB  | no (heartbeat) | dashboard, REST API, ArduinoOTA (see §4.3)                                                                 |
+| maintenance (Arduino `loopTask`) | 1    | 1        | 16 KB | yes            | Wi-Fi supervision, scheduler, blocklist update (HTTPS), MAC lookups, resolver re-pointing, OTA health mark |
 
 The DNS tasks are named `dns_io` and `dns_up` in code (`src/tasks/dns_service.*`).
 MAC addresses for the client table are read from the ARP table inside lwIP's own
@@ -230,8 +230,23 @@ watched task has a timeout below 5 s; the updater resets the watchdog after each
 downloaded chunk, and long blocklist validations feed it through a progress callback.
 The 5 s timeout is kept as is. Shared code (TLS, HTTP, the blocklist load during
 `setup()`) feeds it through `platform::feedWatchdog()`, which skips tasks that are not
-subscribed: ESP-IDF 5 logs an error for those. Dashboard uploads run inside a single
-`handleClient()` call and feed it for every chunk received.
+subscribed: ESP-IDF 5 logs an error for those.
+
+Exceptions, both found on hardware (2026-10-23):
+
+- **`web` is not on the watchdog and runs at idle priority.** Arduino's WebServer
+  busy-waits with `yield()` while a request trickles in and retries a blocked send for
+  ~10 s; at priority 3 that starved IDLE0, so one phone's Wi-Fi hiccup mid-request
+  reset the board (`tools/http_stall.py` reproduces it). Those waits are bounded by the
+  library (`WEBSERVER_MAX_LINE_WAIT` 2 s, `WEBSERVER_MAX_HEADER_WAIT` 4 s in
+  `platformio.ini`); a web task that stops for good is caught by a heartbeat that the
+  maintenance task checks (restart after 180 s, reason "web task stuck").
+- **The blocklist download pauses the watchdog** (`platform::WatchdogPause` in
+  `EspHttpClient::get`): `esp_http_client_open()` does DNS + TCP + TLS per redirect hop
+  with no way to feed in between. A 5 min overall deadline bounds it instead.
+- **TLS handshakes** feed it from the BIO callbacks (each socket call ≤ 1 s), since one
+  `mbedtls_ssl_handshake()` call runs the whole handshake; the handshake deadline is
+  enforced there too.
 
 ---
 

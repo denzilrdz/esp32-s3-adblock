@@ -82,8 +82,10 @@ docs/          ARCHITECTURE.md, ROUTER_SETUP.md
 - RAII for sockets, TLS sessions, files, PSRAM buffers and mutexes.
 - Every blocking call in a watched task needs a timeout < 5 s (task watchdog). Feed it
   with `platform::feedWatchdog()` (`src/platform/watchdog.h`), which skips tasks that
-  aren't subscribed (IDF 5 logs an error otherwise). Long work inside one
-  `handleClient()` call, like a firmware or list upload, must feed it per chunk.
+  aren't subscribed (IDF 5 logs an error otherwise). The `web` task is deliberately
+  unwatched at idle priority (WebServer busy-waits; ARCHITECTURE.md §4.3): never raise
+  its priority. A scope that can't feed (esp_http_client) uses `platform::WatchdogPause`
+  plus its own overall deadline.
 - One task per socket: lwIP is built without full-duplex netconn.
 - `-Wall -Wextra` must stay clean (src/ and lib/core); native tests use `-Werror`.
 

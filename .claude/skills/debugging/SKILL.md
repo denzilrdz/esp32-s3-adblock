@@ -80,11 +80,23 @@ pio device monitor -e esp32s3        # 115200 baud, filters: esp32_exception_dec
 - Usual causes:
   - a blocking call without a timeout (TLS connect, HTTP read, `select()` with
     NULL);
-  - a busy loop on core 0 starving `IDLE0`;
+  - a busy loop on core 0 starving `IDLE0` (task `IDLE0` in the crash record): a
+    task above idle priority spinning on `yield()`, as the web task did up to v0.2.7;
   - a long flash erase in one go: chunk writes and reset the watchdog between
     chunks.
 - Reset reason on boot: `TG1WDT_SYS_RESET` / `TASK_WDT` = watchdog;
   `BROWNOUT_RST` = power. Weak USB ports (routers, hubs) may sag; use a 5 V/1 A supply.
+
+## Stress tests against the board
+
+```bash
+python3 tools/dns_load.py <ip> 60000 70      # mixed DNS load, flags silences (restarts)
+python3 tools/http_stall.py <ip> 40 trickle  # slow HTTP client; expect "no restart"
+python3 tools/http_stall.py <ip> 40 stall    # client that stops reading the page
+```
+
+Household DNS goes through the board, so run them when a short outage is acceptable.
+A crash overwrites the stored crash record.
 
 ## Wi-Fi drops
 

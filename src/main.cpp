@@ -15,6 +15,8 @@
 #include <esp_sntp.h>
 #include <esp_task_wdt.h>
 
+#include <atomic>
+
 #include "app/app_policy.h"
 #include "app/blocklist_manager.h"
 #include "app/clients.h"
@@ -130,14 +132,24 @@ void startDnsService() {
   if (!gDns->start()) gLog.log(hal::LogLevel::kError, "boot", "DNS service failed to start");
 }
 
-// web task (core 0, prio 3): dashboard + ArduinoOTA, so a slow HTTP client or a
-// blocklist download in the maintenance task never stalls the other.
+// web task (core 0): dashboard + ArduinoOTA, so a slow HTTP client or a blocklist
+// download in the maintenance task never stalls the other.
+//
+// It runs at idle priority and is NOT on the task watchdog. Arduino's WebServer
+// busy-waits with yield() while a request trickles in (up to WEBSERVER_MAX_LINE_WAIT
+// per line, WEBSERVER_MAX_HEADER_WAIT per request) and retries a blocked send for up
+// to ~10 s. At priority 3 that starved IDLE0, and the 5 s watchdog restarted the board
+// whenever one phone's Wi-Fi hiccuped mid-request (reproduced 2026-10-23 with one
+// client trickling headers). Those waits are bounded by the library; a web task stuck
+// for good is caught by the heartbeat that loop() checks (kWebStuckMs).
+std::atomic<uint32_t> gWebBeat{0};
+constexpr uint32_t kWebStuckMs = 180000;  // above the slowest firmware upload
+
 void webTask(void*) {
-  esp_task_wdt_add(nullptr);
   while (true) {
+    gWebBeat.store(millis());
     gServer.handleClient();
     ArduinoOTA.handle();
-    esp_task_wdt_reset();
     vTaskDelay(pdMS_TO_TICKS(2));
   }
 }
@@ -285,7 +297,8 @@ void setup() {
   gDashboard->begin();
   gServer.begin();
   startOta();
-  xTaskCreatePinnedToCore(webTask, "web", 8192, nullptr, 3, nullptr, 0);
+  gWebBeat.store(millis());
+  xTaskCreatePinnedToCore(webTask, "web", 8192, nullptr, tskIDLE_PRIORITY, nullptr, 0);
   gLog.log(hal::LogLevel::kInfo, "boot", "ready: DNS :53, dashboard http://%s.local", kHostname);
 }
 
@@ -304,6 +317,12 @@ void loop() {
     gClients.resolvePendingMacs();
     superviseWifi();
     maintainOtaHealth();
+    if (millis() - gWebBeat.load() > kWebStuckMs) {
+      gLog.log(hal::LogLevel::kError, "web", "web task stuck for %lu s: rebooting",
+               static_cast<unsigned long>(kWebStuckMs / 1000));
+      delay(200);
+      platform::restart("web task stuck");
+    }
   }
   static uint32_t lastResolverFix = 0;
   if (millis() - lastResolverFix > 60000) {

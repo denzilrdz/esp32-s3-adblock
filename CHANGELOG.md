@@ -14,6 +14,19 @@ All notable changes to this project are documented here. The format follows
   record (the task, the reason and a backtrace for decoding), even one from before
   this update, so a restart can be explained without a USB cable.
 
+### Fixed
+
+- The board could restart on its own (a watchdog reset) when a phone or laptop sent a
+  dashboard request slowly, for example when its Wi-Fi hiccuped mid-request: the web
+  server busy-waited and starved the system for more than 5 s. One slow device on the
+  network was enough, without a password. The dashboard now runs at the lowest
+  priority and can't reset the board.
+- The daily blocklist download could also restart the board when connecting to
+  GitHub took more than 5 s (a slow DNS lookup, connection or handshake around 03:00).
+- A slow encrypted handshake with the DNS provider no longer risks a watchdog reset.
+- A DNS-over-TLS answer larger than 4 KB is skipped instead of closing the encrypted
+  connection and failing every other lookup on it.
+
 ## [0.2.6] - 2026-10-23
 
 The dashboard now asks for a password before showing anything. Update from the

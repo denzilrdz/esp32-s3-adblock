@@ -136,9 +136,17 @@ bool TlsStream::openSocket(uint32_t timeoutMs) {
   return true;
 }
 
+// Each socket call blocks at most kIoSliceMs, and the watchdog is fed after it: one
+// mbedtls_ssl_handshake() call runs the whole handshake (two round trips, certificate
+// check, key exchange) without returning, so feeding only between calls let a slow
+// handshake on top of other work in the same poll exceed the 5 s task watchdog. The
+// handshake deadline is enforced here too, so a peer trickling bytes can't keep the
+// handshake alive past it.
 int TlsStream::bioSend(void* ctx, const unsigned char* buf, size_t len) {
   auto* self = static_cast<TlsStream*>(ctx);
+  if (self->handshakeDeadlineMs_ && nowMs() >= self->handshakeDeadlineMs_) return MBEDTLS_ERR_SSL_TIMEOUT;
   const int n = ::send(self->fd_, buf, len, 0);
+  feedWatchdog();
   if (n >= 0) return n;
   if (errno == EAGAIN || errno == EWOULDBLOCK) return MBEDTLS_ERR_SSL_WANT_WRITE;
   if (errno == EPIPE || errno == ECONNRESET) return MBEDTLS_ERR_NET_CONN_RESET;
@@ -147,7 +155,9 @@ int TlsStream::bioSend(void* ctx, const unsigned char* buf, size_t len) {
 
 int TlsStream::bioRecv(void* ctx, unsigned char* buf, size_t len) {
   auto* self = static_cast<TlsStream*>(ctx);
+  if (self->handshakeDeadlineMs_ && nowMs() >= self->handshakeDeadlineMs_) return MBEDTLS_ERR_SSL_TIMEOUT;
   const int n = ::recv(self->fd_, buf, len, 0);
+  feedWatchdog();
   if (n >= 0) return n;  // 0 = peer closed
   if (errno == EAGAIN || errno == EWOULDBLOCK) return MBEDTLS_ERR_SSL_WANT_READ;
   if (errno == EPIPE || errno == ECONNRESET) return MBEDTLS_ERR_NET_CONN_RESET;
@@ -174,11 +184,13 @@ bool TlsStream::connect(uint32_t timeoutMs) {
   mbedtls_ssl_set_bio(&ssl_, this, bioSend, bioRecv, nullptr);
   if (haveSession_) mbedtls_ssl_set_session(&ssl_, &session_);
 
+  handshakeDeadlineMs_ = deadline;
   while ((rc = mbedtls_ssl_handshake(&ssl_)) != 0) {
     if (rc != MBEDTLS_ERR_SSL_WANT_READ && rc != MBEDTLS_ERR_SSL_WANT_WRITE) break;
     if (nowMs() >= deadline) break;
     feedWatchdog();  // only if this task is watched
   }
+  handshakeDeadlineMs_ = 0;
   if (rc != 0) {
     lastError_ = rc;
     // A rejected resumption must not poison later attempts.
