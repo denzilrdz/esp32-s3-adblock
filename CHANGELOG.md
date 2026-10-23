@@ -6,6 +6,14 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Security
+
+- The dashboard now opens on a login screen. Before, anyone on your network could see
+  the statistics, connected devices and settings without a password (only changes
+  needed one). You stay logged in while the page is open (up to 24 h, or 30 min after
+  closing it), there is a _Log out_ button, and changing the password logs out every
+  browser. Scripts can keep using Basic Auth.
+
 ## [0.2.5] - 2026-10-22
 
 A DNS reliability fix for power cuts. Update from the dashboard (_Device → Check for

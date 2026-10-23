@@ -300,8 +300,8 @@ or doesn't get there within 5 minutes, the device rolls back to the previous ver
   Chrome custom secure DNS, Android Private DNS, iCloud Private Relay) bypass any DNS
   blocker. See [docs/ROUTER_SETUP.md](docs/ROUTER_SETUP.md).
 - **Devices with hard-coded DNS** (some TVs) need a router firewall rule.
-- **The dashboard is plain HTTP** with Basic Auth: fine on a home LAN you trust, not
-  on a shared network.
+- **The dashboard is plain HTTP** (login form + session cookie): fine on a home LAN
+  you trust, not on a shared network.
 - **No DHCP server** (yet): your router must hand out the device as DNS.
 - DNS is served over IPv4 only.
 

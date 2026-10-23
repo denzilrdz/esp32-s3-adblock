@@ -98,6 +98,45 @@ class LoginGuard {
   Entry overflow_;
 };
 
+// Dashboard login sessions: after one password check the browser holds a random
+// 128-bit token in an HttpOnly, SameSite=Strict cookie, so the 4 s polling never
+// re-sends the password. Fixed slots (a new login replaces the least recently used
+// one), idle and absolute expiry, and all sessions end when the password changes.
+class SessionStore {
+ public:
+  static constexpr size_t kSlots = 8;
+  static constexpr size_t kTokenLength = 32;  // lowercase hex
+  static constexpr uint64_t kIdleMs = 30ULL * 60 * 1000;
+  static constexpr uint64_t kMaxAgeMs = 24ULL * 3600 * 1000;
+
+  SessionStore(const hal::IClock& clock, hal::IRandom& random) : clock_(clock), random_(random) {}
+
+  // Starts a session and writes its token (kTokenLength chars + NUL) to `out`.
+  void create(char out[kTokenLength + 1]);
+  // True for a live session; also counts as activity for the idle timeout.
+  bool valid(const char* token);
+  void revoke(const char* token);
+  void revokeAll();
+
+ private:
+  struct Slot {
+    bool used = false;
+    char token[kTokenLength + 1] = {0};
+    uint64_t createdMs = 0;
+    uint64_t lastUsedMs = 0;
+  };
+  Slot* find(const char* token);
+  bool expired(const Slot& s, uint64_t now) const;
+
+  const hal::IClock& clock_;
+  hal::IRandom& random_;
+  Slot slots_[kSlots];
+};
+
+// Copies the value of cookie `name` from a Cookie request header ("a=1; b=2") into
+// `out`. False when the cookie is absent, empty or longer than cap - 1.
+bool cookieValue(const char* header, const char* name, char* out, size_t cap);
+
 // `host` is the Host header (may carry ":port"). Allowed: the device IP, or
 // "<hostname>" / "<hostname>.local" (case-insensitive).
 bool hostAllowed(const char* host, const char* deviceIp, const char* hostname);

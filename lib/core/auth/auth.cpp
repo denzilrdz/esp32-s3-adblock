@@ -177,6 +177,86 @@ void LoginGuard::onSuccess(uint32_t ip) {
   if (e && e != &overflow_) *e = Entry{};
 }
 
+bool SessionStore::expired(const Slot& s, uint64_t now) const {
+  return now - s.lastUsedMs >= kIdleMs || now - s.createdMs >= kMaxAgeMs;
+}
+
+SessionStore::Slot* SessionStore::find(const char* token) {
+  if (!token || strlen(token) != kTokenLength) return nullptr;
+  const uint64_t now = clock_.monotonicMs();
+  Slot* hit = nullptr;
+  for (Slot& s : slots_) {
+    if (!s.used) continue;
+    if (expired(s, now)) {
+      s = Slot{};
+      continue;
+    }
+    // Compare every live slot in full so timing doesn't reveal a matching prefix.
+    if (util::constantTimeEqual(reinterpret_cast<const uint8_t*>(token),
+                                reinterpret_cast<const uint8_t*>(s.token), kTokenLength))
+      hit = &s;
+  }
+  return hit;
+}
+
+void SessionStore::create(char out[kTokenLength + 1]) {
+  const uint64_t now = clock_.monotonicMs();
+  Slot* slot = &slots_[0];
+  for (Slot& s : slots_) {
+    if (!s.used || expired(s, now)) {
+      slot = &s;
+      break;
+    }
+    if (s.lastUsedMs < slot->lastUsedMs) slot = &s;
+  }
+  static const char kHex[] = "0123456789abcdef";
+  for (size_t i = 0; i < kTokenLength; i += 8) {
+    uint32_t r = random_.next32();
+    for (size_t k = 0; k < 8; k++, r >>= 4) slot->token[i + k] = kHex[r & 0xF];
+  }
+  slot->token[kTokenLength] = 0;
+  slot->used = true;
+  slot->createdMs = now;
+  slot->lastUsedMs = now;
+  memcpy(out, slot->token, kTokenLength + 1);
+}
+
+bool SessionStore::valid(const char* token) {
+  Slot* s = find(token);
+  if (s) s->lastUsedMs = clock_.monotonicMs();
+  return s != nullptr;
+}
+
+void SessionStore::revoke(const char* token) {
+  Slot* s = find(token);
+  if (s) *s = Slot{};
+}
+
+void SessionStore::revokeAll() {
+  for (Slot& s : slots_) s = Slot{};
+}
+
+bool cookieValue(const char* header, const char* name, char* out, size_t cap) {
+  if (!header || !name || !out || cap == 0) return false;
+  const size_t nameLen = strlen(name);
+  const char* p = header;
+  while (*p) {
+    while (*p == ' ' || *p == ';') p++;
+    const char* end = strchr(p, ';');
+    if (!end) end = p + strlen(p);
+    if (static_cast<size_t>(end - p) > nameLen && strncmp(p, name, nameLen) == 0 && p[nameLen] == '=') {
+      const char* v = p + nameLen + 1;
+      const size_t len = static_cast<size_t>(end - v);
+      if (len == 0 || len >= cap) return false;
+      memcpy(out, v, len);
+      out[len] = 0;
+      return true;
+    }
+    p = end;
+  }
+  return false;
+}
+
 bool hostAllowed(const char* host, const char* deviceIp, const char* hostname) {
   if (!host || !*host) return false;
   size_t len = strlen(host);

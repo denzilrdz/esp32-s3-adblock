@@ -210,6 +210,79 @@ static void test_url_origin_for_the_dashboard_csp() {
   TEST_ASSERT_FALSE(auth::urlOrigin(nullptr, o, sizeof(o)));
 }
 
+static void test_sessions_start_validate_and_revoke() {
+  auth::SessionStore s(fakeClock, fakeRandom);
+  char a[auth::SessionStore::kTokenLength + 1], b[auth::SessionStore::kTokenLength + 1];
+  s.create(a);
+  s.create(b);
+  TEST_ASSERT_EQUAL(auth::SessionStore::kTokenLength, strlen(a));
+  for (const char* p = a; *p; p++) TEST_ASSERT_TRUE((*p >= '0' && *p <= '9') || (*p >= 'a' && *p <= 'f'));
+  TEST_ASSERT_FALSE(strcmp(a, b) == 0);
+  TEST_ASSERT_TRUE(s.valid(a));
+  TEST_ASSERT_TRUE(s.valid(b));
+  std::string wrong(a);
+  wrong[0] = wrong[0] == '0' ? '1' : '0';
+  TEST_ASSERT_FALSE(s.valid(wrong.c_str()));
+  TEST_ASSERT_FALSE(s.valid(std::string(a).substr(0, 31).c_str()));  // prefix is not enough
+  TEST_ASSERT_FALSE(s.valid(""));
+  TEST_ASSERT_FALSE(s.valid(nullptr));
+  s.revoke(a);
+  TEST_ASSERT_FALSE(s.valid(a));
+  TEST_ASSERT_TRUE(s.valid(b));
+  s.revokeAll();  // password change
+  TEST_ASSERT_FALSE(s.valid(b));
+}
+
+static void test_sessions_expire_when_idle_and_after_max_age() {
+  auth::SessionStore s(fakeClock, fakeRandom);
+  char t[auth::SessionStore::kTokenLength + 1];
+  s.create(t);
+  fakeClock.advanceMs(auth::SessionStore::kIdleMs - 1);
+  TEST_ASSERT_TRUE(s.valid(t));  // activity resets the idle timer
+  fakeClock.advanceMs(auth::SessionStore::kIdleMs - 1);
+  TEST_ASSERT_TRUE(s.valid(t));
+  fakeClock.advanceMs(auth::SessionStore::kIdleMs);
+  TEST_ASSERT_FALSE(s.valid(t));
+
+  s.create(t);
+  for (uint64_t ms = 0; ms < auth::SessionStore::kMaxAgeMs; ms += 60000) {
+    TEST_ASSERT_TRUE(s.valid(t));  // a tab polling all day...
+    fakeClock.advanceMs(60000);
+  }
+  TEST_ASSERT_FALSE(s.valid(t));  // ...still has to log in again after 24 h
+}
+
+static void test_new_login_replaces_least_recently_used_session() {
+  auth::SessionStore s(fakeClock, fakeRandom);
+  char t[auth::SessionStore::kSlots + 1][auth::SessionStore::kTokenLength + 1];
+  for (size_t i = 0; i < auth::SessionStore::kSlots; i++) {
+    s.create(t[i]);
+    fakeClock.advanceMs(1000);
+  }
+  TEST_ASSERT_TRUE(s.valid(t[0]));  // t[1] is now the least recently used
+  s.create(t[auth::SessionStore::kSlots]);
+  TEST_ASSERT_FALSE(s.valid(t[1]));
+  TEST_ASSERT_TRUE(s.valid(t[0]));
+  for (size_t i = 2; i <= auth::SessionStore::kSlots; i++) TEST_ASSERT_TRUE(s.valid(t[i]));
+}
+
+static void test_cookie_value_parsing() {
+  char v[40];
+  TEST_ASSERT_TRUE(auth::cookieValue("ab_session=abc123", "ab_session", v, sizeof(v)));
+  TEST_ASSERT_EQUAL_STRING("abc123", v);
+  TEST_ASSERT_TRUE(auth::cookieValue("theme=dark; ab_session=xyz; other=1", "ab_session", v, sizeof(v)));
+  TEST_ASSERT_EQUAL_STRING("xyz", v);
+  TEST_ASSERT_TRUE(auth::cookieValue("x_ab_session=evil;ab_session=good", "ab_session", v, sizeof(v)));
+  TEST_ASSERT_EQUAL_STRING("good", v);
+  TEST_ASSERT_FALSE(auth::cookieValue("ab_sessionx=1", "ab_session", v, sizeof(v)));
+  TEST_ASSERT_FALSE(auth::cookieValue("ab_session=", "ab_session", v, sizeof(v)));
+  TEST_ASSERT_FALSE(auth::cookieValue("ab_session", "ab_session", v, sizeof(v)));
+  TEST_ASSERT_FALSE(auth::cookieValue("", "ab_session", v, sizeof(v)));
+  TEST_ASSERT_FALSE(auth::cookieValue(nullptr, "ab_session", v, sizeof(v)));
+  char tiny[4];
+  TEST_ASSERT_FALSE(auth::cookieValue("ab_session=toolong", "ab_session", tiny, sizeof(tiny)));
+}
+
 int main(int, char**) {
   UNITY_BEGIN();
   RUN_TEST(test_placeholder_password_never_authenticates);
@@ -223,5 +296,9 @@ int main(int, char**) {
   RUN_TEST(test_host_header_checks_block_dns_rebinding);
   RUN_TEST(test_origin_checks_block_cross_site_requests);
   RUN_TEST(test_url_origin_for_the_dashboard_csp);
+  RUN_TEST(test_sessions_start_validate_and_revoke);
+  RUN_TEST(test_sessions_expire_when_idle_and_after_max_age);
+  RUN_TEST(test_new_login_replaces_least_recently_used_session);
+  RUN_TEST(test_cookie_value_parsing);
   return UNITY_END();
 }

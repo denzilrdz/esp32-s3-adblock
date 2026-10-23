@@ -21,6 +21,7 @@ constexpr const char* kTag = "web";
 constexpr const char* kCsrfHeader = "X-Requested-With";
 constexpr const char* kCsrfValue = "adblock";
 constexpr const char* kUploadTmp = "/upload.tmp";
+constexpr const char* kSessionCookie = "ab_session";
 
 // Where the dashboard's "Check for updates" looks for update.json and the firmware
 // (published to GitHub Pages by release.yml: Pages sends CORS headers, release
@@ -112,45 +113,64 @@ void Dashboard::sendText(int code, const String& text) {
   ctx_.server->send(code, "text/plain", text);
 }
 
-Dashboard::Check Dashboard::check(Access access) {
+Dashboard::Check Dashboard::postChecks() {
   WebServer& s = *ctx_.server;
-  const String ip = WiFi.localIP().toString();
-  if (!auth::hostAllowed(s.header("Host").c_str(), ip.c_str(), ctx_.hostname))
-    return {false, 403, "unknown Host header (use the device IP or its .local name)", false};
-  if (access == Access::kPublic) return {true, 200, "", false};
-  if (s.method() != HTTP_POST) return {false, 405, "use POST", false};
-  if (s.header(kCsrfHeader) != kCsrfValue) return {false, 403, "missing X-Requested-With header", false};
-  if (!auth::originAllowed(s.header("Origin").c_str(), s.header("Referer").c_str(), ip.c_str(),
-                           ctx_.hostname))
-    return {false, 403, "cross-site request refused", false};
+  if (s.method() != HTTP_POST) return {false, 405, "use POST"};
+  if (s.header(kCsrfHeader) != kCsrfValue) return {false, 403, "missing X-Requested-With header"};
+  if (!auth::originAllowed(s.header("Origin").c_str(), s.header("Referer").c_str(),
+                           WiFi.localIP().toString().c_str(), ctx_.hostname))
+    return {false, 403, "cross-site request refused"};
+  return {true, 200, ""};
+}
+
+Dashboard::Check Dashboard::verifyPassword(const String& user, const String& pass) {
+  WebServer& s = *ctx_.server;
   const uint32_t client = static_cast<uint32_t>(s.client().remoteIP());
-  if (!ctx_.logins->allowed(client)) return {false, 429, "too many failed logins; try again later", false};
-  String user, pass;
-  if (!parseBasicAuth(s.header("Authorization"), user, pass) ||
-      !ctx_.passwords->verify(user.c_str(), pass.c_str())) {
-    if (s.header("Authorization").length()) {
-      ctx_.logins->onFailure(client);
-      ctx_.log->log(LogLevel::kWarn, kTag, "failed login from %s", s.client().remoteIP().toString().c_str());
-      // Global brute-force brake without a lockout anyone could trigger: the single
-      // web task spends a fixed second per failure (on top of PBKDF2), capping
-      // guesses at ~1/s in total however many addresses an attacker uses.
-      delay(1000);
-    }
-    return {false, 401, "login required", true};
+  if (!ctx_.logins->allowed(client)) return {false, 429, "too many failed logins; try again later"};
+  if (!ctx_.passwords->verify(user.c_str(), pass.c_str())) {
+    ctx_.logins->onFailure(client);
+    ctx_.log->log(LogLevel::kWarn, kTag, "failed login from %s", s.client().remoteIP().toString().c_str());
+    // Global brute-force brake without a lockout anyone could trigger: the single
+    // web task spends a fixed second per failure (on top of PBKDF2), capping
+    // guesses at ~1/s in total however many addresses an attacker uses.
+    delay(1000);
+    return {false, 401, "wrong user name or password"};
   }
   ctx_.logins->onSuccess(client);
-  if (ctx_.passwords->mustChange() && access != Access::kAuthDuringSetup)
-    return {false, 403, "set a dashboard password first", false};
-  return {true, 200, "", false};
+  return {true, 200, ""};
+}
+
+bool Dashboard::hasSession() {
+  char token[auth::SessionStore::kTokenLength + 1];
+  return auth::cookieValue(ctx_.server->header("Cookie").c_str(), kSessionCookie, token, sizeof(token)) &&
+         ctx_.sessions->valid(token);
+}
+
+Dashboard::Check Dashboard::check(Access access) {
+  WebServer& s = *ctx_.server;
+  if (!auth::hostAllowed(s.header("Host").c_str(), WiFi.localIP().toString().c_str(), ctx_.hostname))
+    return {false, 403, "unknown Host header (use the device IP or its .local name)"};
+  if (access == Access::kPublic) return {true, 200, ""};
+  if (access != Access::kRead) {
+    const Check c = postChecks();
+    if (!c.ok) return c;
+  }
+  if (!hasSession()) {
+    // Scripts may still send Basic Auth; browsers get a plain 401 and the page's own
+    // login form (no WWW-Authenticate, so no browser pop-up).
+    String user, pass;
+    if (!parseBasicAuth(s.header("Authorization"), user, pass)) return {false, 401, "login required"};
+    const Check c = verifyPassword(user, pass);
+    if (!c.ok) return c;
+  }
+  if (ctx_.passwords->mustChange() && access == Access::kAuth)
+    return {false, 403, "set a dashboard password first"};
+  return {true, 200, ""};
 }
 
 bool Dashboard::guard(Access access) {
   const Check c = check(access);
   if (c.ok) return true;
-  if (c.askCredentials) {
-    ctx_.server->requestAuthentication(BASIC_AUTH, "adblock", c.message);
-    return false;
-  }
   if (c.code == 429) {
     const uint32_t client = static_cast<uint32_t>(ctx_.server->client().remoteIP());
     ctx_.server->sendHeader("Retry-After", String(ctx_.logins->retryAfterSeconds(client)));
@@ -161,7 +181,7 @@ bool Dashboard::guard(Access access) {
 
 void Dashboard::begin() {
   WebServer& s = *ctx_.server;
-  const char* headers[] = {"Host", "Origin", "Referer", kCsrfHeader};
+  const char* headers[] = {"Host", "Origin", "Referer", "Cookie", kCsrfHeader};
   s.collectHeaders(headers, sizeof(headers) / sizeof(headers[0]));  // Authorization is always kept
 
   s.on("/", HTTP_GET, [this]() {
@@ -174,9 +194,8 @@ void Dashboard::begin() {
   s.on("/api/stats", HTTP_GET, [this]() { handleStats(); });
   s.on("/api/config", HTTP_GET, [this]() { handleGetConfig(); });
   s.on("/api/config", HTTP_POST, [this]() { handleSetConfig(); });
-  s.on("/api/login", HTTP_POST, [this]() {
-    if (guard(Access::kAuthDuringSetup)) sendText(200, ctx_.passwords->mustChange() ? "setup" : "ok");
-  });
+  s.on("/api/login", HTTP_POST, [this]() { handleLogin(); });
+  s.on("/api/logout", HTTP_POST, [this]() { handleLogout(); });
   s.on("/api/password", HTTP_POST, [this]() { handlePassword(); });
   s.on("/api/rules/add", HTTP_POST, [this]() { handleRule(true); });
   s.on("/api/rules/remove", HTTP_POST, [this]() { handleRule(false); });
@@ -223,7 +242,7 @@ void Dashboard::begin() {
 }
 
 void Dashboard::handleStats() {
-  if (!guard(Access::kPublic)) return;
+  if (!guard(Access::kRead)) return;
   const uint32_t up = millis() / 1000;
   char uptime[24];
   snprintf(uptime, sizeof(uptime), "%lud %luh %lum", static_cast<unsigned long>(up / 86400),
@@ -283,7 +302,7 @@ void Dashboard::handleStats() {
 }
 
 void Dashboard::handleGetConfig() {
-  if (!guard(Access::kPublic)) return;
+  if (!guard(Access::kRead)) return;
   const config::AppConfig& c = *ctx_.config;
   String j = "{\"up_pri\":" + q(config::providerName(c.primary)) +
              ",\"up_sec\":" + q(config::providerName(c.secondary));
@@ -331,6 +350,42 @@ void Dashboard::handleSetConfig() {
   sendText(200, "saved");
 }
 
+void Dashboard::handleLogin() {
+  Check c = check(Access::kPublic);
+  if (c.ok) c = postChecks();
+  if (c.ok) c = verifyPassword(ctx_.server->arg("user"), ctx_.server->arg("pass"));
+  if (!c.ok) {
+    if (c.code == 429) {
+      const uint32_t client = static_cast<uint32_t>(ctx_.server->client().remoteIP());
+      ctx_.server->sendHeader("Retry-After", String(ctx_.logins->retryAfterSeconds(client)));
+    }
+    sendText(c.code, c.message);
+    return;
+  }
+  char token[auth::SessionStore::kTokenLength + 1];
+  ctx_.sessions->create(token);
+  // No Max-Age: a browser-session cookie; the board ends it after 30 min idle or 24 h.
+  ctx_.server->sendHeader("Set-Cookie",
+                          String(kSessionCookie) + "=" + token + "; Path=/; HttpOnly; SameSite=Strict");
+  ctx_.server->sendHeader("Cache-Control", "no-store");
+  sendText(200, ctx_.passwords->mustChange() ? "setup" : "ok");
+}
+
+void Dashboard::handleLogout() {
+  Check c = check(Access::kPublic);
+  if (c.ok) c = postChecks();
+  if (!c.ok) {
+    sendText(c.code, c.message);
+    return;
+  }
+  char token[auth::SessionStore::kTokenLength + 1];
+  if (auth::cookieValue(ctx_.server->header("Cookie").c_str(), kSessionCookie, token, sizeof(token)))
+    ctx_.sessions->revoke(token);
+  ctx_.server->sendHeader("Set-Cookie",
+                          String(kSessionCookie) + "=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict");
+  sendText(200, "logged out");
+}
+
 void Dashboard::handlePassword() {
   if (!guard(Access::kAuthDuringSetup)) return;
   const char* why = nullptr;
@@ -339,7 +394,10 @@ void Dashboard::handlePassword() {
     return;
   }
   ctx_.log->log(LogLevel::kInfo, kTag, "dashboard password changed");
-  sendText(200, "password changed; log in again with the new one");
+  ctx_.sessions->revokeAll();  // every browser, this one included, logs in again
+  ctx_.server->sendHeader("Set-Cookie",
+                          String(kSessionCookie) + "=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict");
+  sendText(200, "password changed; log in with the new one");
 }
 
 void Dashboard::handleRule(bool add) {

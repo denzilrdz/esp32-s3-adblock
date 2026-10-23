@@ -1,10 +1,14 @@
 #pragma once
 // Dashboard + REST API (runs in the web task). Security (ARCHITECTURE.md §9):
 //  - every request: Host must be the device IP or <hostname>[.local] (DNS rebinding)
-//  - GET is read-only and public on the LAN (as upstream): /, /api/stats, /api/config
-//  - every change is POST and needs: X-Requested-With: adblock, a same-origin
-//    Origin/Referer (CSRF), Basic Auth checked against the PBKDF2 hash, and no
-//    active login lockout. While the setup code is required, only /api/password works.
+//  - only the page shell (/) is public: it holds no data and opens on a login form
+//  - /api/login checks the password (PBKDF2 hash, per-client lockout) and sets an
+//    HttpOnly, SameSite=Strict session cookie; every other /api route needs that
+//    session (or Basic Auth, for scripts). No WWW-Authenticate challenge, so browsers
+//    never pop up their own login box.
+//  - every change is POST and also needs: X-Requested-With: adblock and a same-origin
+//    Origin/Referer (CSRF). While the setup code is required, the data reads and
+//    /api/password work, nothing else.
 
 #include <WebServer.h>
 
@@ -27,6 +31,7 @@ struct DashboardContext {
   app::DnsService* dns = nullptr;
   auth::PasswordStore* passwords = nullptr;
   auth::LoginGuard* logins = nullptr;
+  auth::SessionStore* sessions = nullptr;
   config::AppConfig* config = nullptr;
   hal::IKeyValueStore* kv = nullptr;
   hal::ILogger* log = nullptr;
@@ -41,21 +46,27 @@ class Dashboard {
   void begin();
 
  private:
-  enum class Access { kPublic, kAuth, kAuthDuringSetup };
+  // kRead: logged in, any method, also during setup (GET /api/stats, /api/config).
+  // kAuth / kAuthDuringSetup: logged in, POST + CSRF checks; only the latter during setup.
+  enum class Access { kPublic, kRead, kAuth, kAuthDuringSetup };
   struct Check {
     bool ok;
     int code;
     const char* message;
-    bool askCredentials;
   };
 
   Check check(Access access);
+  Check postChecks();                                            // POST, CSRF header, Origin/Referer
+  Check verifyPassword(const String& user, const String& pass);  // lockout + PBKDF2
+  bool hasSession();
   bool guard(Access access);  // sends the error response itself
   void sendText(int code, const String& text);
 
   void handleStats();
   void handleGetConfig();
   void handleSetConfig();
+  void handleLogin();
+  void handleLogout();
   void handlePassword();
   void handleRule(bool add);
   void handleBan();

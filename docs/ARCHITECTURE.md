@@ -40,7 +40,8 @@ not yet measured on the board.
   allocation, deterministic).
 - Parent-domain matching: a listed `ads.example.com` also blocks `x.ads.example.com`.
 - Captive-portal Wi-Fi provisioning, BOOT-held-at-power-on reset, mDNS name.
-- Dashboard auth model (Basic Auth + custom-header CSRF guard) and HTML escaping.
+- Dashboard CSRF guard (custom header) and HTML escaping. Upstream's Basic Auth is
+  replaced by a login form and session cookie (§9), still accepted for scripts.
 - Upstream reply matching from issue #10 (random txid, match txid + question +
   source, restore client txid).
 - The CI blocklist build (`tools/build_blocklist.py`), extended and run daily.
@@ -605,7 +606,14 @@ automatically. This is a circuit-breaker with exponential backoff.
 **Controls:**
 
 - **Dashboard auth:**
-  - All state-changing endpoints require Basic Auth and are **POST-only**.
+  - The dashboard opens on a login form; only the page shell (`/`, no data) is
+    public. `POST /api/login` checks the password and sets a random 128-bit session
+    token in an `HttpOnly; SameSite=Strict` cookie (8 slots, least recently used one
+    replaced, 30 min idle / 24 h absolute expiry, all revoked on a password change,
+    `POST /api/logout` ends one). Every other `/api` route needs that session or Basic
+    Auth (for scripts); 401s carry no `WWW-Authenticate`, so browsers never show
+    their own login box. Session checks are a 32-byte compare, no PBKDF2.
+  - All state-changing endpoints are **POST-only**.
   - The password is stored as a PBKDF2-HMAC-SHA256 hash with a salt in NVS
     (`mbedtls_pkcs5_pbkdf2_hmac`). It is never stored or logged in plain text.
   - While the default password is in use, the dashboard is read-only, apart from
@@ -628,8 +636,8 @@ automatically. This is a circuit-breaker with exponential backoff.
     device. This blocks DNS-rebinding attacks that reach the API through an
     attacker's hostname.
   - The `Host` header must be the device IP or `*.local`.
-- **Read-only endpoints** (`/`, `/api/stats`) stay open on the LAN, as upstream
-  does. They expose client IPs and MACs to the LAN, which is documented.
+- **Read endpoints** (`/api/stats`, `/api/config`) need a login too (upstream leaves
+  them open), so client IPs and MACs are no longer visible to the whole LAN.
 - **Firmware OTA:**
   - Browser upload and ArduinoOTA require the dashboard password and OTA password
     respectively.

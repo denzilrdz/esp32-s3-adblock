@@ -26,11 +26,12 @@ network as hostile.
 
 - [ ] Every state-changing route is **POST** and starts with
       `guard(Access::kAuth)` in `src/web/dashboard.cpp` (Host check, POST,
-      `X-Requested-With: adblock`, Origin/Referer, Basic Auth vs the PBKDF2 hash,
+      `X-Requested-With: adblock`, Origin/Referer, session cookie or Basic Auth vs the PBKDF2 hash,
       per-client lockout, setup-code gate). Uploads use `check()` at
       `UPLOAD_FILE_START`.
-- [ ] Read-only GET routes still call `guard(Access::kPublic)` (Host check: DNS
-      rebinding defence).
+- [ ] Data GET routes call `guard(Access::kRead)` (login + Host check); only the
+      page shell and 404 use `guard(Access::kPublic)`. Never send
+      `WWW-Authenticate` (it pops up the browser's login box over the page's own).
 - [ ] The page's CSP (`pageCsp()` in `dashboard.cpp`) keeps `connect-src` to
       `'self'` plus the update origin only; a new external fetch needs its origin
       added there deliberately, never `*`.
@@ -42,8 +43,8 @@ network as hostile.
 - [ ] Failed-login backoff still applies (per client + fixed 1 s delay); no endpoint
       leaks passwords, the password hash, the setup code, `OTA_PASS` or Wi-Fi
       credentials. The setup code is only ever printed to the serial console.
-- [ ] Responses to unauthenticated users don't reveal more than `/api/stats`
-      already does.
+- [ ] Responses to unauthenticated users reveal nothing beyond the static page
+      shell (no stats, config, clients or version).
 
 ## 3. OTA
 

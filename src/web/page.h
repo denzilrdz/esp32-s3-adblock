@@ -97,18 +97,30 @@ legend{font-weight:600;padding:0 6px}
 details summary{cursor:pointer;color:var(--accent);font-size:12.5px;margin-top:8px}
 #toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);max-width:calc(100% - 32px);background:var(--ink);color:var(--page);border-radius:10px;padding:10px 16px;box-shadow:0 6px 20px rgba(0,0,0,.25);display:none;z-index:9}
 #toast.bad{background:var(--bad);color:#fff}
+[data-auth=wait] .top,[data-auth=wait] main,[data-auth=wait] #login,[data-auth=out] .top,[data-auth=out] main,[data-auth=in] #login{display:none}
+#login{min-height:100vh;display:grid;place-items:center;padding:16px}#loginForm{width:min(100%,360px);display:flex;flex-direction:column;gap:12px;padding:24px}
+#loginForm .fld{flex:none}#loginForm input{min-height:44px}#loginForm button{min-height:44px}#loginForm p{margin:0}.err{color:var(--bad-ink)}
 @media (max-width:560px){.hero .big{font-size:40px}.bar{padding:8px 12px}main{padding:10px 12px 72px}.blist{grid-template-columns:auto 1fr auto}.blist .p{display:none}}
-@media (max-width:700px){#theme{order:2}.pills{order:3;width:100%;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}#pClock{display:none}html{scroll-padding-top:124px}}
+@media (max-width:700px){#theme,#logout{order:2}.pills{order:3;width:100%;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}#pClock{display:none}html{scroll-padding-top:124px}}
 @media (prefers-reduced-motion:no-preference){.meter i,.stack>i{transition:flex-grow .4s,width .4s}}
-</style></head><body>
+</style></head><body data-auth=wait>
+<div id=login><form id=loginForm class=card>
+<div class=brand><svg width=22 height=22 viewBox="0 0 24 24" aria-hidden=true><path fill=currentColor d="M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5l-8-3Zm-1.2 13.6L7.4 12.2l1.4-1.4 2 2 4.4-4.4 1.4 1.4-5.8 5.8Z"/></svg>AdBlock</div>
+<p class=ink2>Log in to manage this ad blocker.</p>
+<label class=fld>User name<input name=user autocomplete=username autocapitalize=off spellcheck=false required></label>
+<label class=fld>Password<input name=pass type=password autocomplete=current-password required></label>
+<p id=loginErr class=err role=alert hidden></p>
+<button class=primary>Log in</button>
+<p class=hint>First time? Use the user name from <code>secrets.h</code> (usually <code>admin</code>) and the one-time setup code printed on the serial console.</p>
+</form></div>
 <header class=top><div class=bar>
 <div class=brand><svg width=22 height=22 viewBox="0 0 24 24" aria-hidden=true><path fill=currentColor d="M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5l-8-3Zm-1.2 13.6L7.4 12.2l1.4-1.4 2 2 4.4-4.4 1.4 1.4-5.8 5.8Z"/></svg>AdBlock</div>
 <div class=pills><span id=pBlock class=pill><i class=dot></i><span>…</span></span><span id=pUp class=pill><i class=dot></i><span>…</span></span><span id=pClock class=pill><i class=dot></i><span>…</span></span><a id=pUpd class="pill is-info" href=#device hidden>update available</a></div>
-<button id=theme class=ghost title="Theme: auto" aria-label="Switch theme">&#9680;</button></div>
+<button id=theme class=ghost title="Theme: auto" aria-label="Switch theme">&#9680;</button><button id=logout class=ghost>Log out</button></div>
 <nav class=tabs aria-label=Sections><a href=#overview class=on>Overview</a><a href=#lists>Blocklist &amp; rules</a><a href=#clients>Clients</a><a href=#settings>Settings</a><a href=#device>Device</a></nav></header>
 <main>
 <div id=offline class="banner bad" hidden><p><b>Can't reach the device.</b> Retrying every few seconds; the page keeps the last values.</p></div>
-<div id=setup class="banner warn" hidden><p><b>Set a dashboard password.</b> Find the one-time setup code on the serial console (<code>pio device monitor</code>), enter it with a new password (10+ characters). When the browser asks you to log in, use <code>admin</code> and the same setup code.</p>
+<div id=setup class="banner warn" hidden><p><b>Set a dashboard password.</b> Find the one-time setup code on the serial console (<code>pio device monitor</code>), enter it with a new password (10+ characters). Use the setup code you just logged in with.</p>
 <div class=row><input id=sCode placeholder="setup code" autocomplete=off aria-label="Setup code"><input id=sNew type=password placeholder="new password" autocomplete=new-password aria-label="New password"><button class=primary id=sSave>Set password</button></div></div>
 <div id=plainBanner class="banner bad" hidden><p><b>Plain DNS in use.</b> Every encrypted upstream is down, so lookups currently go unencrypted (visible to your ISP). They return to DNS-over-TLS automatically.</p></div>
 <div id=updBanner class="banner info" hidden><p id=updBannerText></p><a href=#device>Review &amp; install</a></div>
@@ -172,10 +184,21 @@ details summary{cursor:pointer;color:var(--accent);font-size:12.5px;margin-top:8
 <script>
 const $=id=>document.getElementById(id),NS='http://www.w3.org/2000/svg';
 function toast(t,bad){const e=$('toast');e.textContent=t;e.className=bad?'bad':'';e.style.display='block';clearTimeout(e._t);e._t=setTimeout(()=>e.style.display='none',4500)}
-async function api(path,data,body){
+function post(path,data,body){
  const opt={method:'POST',credentials:'same-origin',headers:{'X-Requested-With':'adblock'}};
  if(body){opt.body=body}else{opt.headers['Content-Type']='application/x-www-form-urlencoded';opt.body=new URLSearchParams(data||{})}
- try{const r=await fetch(path,opt);const t=await r.text();toast(t||r.statusText,!r.ok);if(r.ok)load();return r.ok}catch(e){toast('request failed: '+e.message,true);return false}}
+ return fetch(path,opt)}
+async function api(path,data,body){
+ try{const r=await post(path,data,body);const t=await r.text();if(r.status===401){setAuth('out');toast('Session ended. Log in again.',true);return false}
+ toast(t||r.statusText,!r.ok);if(r.ok)load();return r.ok}catch(e){toast('request failed: '+e.message,true);return false}}
+// Login: nothing but the form shows until /api/stats answers with the session cookie.
+function setAuth(a){if(document.body.dataset.auth===a)return;document.body.dataset.auth=a;if(a==='out')$('loginForm').user.focus()}
+$('loginForm').onsubmit=async e=>{e.preventDefault();const f=e.target,b=f.querySelector('button'),err=$('loginErr');b.disabled=true;err.hidden=true;
+ try{const r=await post('/api/login',{user:f.user.value.trim(),pass:f.pass.value});
+  if(r.ok){f.pass.value='';await load()}
+  else{err.textContent=r.status===429?'Too many failed attempts. Try again in '+(r.headers.get('Retry-After')||'a few')+' s.':(await r.text()||'Login failed.');err.hidden=false;f.pass.select()}}
+ catch(x){err.textContent='Can\'t reach the device.';err.hidden=false}finally{b.disabled=false}};
+$('logout').onclick=async()=>{try{await post('/api/logout')}catch(e){}try{sessionStorage.removeItem('ab.hist')}catch(e){}location.reload()};
 function el(tag,text,cls){const e=document.createElement(tag);if(text!==undefined&&text!==null)e.textContent=text;if(cls)e.className=cls;return e}
 function sv(tag,a,p){const e=document.createElementNS(NS,tag);for(const k in a)e.setAttribute(k,a[k]);if(p)p.append(e);return e}
 function fmt(n){return Number(n).toLocaleString()}
@@ -255,8 +278,8 @@ function stateBadge(st){const m={up:['is-good','up'],down:['is-bad','down'],unkn
 
 let cfgLoaded=false,last=null,updChecked=false;
 async function load(){let s;
- try{const r=await fetch('/api/stats',{cache:'no-store'});s=await r.json()}catch(e){$('offline').hidden=false;setPill('pUp','offline','bad');return}
- $('offline').hidden=true;record(s);last=s;render(s);
+ try{const r=await fetch('/api/stats',{cache:'no-store'});if(r.status===401){setAuth('out');return}s=await r.json()}catch(e){setAuth('in');$('offline').hidden=false;setPill('pUp','offline','bad');return}
+ setAuth('in');$('offline').hidden=true;record(s);last=s;render(s);
  if(!updChecked){updChecked=true;checkUpdate()}
  if(!cfgLoaded){try{const c=await (await fetch('/api/config')).json();for(const [k,v] of Object.entries(c)){const i=$('cfg').elements[k];if(!i)continue;if(i.type==='checkbox')i.checked=v;else i.value=v}cfgLoaded=true}catch(e){}}}
 function render(s){const d=s.dns,bl=s.blocklist;
@@ -380,7 +403,7 @@ $('forget').onclick=()=>{if(confirm('Forget Wi-Fi and reboot into the setup acce
 $('cfg').onsubmit=e=>{e.preventDefault();const data={};for(const i of $('cfg').elements){if(!i.name)continue;data[i.name]=i.type==='checkbox'?(i.checked?'1':'0'):i.value}api('/api/config',data)};
 $('sSave').onclick=()=>api('/api/password',{current:$('sCode').value.trim(),next:$('sNew').value});
 $('pSave').onclick=()=>api('/api/password',{current:$('pCur').value,next:$('pNew').value});
-load();setInterval(load,4000);
+load();setInterval(()=>{if(document.body.dataset.auth!=='out')load()},4000);
 </script></body></html>)HTML";
 
 }  // namespace web

@@ -61,6 +61,7 @@ app::AppPolicy* gPolicy = nullptr;
 app::DnsService* gDns = nullptr;
 auth::PasswordStore* gPasswords = nullptr;
 auth::LoginGuard gLogins(gClock);
+auth::SessionStore gSessions(gClock, gRandom);
 web::Dashboard* gDashboard = nullptr;
 
 void feedWatchdog() {
@@ -255,6 +256,7 @@ void setup() {
   ctx.dns = gDns;
   ctx.passwords = gPasswords;
   ctx.logins = &gLogins;
+  ctx.sessions = &gSessions;
   ctx.config = &gConfig;
   ctx.kv = &gKv;
   ctx.log = &gLog;
