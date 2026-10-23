@@ -6,6 +6,11 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.7] - 2026-10-23
+
+Fixes the board restarting on its own, and the dashboard now explains restarts.
+Update from the dashboard (_Device → Check for updates_); settings and bans are kept.
+
 ### Added
 
 - _Device → Health_ shows why the board last restarted: power on, a power dip, a crash
@@ -307,7 +312,8 @@ password setup.
   flash are required), upstream's 40-bit blocklist format, the Japanese README,
   the C3 web-installer binaries and the C3 SuperMini enclosure.
 
-[Unreleased]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.2.6...HEAD
+[Unreleased]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.2.7...HEAD
+[0.2.7]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.2.6...v0.2.7
 [0.2.6]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.2.5...v0.2.6
 [0.2.5]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.2.4...v0.2.5
 [0.2.4]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.2.3...v0.2.4
