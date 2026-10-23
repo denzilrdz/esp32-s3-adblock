@@ -93,10 +93,18 @@ pio device monitor -e esp32s3        # 115200 baud, filters: esp32_exception_dec
 python3 tools/dns_load.py <ip> 60000 70      # mixed DNS load, flags silences (restarts)
 python3 tools/http_stall.py <ip> 40 trickle  # slow HTTP client; expect "no restart"
 python3 tools/http_stall.py <ip> 40 stall    # client that stops reading the page
+python3 tools/http_stall.py <ip> 45 slowread # trickle reader; dashboard freed <= ~20 s
+
+# every hang ends in a restart with its reason (needs a netrc with the dashboard login,
+# see the script; flashes the self-test build, then the release build back)
+pio run -e esp32s3 && pio run -e esp32s3_selftest
+python3 tools/selftest_board.py s3adblock.local ~/.s3adblock.netrc
 ```
 
 Household DNS goes through the board, so run them when a short outage is acceptable.
-A crash overwrites the stored crash record.
+A crash overwrites the stored crash record. Restart reasons from the software watchdog
+(ARCHITECTURE.md §4.3): "web task stuck", "blocklist download stuck", "upstream task
+stuck", "software watchdog stopped".
 
 ## Wi-Fi drops
 

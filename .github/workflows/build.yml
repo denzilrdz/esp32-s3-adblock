@@ -79,6 +79,9 @@ jobs:
         run: .venv/bin/pio run -e esp32s3
       - name: Factory image
         run: tools/make_factory.sh
+      # Compiled so it doesn't rot; never uploaded or released (tools/selftest_board.py).
+      - name: Build the hardware self-test firmware
+        run: .venv/bin/pio run -e esp32s3_selftest
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: firmware-esp32s3
