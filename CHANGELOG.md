@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.8] - 2026-10-23
+
+Every possible hang now ends in a restart with its reason, and failed blocklist
+downloads explain themselves. Update from the dashboard (_Device → Check for updates_);
+settings and bans are kept.
+
 ### Fixed
 
 - No hang goes unnoticed: whatever the 5 s hardware watchdog can't see (the dashboard,
@@ -331,7 +337,8 @@ password setup.
   flash are required), upstream's 40-bit blocklist format, the Japanese README,
   the C3 web-installer binaries and the C3 SuperMini enclosure.
 
-[Unreleased]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.2.7...HEAD
+[Unreleased]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.2.8...HEAD
+[0.2.8]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.2.7...v0.2.8
 [0.2.7]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.2.6...v0.2.7
 [0.2.6]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.2.5...v0.2.6
 [0.2.5]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.2.4...v0.2.5
