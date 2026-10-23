@@ -140,7 +140,11 @@ native tests; pre-push = clang-tidy + esp32s3 firmware build.
   `installer/min-update-from` (skill `release`, step 4).
 - mDNS name: `s3adblock.local`; setup AP `S3-AdBlock-XXXX`.
 - **First boot:** a placeholder/weak `WEB_PASS` never works; the serial console prints
-  a one-time setup code. ArduinoOTA stays off until `OTA_PASS` is real (10+ chars).
+  a one-time setup code (log in as `admin` with it). ArduinoOTA stays off until
+  `OTA_PASS` is real (10+ chars).
+- **Dashboard login:** every `/api` route needs the session cookie from `POST /api/login`
+  or Basic Auth (`curl -u admin:<password>`); only `/` is public. Never send
+  `WWW-Authenticate` (the browser pop-up would cover the page's login form).
 - **IPv6 / browser secure DNS bypass** the blocker: docs/ROUTER_SETUP.md.
 - **GitHub Actions:** pin every action to a full commit SHA with a `# vX.Y.Z` comment,
   `persist-credentials: false` on checkout, per-job `permissions` with a comment per

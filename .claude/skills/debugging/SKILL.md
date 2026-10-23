@@ -51,7 +51,8 @@ pio device monitor -e esp32s3        # 115200 baud, filters: esp32_exception_dec
 ## Memory
 
 - `/api/stats` (and the dashboard's _Device → Health_) reports `heap` (internal free),
-  `heapMin` (lowest since boot) and `psram` (free PSRAM).
+  `heapMin` (lowest since boot) and `psram` (free PSRAM). From v0.2.6 it needs the
+  login: `curl -u admin:<password> http://s3adblock.local/api/stats`.
 - Warning signs:
   - **heapMin < 40 KB**: TLS handshakes will fail (each session needs ~45 KB of
     internal RAM; mbedTLS buffers can't go to PSRAM with the prebuilt libs);

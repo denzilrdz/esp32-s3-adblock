@@ -599,8 +599,8 @@ automatically. This is a circuit-breaker with exponential backoff.
 
 **Accepted:**
 
-- An attacker who can sniff the LAN can read Basic-Auth credentials (the dashboard
-  is plain HTTP).
+- An attacker who can sniff the LAN can read the login password and session cookie
+  (the dashboard is plain HTTP).
 - The setup access point is open during provisioning.
 
 **Controls:**

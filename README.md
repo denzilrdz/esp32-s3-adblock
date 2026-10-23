@@ -62,17 +62,17 @@ blocklist every day on its own**. No Raspberry Pi, no SD card, no OS to patch.
 
 ## How it compares
 
-|                       | **esp32-s3-adblock**                          | Pi-hole on a Raspberry Pi   | Original [esp32-c3-adblock](https://github.com/M-Abozaid/esp32-c3-adblock) |
-| --------------------- | --------------------------------------------- | --------------------------- | -------------------------------------------------------------------------- |
-| Hardware              | ESP32-S3 board, USB-powered                   | Pi + SD card + power supply | ESP32-C3 board                                                             |
-| Upkeep                | no OS or SD card; one-click firmware updates  | OS updates, SD card wear    | no OS or SD card                                                           |
-| Upstream DNS          | **encrypted** (DoT, DoH fallback)             | plain by default            | plain UDP to 9.9.9.9                                                       |
-| Blocklist             | up to 1M domains, in PSRAM                    | millions, on disk           | read from flash                                                            |
-| Failed list update    | old list stays active                         | old list stays active       | can leave no list loaded                                                   |
-| Dashboard login       | hashed password, one-time setup code, lockout | password                    | Basic Auth                                                                 |
-| Answer cache          | yes (PSRAM)                                   | yes                         | no                                                                         |
-| Slow upstream answer  | other queries keep flowing; SERVFAIL at 2.5 s | other queries keep flowing  | stalls every client                                                        |
-| DHCP server, IPv6 DNS | not yet                                       | yes                         | no                                                                         |
+|                       | **esp32-s3-adblock**                               | Pi-hole on a Raspberry Pi   | Original [esp32-c3-adblock](https://github.com/M-Abozaid/esp32-c3-adblock) |
+| --------------------- | -------------------------------------------------- | --------------------------- | -------------------------------------------------------------------------- |
+| Hardware              | ESP32-S3 board, USB-powered                        | Pi + SD card + power supply | ESP32-C3 board                                                             |
+| Upkeep                | no OS or SD card; one-click firmware updates       | OS updates, SD card wear    | no OS or SD card                                                           |
+| Upstream DNS          | **encrypted** (DoT, DoH fallback)                  | plain by default            | plain UDP to 9.9.9.9                                                       |
+| Blocklist             | up to 1M domains, in PSRAM                         | millions, on disk           | read from flash                                                            |
+| Failed list update    | old list stays active                              | old list stays active       | can leave no list loaded                                                   |
+| Dashboard login       | login screen, hashed password, setup code, lockout | password                    | Basic Auth                                                                 |
+| Answer cache          | yes (PSRAM)                                        | yes                         | no                                                                         |
+| Slow upstream answer  | other queries keep flowing; SERVFAIL at 2.5 s      | other queries keep flowing  | stalls every client                                                        |
+| DHCP server, IPv6 DNS | not yet                                            | yes                         | no                                                                         |
 
 ## Quick start
 
@@ -116,11 +116,14 @@ The serial console prints a **one-time setup code**. To see it, click **Install
 AdBlock** in the web installer again, pick the port and choose _Logs & Console_ (not
 _Install_; press _Reset Device_ if it stays empty), or run `pio device monitor`.
 
-Open `http://s3adblock.local` (or the device IP). The _Set a dashboard password_ banner
-asks for the setup code and a new password (10+ characters); when the browser asks you
-to log in, use user `admin` and the same setup code (from then on, your new
-password). Until a password is set, nothing can be changed, so nobody else on your
-network can claim the device.
+Open `http://s3adblock.local` (or the device IP) and log in as `admin` with the setup
+code. The _Set a dashboard password_ banner asks for the code again and a new password
+(10+ characters); then log in with the new password. Until a password is set, nothing
+can be changed, so nobody else on your network can claim the device.
+
+The dashboard always opens on a login screen and shows nothing before you log in. You
+stay logged in while it is open (up to 24 h); _Log out_ is in the top bar, and
+changing the password logs out every browser.
 
 While you're there, set your **time zone** under _Settings → Privacy & blocking_
 (default `UTC0`) so the daily list update runs at night for you.
@@ -313,6 +316,7 @@ or doesn't get there within 5 minutes, the device rolls back to the previous ver
 | Dashboard shows **Plain DNS in use**   | Ports 853 and 443 to 1.1.1.1/9.9.9.9 fail from your network. Check with `kdig @1.1.1.1 +tls example.com` from a computer.                          |
 | "clock not synced" stays               | NTP (UDP 123) to 162.159.200.1 / pool.ntp.org is blocked; the daily update waits for the clock.                                                    |
 | Blocklist "invalid list"               | The URL isn't a format-v2 file (`tools/build_blocklist.py` output), or the download was cut off. The old list stays active.                        |
+| Dashboard asks to log in again         | Normal after 24 h, 30 min after closing the tab, or after a password change. Right after updating from v0.2.5, reload the tab once.                |
 | Can't log in, "too many failed logins" | Wait (30 s to 5 min) or use another device. Forgot the password: erase flash (`pio run -e esp32s3 -t erase`) and flash again.                      |
 | Installer finds no serial port         | Use a data USB cable, not a charge-only one. If the board's LED stays off, turn the USB-C plug over (some boards work one way round only).         |
 | Installer can't connect or fails       | Hold **BOOT**, tap **RST**, release **BOOT**, try again. Close other programs using the port (serial monitors, the Arduino IDE).                   |

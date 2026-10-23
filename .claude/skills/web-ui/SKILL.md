@@ -9,11 +9,11 @@ Three pages, one look. All are hand-written HTML/CSS/vanilla JS with **no extern
 resources** (no CDN, fonts, frameworks), because the CSPs forbid them, the setup portal
 has no internet, and the dashboard lives in flash.
 
-| Page         | File                   | Constraints                                                                                                                                  |
-| ------------ | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| Dashboard    | `src/web/page.h`       | CSP `default-src 'self'` + update-site origin, inline script/style allowed. ≤ 64 KB (test). Polls `/api/stats` every 4 s.                    |
-| Setup portal | `src/web/portal.cpp`   | Opened by phones' captive mini-browsers (iOS CNA: little JS): **must work without JS**. Built with `String` (not the DNS hot path).          |
-| Installer    | `installer/index.html` | CSP `script-src 'self'`: **no inline script**. `__VERSION__` is stamped by release.yml. esp-web-tools vendored and hash-checked. `404.html`. |
+| Page         | File                   | Constraints                                                                                                                                                               |
+| ------------ | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Dashboard    | `src/web/page.h`       | CSP `default-src 'self'` + update-site origin, inline script/style allowed. ≤ 64 KB (test). Login screen until `/api/stats` answers (session cookie); polls it every 4 s. |
+| Setup portal | `src/web/portal.cpp`   | Opened by phones' captive mini-browsers (iOS CNA: little JS): **must work without JS**. Built with `String` (not the DNS hot path).                                       |
+| Installer    | `installer/index.html` | CSP `script-src 'self'`: **no inline script**. `__VERSION__` is stamped by release.yml. esp-web-tools vendored and hash-checked. `404.html`.                              |
 
 `tools/test_web_pages.py` enforces size, no `innerHTML`, no external loads, no inline
 script on Pages, and that the dashboard script parses (`node --check`).
@@ -114,12 +114,16 @@ them** (legend lists). A new entity takes the next slot (green `#008300`, violet
 ## Preview without a board
 
 Extract the page and serve it with mocked data (copy a real `/api/stats` from the board:
-`curl http://s3adblock.local/api/stats`):
+`curl -u admin:<password> http://s3adblock.local/api/stats`):
 
 ```python
 import re; html = re.search(r'R"HTML\((.*)\)HTML"', open("src/web/page.h").read(), re.S).group(1)
 # serve html at /, the JSON at /api/stats and /api/config, POST -> 200 "ok"
 ```
+
+The page starts on its login screen: answer `401` to `/api/*` until `POST /api/login`
+succeeds, and set a cookie there that the mock then checks (or answer 200 from the start
+to skip the login).
 
 Set `updateUrl` in the mock to a local `update.json` with a higher version to see
 the update states. Check desktop and ~390 px wide, light and dark, before committing.
