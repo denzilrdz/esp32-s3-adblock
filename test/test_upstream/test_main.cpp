@@ -146,15 +146,52 @@ static void test_stream_deframer_handles_split_and_coalesced_frames() {
   TEST_ASSERT_EQUAL(0, d.next(out, sizeof(out)));
 }
 
-static void test_stream_deframer_rejects_oversized_frames() {
-  uint8_t buf[16], out[16];
+static void test_stream_deframer_skips_oversized_frames() {
+  // A DoT server may ignore our EDNS size: an answer too big for the buffer is dropped
+  // (that one query fails over), and the frames around it still arrive.
+  uint8_t buf[16], out[16], framed[64];
   upstream::StreamDeframer d(buf, sizeof(buf));
+  const uint8_t m1[] = {1, 2, 3}, m2[] = {7, 7};
+  size_t n = upstream::frameForStream(m1, 3, framed, sizeof(framed));
+  framed[n++] = 0;  // frame claiming 30 bytes: can never fit 16
+  framed[n++] = 30;
+  for (int i = 0; i < 30; i++) framed[n++] = 0xEE;
+  n += upstream::frameForStream(m2, 2, framed + n, sizeof(framed) - n);
+  for (size_t i = 0; i < n; i += 5) {  // arbitrary TLS record boundaries
+    TEST_ASSERT_TRUE(d.feed(framed + i, n - i < 5 ? n - i : 5));
+    while (size_t got = d.next(out, sizeof(out))) {
+      TEST_ASSERT_TRUE((got == 3 && out[0] == 1) || (got == 2 && out[0] == 7));
+    }
+  }
+  TEST_ASSERT_FALSE(d.failed());
+  TEST_ASSERT_EQUAL_UINT32(1, d.skipped());
+  TEST_ASSERT_EQUAL(0, d.buffered());
+
+  // A huge length prefix arriving alone, then its body in pieces.
+  upstream::StreamDeframer e(buf, sizeof(buf));
   const uint8_t huge[] = {0x10, 0x00};  // claims 4096 bytes
-  TEST_ASSERT_FALSE(d.feed(huge, 2));
-  TEST_ASSERT_TRUE(d.failed());
-  TEST_ASSERT_EQUAL(0, d.next(out, sizeof(out)));
+  TEST_ASSERT_TRUE(e.feed(huge, 2));
+  uint8_t junk[512] = {0};
+  for (int i = 0; i < 8; i++) TEST_ASSERT_TRUE(e.feed(junk, sizeof(junk)));
+  TEST_ASSERT_EQUAL(0, e.next(out, sizeof(out)));
+  n = upstream::frameForStream(m2, 2, framed, sizeof(framed));
+  TEST_ASSERT_TRUE(e.feed(framed, n));
+  TEST_ASSERT_EQUAL(2, e.next(out, sizeof(out)));
+  TEST_ASSERT_EQUAL_UINT32(1, e.skipped());
+
   uint8_t small[2];
   TEST_ASSERT_EQUAL(0, upstream::frameForStream(out, 1, small, sizeof(small)));
+}
+
+static void test_stream_deframer_fails_only_when_full_of_untaken_frames() {
+  uint8_t buf[8], framed[16];
+  upstream::StreamDeframer d(buf, sizeof(buf));
+  const uint8_t m[] = {1, 2};
+  size_t n = upstream::frameForStream(m, 2, framed, sizeof(framed));
+  n += upstream::frameForStream(m, 2, framed + n, sizeof(framed) - n);  // 8 bytes: fills it
+  TEST_ASSERT_TRUE(d.feed(framed, n));
+  TEST_ASSERT_FALSE(d.feed(framed, 1));  // nobody called next()
+  TEST_ASSERT_TRUE(d.failed());
 }
 
 static void test_doh_request_head() {
@@ -779,7 +816,8 @@ int main(int, char**) {
   RUN_TEST(test_health_probe_failure_doubles_backoff_and_success_recovers);
   RUN_TEST(test_health_backoff_is_capped);
   RUN_TEST(test_stream_deframer_handles_split_and_coalesced_frames);
-  RUN_TEST(test_stream_deframer_rejects_oversized_frames);
+  RUN_TEST(test_stream_deframer_skips_oversized_frames);
+  RUN_TEST(test_stream_deframer_fails_only_when_full_of_untaken_frames);
   RUN_TEST(test_doh_request_head);
   RUN_TEST(test_http_parser_complete_response_byte_by_byte);
   RUN_TEST(test_http_parser_rejects_bad_input);

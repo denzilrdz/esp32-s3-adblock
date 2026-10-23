@@ -52,17 +52,39 @@ size_t frameForStream(const uint8_t* msg, size_t len, uint8_t* out, size_t cap) 
   return len + 2;
 }
 
+void StreamDeframer::dropOversizedHead() {
+  while (skip_ == 0 && len_ >= 2) {
+    const size_t frame = static_cast<size_t>(util::readU16Be(buf_)) + 2;
+    if (frame <= cap_) return;
+    const size_t have = len_ < frame ? len_ : frame;
+    memmove(buf_, buf_ + have, len_ - have);
+    len_ -= have;
+    skip_ = frame - have;
+    skipped_++;
+  }
+}
+
 bool StreamDeframer::feed(const uint8_t* data, size_t len) {
   if (failed_) return false;
-  if (len > cap_ - len_) {
-    failed_ = true;
-    return false;
-  }
-  memcpy(buf_ + len_, data, len);
-  len_ += len;
-  if (len_ >= 2 && static_cast<size_t>(util::readU16Be(buf_)) + 2 > cap_) {
-    failed_ = true;  // this frame can never fit
-    return false;
+  while (len) {
+    if (skip_) {
+      const size_t n = len < skip_ ? len : skip_;
+      skip_ -= n;
+      data += n;
+      len -= n;
+      continue;
+    }
+    const size_t room = cap_ - len_;
+    const size_t n = len < room ? len : room;
+    if (n == 0) {
+      failed_ = true;  // full of complete messages nobody took
+      return false;
+    }
+    memcpy(buf_ + len_, data, n);
+    len_ += n;
+    data += n;
+    len -= n;
+    dropOversizedHead();
   }
   return true;
 }
@@ -78,6 +100,7 @@ size_t StreamDeframer::next(uint8_t* out, size_t cap) {
   memcpy(out, buf_ + 2, msgLen);
   memmove(buf_, buf_ + 2 + msgLen, len_ - 2 - msgLen);
   len_ -= 2 + msgLen;
+  dropOversizedHead();
   return msgLen;
 }
 
