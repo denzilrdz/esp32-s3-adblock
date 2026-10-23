@@ -15,6 +15,15 @@ All notable changes to this project are documented here. The format follows
   never counts as a hang.
 - A device reading the dashboard page extremely slowly can no longer keep the
   dashboard busy for everyone else (the page send is cut off after 20 s).
+- A watchdog crash names the tasks that didn't respond (for example "crash (task
+  watchdog): dns_up (CPU 1)") instead of a cut-off message.
+
+### Changed
+
+- A failed blocklist download says where and why under _Blocklist_, for example
+  "network error: connect failed (hop 2 open: ESP_ERR_HTTP_CONNECT, errno 113, 20.1 s)"
+  (hop 1 is the list URL, hop 2 GitHub's download server), instead of only "connect
+  failed".
 
 ## [0.2.7] - 2026-10-23
 

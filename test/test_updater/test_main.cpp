@@ -139,7 +139,18 @@ static void test_wrong_file_type_is_rejected_early() {
 
 static void test_network_and_http_errors_keep_old_list() {
   http.next.error = hal::HttpError::kConnect;
-  TEST_ASSERT_EQUAL_STRING("network error", update::updateStatusName(run().status));
+  const auto plain = run();
+  TEST_ASSERT_EQUAL_STRING("network error", update::updateStatusName(plain.status));
+  TEST_ASSERT_EQUAL_STRING("connect failed", plain.detail);
+  assertLiveIsOld();
+  // The transport's own detail reaches the dashboard (no serial cable needed).
+  http.next.detail = "hop 2 open: ESP_ERR_HTTP_CONNECT, tls -0x2700 cert 0x8, 20.1 s";
+  TEST_ASSERT_EQUAL_STRING("connect failed (hop 2 open: ESP_ERR_HTTP_CONNECT, tls -0x2700 cert 0x8, 20.1 s)",
+                           run().detail);
+  http.next = FakeHttpClient::Response{};
+  http.next.error = hal::HttpError::kTimeout;
+  http.next.detail = "hop 1 read, 20.0 s";
+  TEST_ASSERT_EQUAL_STRING("timeout (hop 1 read, 20.0 s)", run().detail);
   assertLiveIsOld();
   http.next = FakeHttpClient::Response{};
   http.next.error = hal::HttpError::kRedirect;  // reported apart from connect failures

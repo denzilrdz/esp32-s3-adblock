@@ -2,9 +2,11 @@
 
 #include "platform/watchdog.h"
 
+#include <esp_err.h>
 #include <esp_http_client.h>
 #include <esp_task_wdt.h>
 #include <esp_timer.h>
+#include <esp_tls.h>
 #include <strings.h>
 
 #include <cstdio>
@@ -25,9 +27,21 @@ constexpr int kMaxUrlLen = 2048;
 
 struct Context {
   char etag[96];
+  int tlsCode;   // esp-tls / mbedTLS error of the last failure (HTTP_EVENT_ERROR)
+  int tlsFlags;  // certificate verification flags (MBEDTLS_X509_BADCERT_*)
 };
 
 esp_err_t onEvent(esp_http_client_event_t* evt) {
+  if (evt->event_id == HTTP_EVENT_ERROR && evt->data) {
+    auto* ctx = static_cast<Context*>(evt->user_data);
+    int code = 0, flags = 0;
+    if (esp_tls_get_and_clear_last_error(static_cast<esp_tls_error_handle_t>(evt->data), &code, &flags) ==
+            ESP_OK &&
+        (code || flags)) {
+      ctx->tlsCode = code;
+      ctx->tlsFlags = flags;
+    }
+  }
   if (evt->event_id == HTTP_EVENT_ON_HEADER && evt->header_key && evt->header_value &&
       strcasecmp(evt->header_key, "ETag") == 0) {
     auto* ctx = static_cast<Context*>(evt->user_data);
@@ -96,16 +110,43 @@ hal::HttpGetResult EspHttpClient::get(const hal::HttpGetRequest& req, hal::IHttp
     esp_http_client_cleanup(client);
     return result;
   }
+  // Where and why it failed, for the dashboard: "hop 2 open: ESP_ERR_HTTP_CONNECT,
+  // errno 113, tls -0x2700 cert 0x8, 20.1 s" (hop 1 = the list URL, 2+ = redirects).
+  auto noteFailure = [&](int hop, const char* stage, esp_err_t err) {
+    const int64_t tenths = (esp_timer_get_time() - startUs) / 100000;
+    int n = snprintf(result.detail, sizeof(result.detail), "hop %d %s: %s", hop + 1, stage,
+                     err == ESP_OK ? "no data" : esp_err_to_name(err));
+    const int e = esp_http_client_get_errno(client);
+    if (e > 0 && n > 0 && n < static_cast<int>(sizeof(result.detail)))
+      n += snprintf(result.detail + n, sizeof(result.detail) - n, ", errno %d", e);
+    if ((ctx.tlsCode || ctx.tlsFlags) && n > 0 && n < static_cast<int>(sizeof(result.detail)))
+      n += snprintf(result.detail + n, sizeof(result.detail) - n, ", tls -0x%04x cert 0x%x",
+                    ctx.tlsCode < 0 ? -ctx.tlsCode : ctx.tlsCode, ctx.tlsFlags);
+    if (n > 0 && n < static_cast<int>(sizeof(result.detail)))
+      snprintf(result.detail + n, sizeof(result.detail) - n, ", %d.%d s", static_cast<int>(tenths / 10),
+               static_cast<int>(tenths % 10));
+  };
+
   int status = 0;
-  for (int hop = 0; hop <= kMaxRedirects; hop++) {
+  int hop = 0;
+  for (; hop <= kMaxRedirects; hop++) {
     ctx.etag[0] = 0;
-    if (esp_http_client_open(client, 0) != ESP_OK) {
+    const esp_err_t openErr = esp_http_client_open(client, 0);
+    if (openErr != ESP_OK) {
       result.error = hal::HttpError::kConnect;
+      noteFailure(hop, "open", openErr);
       esp_http_client_cleanup(client);
       return result;
     }
     result.contentLength = esp_http_client_fetch_headers(client);
     status = esp_http_client_get_status_code(client);
+    if (result.contentLength < 0 && status == 0) {  // no response head at all
+      result.error = hal::HttpError::kTimeout;
+      noteFailure(hop, "headers", static_cast<esp_err_t>(result.contentLength));
+      esp_http_client_close(client);
+      esp_http_client_cleanup(client);
+      return result;
+    }
     if (!isRedirect(status)) break;
     int discarded = 0;
     esp_http_client_flush_response(client, &discarded);
@@ -130,6 +171,7 @@ hal::HttpGetResult EspHttpClient::get(const hal::HttpGetRequest& req, hal::IHttp
       const int n = esp_http_client_read(client, reinterpret_cast<char*>(buf), sizeof(buf));
       if (n < 0 || esp_timer_get_time() - startUs > kMaxDownloadUs) {
         result.error = hal::HttpError::kTimeout;
+        noteFailure(hop, n < 0 ? "read" : "5 min deadline", n < 0 ? static_cast<esp_err_t>(n) : ESP_OK);
         break;
       }
       if (n == 0) break;

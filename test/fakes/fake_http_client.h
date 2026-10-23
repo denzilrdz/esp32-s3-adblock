@@ -15,6 +15,7 @@ class FakeHttpClient final : public hal::IHttpClient {
     int status = 200;
     std::vector<uint8_t> body;
     std::string etag;
+    std::string detail;         // HttpGetResult::detail
     size_t chunk = 1000;        // delivery chunk size
     bool truncateHalf = false;  // deliver half the body, then report kTruncated
   };
@@ -25,6 +26,7 @@ class FakeHttpClient final : public hal::IHttpClient {
     r.error = next.error;
     r.status = next.status;
     snprintf(r.etag, sizeof(r.etag), "%s", next.etag.c_str());
+    snprintf(r.detail, sizeof(r.detail), "%s", next.detail.c_str());
     if (next.error == hal::HttpError::kConnect || next.error == hal::HttpError::kTimeout) {
       r.status = 0;
       return r;

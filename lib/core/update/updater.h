@@ -47,7 +47,7 @@ struct UpdateReport {
   int httpStatus = 0;
   uint32_t entries = 0;
   int64_t buildTime = 0;
-  char detail[64] = {0};
+  char detail[128] = {0};
   bool success() const { return status == UpdateStatus::kUpdated || status == UpdateStatus::kUnchanged; }
 };
 

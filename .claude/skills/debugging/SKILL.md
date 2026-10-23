@@ -106,6 +106,16 @@ A crash overwrites the stored crash record. Restart reasons from the software wa
 (ARCHITECTURE.md §4.3): "web task stuck", "blocklist download stuck", "upstream task
 stuck", "software watchdog stopped".
 
+## Blocklist download failures
+
+The dashboard's _Blocklist_ result carries the details (v0.2.8+): `hop N <stage>:
+<esp_err>, errno E, tls -0xXXXX cert 0xF, T s`. Hop 1 is the list URL (github.com),
+hop 2 the redirect target (release-assets.githubusercontent.com). `tls` is the mbedTLS
+error (e.g. `-0x2700` = certificate verify failed; then `cert` holds the
+`MBEDTLS_X509_BADCERT_*` flags), `errno 113` = host unreachable, a time near 20 s = a
+read or connect timeout. One failure on a slow connection is normal: the scheduler
+retries hourly (up to 6 times a day) and the old list stays active.
+
 ## Wi-Fi drops
 
 - Our log shows `[W][wifi] disconnected` / `reconnected after N s`; after 10 minutes

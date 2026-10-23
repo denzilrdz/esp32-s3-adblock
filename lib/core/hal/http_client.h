@@ -35,6 +35,10 @@ struct HttpGetResult {
   int64_t contentLength = -1;  // -1 if unknown
   size_t bodyBytes = 0;        // bytes delivered to the sink
   char etag[96] = {0};         // ETag response header, if any
+  // For a failure: where and how, e.g. "hop 2 open: ESP_ERR_HTTP_CONNECT, tls -0x2700
+  // cert 0x8, 20.1 s". Shown on the dashboard, so a failed download can be diagnosed
+  // without a serial cable.
+  char detail[96] = {0};
 };
 
 class IHttpClient {

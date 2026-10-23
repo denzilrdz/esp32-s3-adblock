@@ -130,9 +130,13 @@ UpdateReport BlocklistUpdater::update(const char* url) {
   const hal::HttpGetResult res = http_.get(req, sink);
   const FormatError fe = sink.finish();
 
-  if (res.error == hal::HttpError::kConnect || res.error == hal::HttpError::kTimeout)
-    return fail(UpdateStatus::kNetworkError,
-                res.error == hal::HttpError::kTimeout ? "timeout" : "connect failed");
+  if (res.error == hal::HttpError::kConnect || res.error == hal::HttpError::kTimeout) {
+    char why[sizeof(UpdateReport::detail)];
+    snprintf(why, sizeof(why), "%s%s%s%s",
+             res.error == hal::HttpError::kTimeout ? "timeout" : "connect failed", res.detail[0] ? " (" : "",
+             res.detail, res.detail[0] ? ")" : "");
+    return fail(UpdateStatus::kNetworkError, why);
+  }
   if (res.error == hal::HttpError::kRedirect) return fail(UpdateStatus::kNetworkError, "redirect refused");
   if (res.status == 304) {
     fs_.remove(paths_.tmp);
