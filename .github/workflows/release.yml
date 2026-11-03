@@ -89,6 +89,9 @@ jobs:
     permissions:
       pages: write # deploy the installer site
       id-token: write # authenticate the Pages deployment
+    concurrency:
+      group: pages-deploy # never overlap with a manual redeploy (pages.yml)
+      cancel-in-progress: false
     environment:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}
@@ -100,32 +103,8 @@ jobs:
         with:
           name: dist
           path: dist
-      - name: Vendor esp-web-tools (pinned version + SHA-512 from installer/esp-web-tools.lock)
-        run: |
-          ver=$(sed -n 's/^version=//p' installer/esp-web-tools.lock)
-          want=$(sed -n 's/^integrity=sha512-//p' installer/esp-web-tools.lock)
-          curl -fsSL "https://registry.npmjs.org/esp-web-tools/-/esp-web-tools-${ver}.tgz" -o ewt.tgz
-          got=$(openssl dgst -sha512 -binary ewt.tgz | base64 -w0)
-          test "$got" = "$want" || { echo "esp-web-tools ${ver}: integrity mismatch"; exit 1; }
-          mkdir -p ewt site/vendor/esp-web-tools
-          tar -xzf ewt.tgz -C ewt
-          cp ewt/package/dist/web/*.js site/vendor/esp-web-tools/
-      - name: Assemble installer site
-        run: |
-          v="${GITHUB_REF_NAME}"
-          sed "s/__VERSION__/${v#v}/g" installer/index.html > site/index.html
-          cp installer/404.html site/
-          cp installer/social-preview.png site/
-          cp "dist/factory-esp32s3-${v}.bin" site/factory-esp32s3.bin
-          sed "s/__VERSION__/${v#v}/" installer/manifest.json > site/manifest.json
-          # Dashboard update check: the browser fetches these from Pages (release
-          # downloads send no CORS headers) and uploads the firmware to the device.
-          cp "dist/firmware-esp32s3-${v}.bin" site/firmware-esp32s3.bin
-          # installer/min-update-from: oldest version that may install this release from
-          # the dashboard (raise it for releases that need a USB flash).
-          python3 tools/make_update_json.py --min-update-from "$(tr -d '[:space:]' < installer/min-update-from)" \
-            site/firmware-esp32s3.bin "$v" site/update.json \
-            "https://github.com/${GITHUB_REPOSITORY}/releases/tag/${v}"
+      - name: Assemble installer site (tools/build_site.sh, shared with pages.yml)
+        run: tools/build_site.sh "$GITHUB_REF_NAME" dist site "$(tr -d '[:space:]' < installer/min-update-from)"
       - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:

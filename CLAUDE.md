@@ -40,6 +40,7 @@ tools/lint.sh                            # clang-tidy on lib/core (.clang-tidy)
 tools/make_factory.sh                    # merged image flashable at 0x0 (after a build)
 python3 tools/build_blocklist.py out.bin # build a format-v2 blocklist (stdlib only)
 python3 tools/make_update_json.py fw.bin vX.Y.Z update.json   # dashboard update manifest
+gh workflow run pages.yml                # redeploy the Pages site (installer/ on main + latest release)
 python3 -m unittest discover -s tools -p 'test_*.py'   # tool + web page tests
 ```
 
@@ -61,7 +62,8 @@ test/          Unity tests: test/test_<area>/test_main.cpp, fakes in test/fakes/
 tools/         blocklist builder, factory image, setup/format/lint/coverage scripts
 installer/     browser installer + 404 (esp-web-tools pinned by SHA-512), deployed by CI
 docs/          ARCHITECTURE.md, ROUTER_SETUP.md
-.github/       CI (build.yml), release.yml (v* tags), daily blocklist.yml
+.github/       CI (build.yml), release.yml (v* tags), pages.yml (manual Pages redeploy),
+               daily blocklist.yml
 .claude/skills/ task playbooks (see list below)
 ```
 

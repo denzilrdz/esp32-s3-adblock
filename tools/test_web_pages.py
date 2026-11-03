@@ -143,9 +143,12 @@ class InstallerSiteTest(unittest.TestCase):
     def test_version_placeholder_is_stamped_by_release(self):
         html = (ROOT / "installer/index.html").read_text(encoding="utf-8")
         self.assertIn("__VERSION__", html)
-        wf = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
-        self.assertIn("installer/index.html > site/index.html", wf)
-        self.assertIn("installer/404.html site/", wf)
+        script = (ROOT / "tools/build_site.sh").read_text(encoding="utf-8")
+        self.assertIn('installer/index.html" >"$site/index.html"', script)
+        self.assertIn('installer/404.html" "$site/"', script)
+        for wf in ("release.yml", "pages.yml"):
+            text = (ROOT / ".github/workflows" / wf).read_text(encoding="utf-8")
+            self.assertIn("tools/build_site.sh", text, wf)
 
     def test_link_preview_image_is_deployed(self):
         html = (ROOT / "installer/index.html").read_text(encoding="utf-8")
@@ -153,8 +156,8 @@ class InstallerSiteTest(unittest.TestCase):
         self.assertTrue(m)
         name = m.group(1).rsplit("/", 1)[1]
         self.assertTrue((ROOT / "installer" / name).is_file())
-        wf = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
-        self.assertIn(f"cp installer/{name} site/", wf)
+        script = (ROOT / "tools/build_site.sh").read_text(encoding="utf-8")
+        self.assertIn(f'installer/{name}" "$site/"', script)
 
 
 if __name__ == "__main__":

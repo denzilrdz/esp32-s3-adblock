@@ -61,6 +61,13 @@ schema), MINOR (features), PATCH (fixes).
   with "Tag ... is not allowed to deploy to github-pages". Fixed for this repo on
   2026-10-15; after changing it, re-run only the failed job (`gh run rerun <id> --failed`).
 
+- Page-only changes (installer/ text, preview image) don't need a release: run
+  `gh workflow run pages.yml` (Actions -> pages). It rebuilds the site with
+  `tools/build_site.sh` (same script as the release) from `installer/` on main plus the
+  latest release's binaries, after checking their SHA256SUMS and attestations, and that
+  release's `installer/min-update-from`. Both deploys share the `pages-deploy`
+  concurrency group.
+
 ## After the release
 
 - Check the live installer: `https://denzilrdz.github.io/esp32-s3-adblock/` and its

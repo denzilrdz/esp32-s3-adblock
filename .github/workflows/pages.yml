@@ -1,0 +1,54 @@
+name: pages
+
+# Manual redeploy of the GitHub Pages site (browser installer + dashboard update files)
+# for page-only changes that don't need a release: installer/ as on main, with the
+# binaries of the latest release (checksums and build provenance verified first) and
+# that release's installer/min-update-from. Run: Actions -> pages -> Run workflow, or
+# `gh workflow run pages.yml`. Tags still deploy through release.yml.
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  installer:
+    name: installer
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read # checkout, download the latest release's assets
+      attestations: read # verify their build-provenance attestations
+      pages: write # deploy the installer site
+      id-token: write # authenticate the Pages deployment
+    concurrency:
+      group: pages-deploy # never overlap with a release deploy (release.yml)
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0 # tags, for the release's installer/min-update-from
+      - name: Download and verify the latest release
+        id: rel
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag=$(gh release view -R "$GITHUB_REPOSITORY" --json tagName -q .tagName)
+          [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "unexpected latest release: $tag"; exit 1; }
+          gh release download "$tag" -R "$GITHUB_REPOSITORY" -D dist -p '*.bin' -p SHA256SUMS
+          (cd dist && sha256sum -c SHA256SUMS)
+          for f in dist/*.bin; do gh attestation verify "$f" -R "$GITHUB_REPOSITORY"; done
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+      - name: Assemble installer site (tools/build_site.sh, shared with release.yml)
+        env:
+          TAG: ${{ steps.rel.outputs.tag }}
+        run: tools/build_site.sh "$TAG" dist site "$(git show "${TAG}:installer/min-update-from" | tr -d '[:space:]')"
+      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: site
+      - id: deploy
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
