@@ -115,6 +115,7 @@ jobs:
           v="${GITHUB_REF_NAME}"
           sed "s/__VERSION__/${v#v}/g" installer/index.html > site/index.html
           cp installer/404.html site/
+          cp installer/social-preview.png site/
           cp "dist/factory-esp32s3-${v}.bin" site/factory-esp32s3.bin
           sed "s/__VERSION__/${v#v}/" installer/manifest.json > site/manifest.json
           # Dashboard update check: the browser fetches these from Pages (release

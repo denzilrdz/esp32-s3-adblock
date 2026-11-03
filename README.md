@@ -25,6 +25,11 @@ It blocks ads, trackers and malware domains for **every device on your network**
 Quad9 **encrypted with DNS-over-TLS** so your ISP can't read them, and **refreshes its
 blocklist every day on its own**. No Raspberry Pi, no SD card, no OS to patch.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/img/dashboard-dark.png" />
+  <img src="docs/img/dashboard-light.png" alt="The esp32-s3-adblock dashboard: block rate, queries per minute, how queries were answered and upstream DNS status" width="100%" />
+</picture>
+
 ## Highlights
 
 | Feature                                | What you get                                                                                                  |

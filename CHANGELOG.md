@@ -6,6 +6,11 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- The installer page says what the blocker does and shows a proper preview card when
+  its link is shared; the README shows the dashboard.
+
 ## [0.2.8] - 2026-10-23
 
 Every possible hang now ends in a restart with its reason, and failed blocklist

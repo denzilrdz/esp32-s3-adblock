@@ -4,8 +4,24 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <meta name="color-scheme" content="light dark" />
-    <meta name="description" content="Flash the ESP32-S3 DNS ad blocker from your browser." />
-    <title>AdBlock Installer</title>
+    <meta
+      name="description"
+      content="Open-source Pi-hole-style DNS ad blocker for the ESP32-S3: blocks ads and trackers for your whole network, encrypts other lookups with DNS-over-TLS and updates its blocklist daily. Flash it from your browser."
+    />
+    <title>ESP32-S3 Ad Blocker: Pi-hole-style DNS blocker, browser installer</title>
+    <!-- Link previews (Reddit, Slack, X…). Plain metadata: the browser loads none of it. -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="esp32-s3-adblock" />
+    <meta property="og:title" content="ESP32-S3 Ad Blocker: a Pi-hole on a tiny board" />
+    <meta
+      property="og:description"
+      content="Network-wide ad and tracker blocking with encrypted DNS on an ESP32-S3. Flash it from your browser."
+    />
+    <meta property="og:url" content="https://denzilrdz.github.io/esp32-s3-adblock/" />
+    <meta property="og:image" content="https://denzilrdz.github.io/esp32-s3-adblock/social-preview.png" />
+    <meta property="og:image:width" content="1280" />
+    <meta property="og:image:height" content="640" />
+    <meta name="twitter:card" content="summary_large_image" />
     <!-- Scripts only from this site: esp-web-tools is vendored (and hash-checked) by the
      release workflow, so a CDN compromise cannot change what this page flashes.
      No inline script either: release.yml stamps __VERSION__ into this file.
@@ -300,6 +316,20 @@
         font-size: 14px;
       }
 
+      .about {
+        margin: 0;
+        padding-left: 20px;
+        color: var(--ink2);
+      }
+
+      .about li {
+        margin: 8px 0;
+      }
+
+      .about b {
+        color: var(--ink);
+      }
+
       footer {
         color: var(--muted);
         font-size: 13px;
@@ -425,6 +455,28 @@
         </details>
       </section>
 
+      <section class="card">
+        <h2>What it does</h2>
+        <ul class="about">
+          <li>
+            <b>Blocks ads, trackers and malware domains</b> for every phone, TV and laptop on your network,
+            with no apps to install. Up to a million domains, one entry covers all subdomains.
+          </li>
+          <li>
+            <b>Encrypts your DNS.</b> Allowed lookups go to Cloudflare or Quad9 over DNS-over-TLS, with
+            DNS-over-HTTPS as a fallback, so your ISP can't read them.
+          </li>
+          <li>
+            <b>Looks after itself.</b> The blocklist refreshes every night and firmware updates install from
+            the dashboard, with automatic rollback.
+          </li>
+          <li>
+            <b>No Raspberry Pi needed.</b> A Pi-hole alternative on a USB-powered ESP32-S3 board: no SD card,
+            no OS to patch.
+          </li>
+        </ul>
+      </section>
+
       <div class="grid">
         <a href="https://github.com/denzilrdz/esp32-s3-adblock#readme"
           ><b>README</b><span>Features, hardware and how it works</span></a
@@ -436,7 +488,11 @@
           ><b>Router setup</b><span>Make every device use the blocker</span></a
         >
       </div>
-      <footer>Open source (MIT). Fork of esp32-c3-adblock.</footer>
+      <footer>
+        Open source (MIT) on
+        <a href="https://github.com/denzilrdz/esp32-s3-adblock">GitHub: denzilrdz/esp32-s3-adblock</a>. Fork
+        of esp32-c3-adblock.
+      </footer>
     </main>
   </body>
 </html>

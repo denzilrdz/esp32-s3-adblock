@@ -147,6 +147,15 @@ class InstallerSiteTest(unittest.TestCase):
         self.assertIn("installer/index.html > site/index.html", wf)
         self.assertIn("installer/404.html site/", wf)
 
+    def test_link_preview_image_is_deployed(self):
+        html = (ROOT / "installer/index.html").read_text(encoding="utf-8")
+        m = re.search(r'property="og:image" content="([^"]+)"', html)
+        self.assertTrue(m)
+        name = m.group(1).rsplit("/", 1)[1]
+        self.assertTrue((ROOT / "installer" / name).is_file())
+        wf = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+        self.assertIn(f"cp installer/{name} site/", wf)
+
 
 if __name__ == "__main__":
     unittest.main()
