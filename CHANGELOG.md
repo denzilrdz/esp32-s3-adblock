@@ -10,6 +10,8 @@ All notable changes to this project are documented here. The format follows
 
 - The installer page says what the blocker does and shows a proper preview card when
   its link is shared; the README shows the dashboard.
+- The IPv6 warning in the README and router guide says that IPv4 alone is enough on
+  a home network.
 
 ## [0.2.8] - 2026-10-23
 

@@ -68,7 +68,9 @@ DHCPv6. Phones and laptops happily use those for some or all lookups, so ads loa
 even though IPv4 DNS points at the blocker.
 
 The blocker answers DNS over IPv4 only (it blocks AAAA lookups that reach it, but it
-cannot stop clients from asking a different IPv6 server). Pick one of these:
+cannot stop clients from asking a different IPv6 server). The blocker is designed
+for home networks, where IPv4 alone is sufficient, so option B is a safe choice. Pick
+one of these:
 
 | Option                                                    | How                                                                                                            | Trade-off                                                         |
 | --------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |

@@ -48,8 +48,8 @@ blocklist every day on its own**. No Raspberry Pi, no SD card, no OS to patch.
 > hardware: Wi-Fi setup (including hidden networks and a wrong password),
 > DNS-over-TLS, blocking and bans, the daily blocklist update and its "not modified"
 > check, failover to Quad9 and recovery after an internet outage, plain-DNS fallback on
-> and off, the dashboard, over-the-air updates and automatic rollback of a bad update.
-> Expect some rough edges; please
+> and off, the dashboard, over-the-air updates and automatic rollback of a bad update,
+> and weeks of continuous running without a restart. Expect some rough edges; please
 > [report issues](https://github.com/denzilrdz/esp32-s3-adblock/issues).
 
 ## Contents
@@ -141,8 +141,9 @@ Give the device a fixed IP (DHCP reservation in the router), then set the router
 > [!WARNING]
 > **IPv6 (most fibre and cable routers):** the router also advertises its own IPv6
 > DNS, and devices will use it to skip the blocker. Turn off IPv6 DNS advertisement or
-> IPv6 on the LAN. Some ISP routers lock the DNS fields; the guide lists
-> workarounds. Full walkthrough and checks: **[docs/ROUTER_SETUP.md](docs/ROUTER_SETUP.md)**.
+> IPv6 on the LAN. The blocker is designed for home networks, where IPv4 alone is
+> sufficient. Some ISP routers lock the DNS fields; the guide lists workarounds. Full
+> walkthrough and checks: **[docs/ROUTER_SETUP.md](docs/ROUTER_SETUP.md)**.
 
 ### 5. Check it works
 
