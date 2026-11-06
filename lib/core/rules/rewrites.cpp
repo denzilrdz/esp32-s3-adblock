@@ -157,8 +157,7 @@ bool parseIpv6(const char* s, size_t len, uint8_t out[16]) {
       if (end != len || n > 6 || !parseIpv4Strict(s + i, end - i, v4)) return false;
       groups[n++] = static_cast<uint16_t>(v4[0] << 8 | v4[1]);
       groups[n++] = static_cast<uint16_t>(v4[2] << 8 | v4[3]);
-      i = len;
-      break;
+      break;  // the IPv4 part is always last (end == len)
     }
     if (end == i || end - i > 4) return false;
     unsigned v = 0;
