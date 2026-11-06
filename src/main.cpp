@@ -20,6 +20,7 @@
 #include "app/app_policy.h"
 #include "app/blocklist_manager.h"
 #include "app/clients.h"
+#include "app/rewrites.h"
 #include "auth/auth.h"
 #include "config/config.h"
 #include "diag/liveness.h"
@@ -61,6 +62,7 @@ WebServer gServer(80);
 config::AppConfig gConfig;
 app::ClientTable gClients;
 app::BlocklistManager* gBlocklist = nullptr;
+app::RewriteManager* gRewrites = nullptr;
 app::AppPolicy* gPolicy = nullptr;
 app::DnsService* gDns = nullptr;
 auth::PasswordStore* gPasswords = nullptr;
@@ -359,7 +361,9 @@ void setup() {
   gBlocklist = new app::BlocklistManager(gFs, gHttp, gKv, gClock, gRandom, gLog, feedWatchdog);
   gBlocklist->begin();
   gClients.loadBans();
-  gPolicy = new app::AppPolicy(gClients, *gBlocklist);
+  gRewrites = new app::RewriteManager(gFs, gClock, gLog);
+  gRewrites->begin();
+  gPolicy = new app::AppPolicy(gClients, *gBlocklist, *gRewrites);
 
   clearWifiIfBootHeld();
   if (!web::connectWifi()) web::runSetupPortal(gServer, kApPrefix, kHostname);  // reboots when done
@@ -375,6 +379,7 @@ void setup() {
   ctx.server = &gServer;
   ctx.clients = &gClients;
   ctx.blocklist = gBlocklist;
+  ctx.rewrites = gRewrites;
   ctx.dns = gDns;
   ctx.passwords = gPasswords;
   ctx.logins = &gLogins;
@@ -415,6 +420,7 @@ void loop() {
     gClients.resolvePendingMacs();
     superviseWifi();
     maintainOtaHealth();
+    gRewrites->tick();  // restores saved rewrites once the clock syncs
     if (gLivenessRunning && gLiveness.checkerStalled(kCheckerStalledMs)) {  // who watches the watchdog
       gLog.log(hal::LogLevel::kError, "boot", "software watchdog stopped running: rebooting");
       delay(200);

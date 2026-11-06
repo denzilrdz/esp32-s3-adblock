@@ -16,6 +16,7 @@
 
 #include "app/blocklist_manager.h"
 #include "app/clients.h"
+#include "app/rewrites.h"
 #include "auth/auth.h"
 #include "config/config.h"
 #include "diag/restart.h"
@@ -30,6 +31,7 @@ struct DashboardContext {
   WebServer* server = nullptr;
   app::ClientTable* clients = nullptr;
   app::BlocklistManager* blocklist = nullptr;
+  app::RewriteManager* rewrites = nullptr;
   app::DnsService* dns = nullptr;
   auth::PasswordStore* passwords = nullptr;
   auth::LoginGuard* logins = nullptr;
@@ -79,6 +81,7 @@ class Dashboard {
   void handleLogout();
   void handlePassword();
   void handleRule(bool add);
+  void handleRewrite(bool add);
   void handleBan();
   void handlePause();
   void handleBlocklistSettings();

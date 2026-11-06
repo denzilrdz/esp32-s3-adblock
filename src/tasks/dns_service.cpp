@@ -159,8 +159,8 @@ void DnsService::upstreamTaskEntry(void* self) {
 // --------------------------------------------------------------------------------
 // Shared pipeline (dns_io and dns_tcp)
 
-size_t DnsService::processQuery(const uint8_t* pkt, size_t len, const ClientRef& client, uint8_t* scratch,
-                                size_t scratchCap, uint8_t* out, size_t outCap, bool* forwarded) {
+size_t DnsService::processQuery(const uint8_t* pkt, size_t len, const ClientRef& client, Work& work,
+                                uint8_t* out, size_t outCap, bool* forwarded) {
   if (forwarded) *forwarded = false;
   stats_.queries++;
   if (client.origin == Origin::kTcp) stats_.tcpQueries++;
@@ -199,7 +199,8 @@ size_t DnsService::processQuery(const uint8_t* pkt, size_t len, const ClientRef&
     case dns::LocalAnswer::kNone: break;
   }
 
-  const dns::PolicyAction action = policy_.decide(q, client.addr.sin_addr.s_addr);
+  const dns::PolicyAction action = policy_.decide(q, client.addr.sin_addr.s_addr, work.rewrite);
+  if (action == dns::PolicyAction::kRewrite) return processRewrite(q, client, work, out, outCap, forwarded);
   if (action != dns::PolicyAction::kForward) {
     dns::BlockedReplyOptions opt;
     opt.ttl = cfg_.blockedTtl;
@@ -208,35 +209,74 @@ size_t DnsService::processQuery(const uint8_t* pkt, size_t len, const ClientRef&
     return dns::buildBlockedReply(q, opt, out, outCap);
   }
 
-  const size_t sizeLimit = client.origin == Origin::kTcp ? outCap : q.udpReplyLimit();
   // Cache hit: only answers from authenticated upstreams are cached, so AD may pass.
   size_t n;
   {
     platform::LockGuard g(cacheMutex_);
-    n = cache_->lookup(q, scratch, scratchCap);
+    n = cache_->lookup(q, work.scratch, work.scratchCap);
   }
   if (n) {
     dns::ClientReplyOptions co;
     co.authenticatedUpstream = cfg_.passAd;  // only authenticated answers are cached
-    co.sizeLimit = sizeLimit;
+    co.sizeLimit = sizeLimit(q, client, outCap);
     stats_.cacheHits++;
-    return dns::finalizeForClient(scratch, n, q, co, out, outCap);
+    return dns::finalizeForClient(work.scratch, n, q, co, out, outCap);
   }
+  return forward(q, client, nullptr, nullptr, out, outCap, forwarded);
+}
 
-  // Miss: hand over to the upstream task.
+// A DNS rewrite (ARCHITECTURE.md §5.7): answered locally, or the alias target's records
+// from the cache / upstream wrapped in the CNAME chain.
+size_t DnsService::processRewrite(const dns::Query& q, const ClientRef& client, Work& work, uint8_t* out,
+                                  size_t outCap, bool* forwarded) {
+  stats_.rewritten++;
+  const dns::RewriteAnswer& rw = work.rewrite;
+  const size_t limit = sizeLimit(q, client, outCap);
+  if (rw.end == dns::RewriteAnswer::End::kLoop) {
+    stats_.servfail++;
+    return dns::buildErrorReply(q, dns::Rcode::kServFail, out, outCap);
+  }
+  if (!rw.forwards() || q.qtype == dns::kTypeCname) {
+    stats_.local++;
+    return dns::buildRewriteReply(q, rw, nullptr, 0, limit, out, outCap);
+  }
+  if (!dns::rewriteTargetQuery(q, rw, work.target)) {
+    stats_.servfail++;
+    return dns::buildErrorReply(q, dns::Rcode::kServFail, out, outCap);
+  }
+  size_t n;
+  {
+    platform::LockGuard g(cacheMutex_);
+    n = cache_->lookup(work.target, work.scratch, work.scratchCap);
+  }
+  if (n) {
+    stats_.cacheHits++;
+    return dns::buildRewriteReply(q, rw, work.scratch, n, limit, out, outCap);
+  }
+  return forward(work.target, client, &q, &rw, out, outCap, forwarded);
+}
+
+size_t DnsService::forward(const dns::Query& q, const ClientRef& client, const dns::Query* rewriteOf,
+                           const dns::RewriteAnswer* rewrite, uint8_t* out, size_t outCap, bool* forwarded) {
+  const dns::Query& replyTo = rewriteOf ? *rewriteOf : q;  // what the client asked
   uint16_t idx;
   if (xQueueReceive(freeQ_, &idx, 0) != pdTRUE) {
     stats_.servfail++;
-    return dns::buildErrorReply(q, dns::Rcode::kServFail, out, outCap);
+    return dns::buildErrorReply(replyTo, dns::Rcode::kServFail, out, outCap);
   }
   Pending& p = pool_[idx];
   p.q = q;
   p.client = client;
   p.replyLen = 0;
+  p.rewritten = rewriteOf != nullptr;
+  if (p.rewritten) {
+    p.clientQ = *rewriteOf;
+    p.rewrite = *rewrite;
+  }
   if (xQueueSend(upQ_, &idx, 0) != pdTRUE) {
     xQueueSend(freeQ_, &idx, 0);
     stats_.servfail++;
-    return dns::buildErrorReply(q, dns::Rcode::kServFail, out, outCap);
+    return dns::buildErrorReply(replyTo, dns::Rcode::kServFail, out, outCap);
   }
   stats_.forwarded++;
   if (forwarded) *forwarded = true;
@@ -276,8 +316,7 @@ void DnsService::ioLoop() {
       const int n = recvfrom(udpFd_, udpRx_, sizeof(udpRx_), MSG_DONTWAIT,
                              reinterpret_cast<struct sockaddr*>(&c.addr), &fromLen);
       if (n <= 0) break;
-      const size_t r = processQuery(udpRx_, static_cast<size_t>(n), c, udpScratch_, sizeof(udpScratch_),
-                                    udpOut_, sizeof(udpOut_));
+      const size_t r = processQuery(udpRx_, static_cast<size_t>(n), c, udpWork_, udpOut_, sizeof(udpOut_));
       if (r) sendto(udpFd_, udpOut_, r, 0, reinterpret_cast<const struct sockaddr*>(&c.addr), sizeof(c.addr));
     }
   }
@@ -375,8 +414,8 @@ void DnsService::tcpProcessBuffered(uint8_t i) {
     ref.conn = i;
     ref.connGen = c.gen;
     bool forwarded = false;
-    const size_t r = processQuery(c.rx + 2, msgLen, ref, tcpScratch_, sizeof(tcpScratch_), tcpOut_ + 2,
-                                  sizeof(tcpOut_) - 2, &forwarded);
+    const size_t r =
+        processQuery(c.rx + 2, msgLen, ref, tcpWork_, tcpOut_ + 2, sizeof(tcpOut_) - 2, &forwarded);
     memmove(c.rx, c.rx + 2 + msgLen, c.rxLen - 2 - msgLen);
     c.rxLen -= 2 + msgLen;
     c.lastMs = clock_.monotonicMs();  // only complete queries count as activity
@@ -459,14 +498,22 @@ void DnsService::onAnswer(uint32_t token, const dns::Query& q, const uint8_t* an
     cache_->insert(q, answer, len, info);
   }
   Pending& p = pool_[token];
-  dns::ClientReplyOptions co;
-  co.authenticatedUpstream = authenticated && cfg_.passAd;
-  co.sizeLimit = p.client.origin == Origin::kTcp ? cfg_.replyCap : q.udpReplyLimit();
-  p.replyLen = static_cast<uint16_t>(dns::finalizeForClient(answer, len, q, co, p.reply, cfg_.replyCap));
+  const dns::Query& cq = p.rewritten ? p.clientQ : q;  // what the client asked
+  const size_t limit = sizeLimit(cq, p.client, cfg_.replyCap);
+  if (p.rewritten) {
+    // The alias target's answer, wrapped in the CNAME chain for the client's name.
+    p.replyLen = static_cast<uint16_t>(
+        dns::buildRewriteReply(cq, p.rewrite, answer, len, limit, p.reply, cfg_.replyCap));
+  } else {
+    dns::ClientReplyOptions co;
+    co.authenticatedUpstream = authenticated && cfg_.passAd;
+    co.sizeLimit = limit;
+    p.replyLen = static_cast<uint16_t>(dns::finalizeForClient(answer, len, q, co, p.reply, cfg_.replyCap));
+  }
   if (p.replyLen == 0) {
     stats_.servfail++;
     p.replyLen =
-        static_cast<uint16_t>(dns::buildErrorReply(q, dns::Rcode::kServFail, p.reply, cfg_.replyCap));
+        static_cast<uint16_t>(dns::buildErrorReply(cq, dns::Rcode::kServFail, p.reply, cfg_.replyCap));
   }
   completeSlot(static_cast<uint16_t>(token));
 }
@@ -474,7 +521,8 @@ void DnsService::onAnswer(uint32_t token, const dns::Query& q, const uint8_t* an
 void DnsService::onFailure(uint32_t token, const dns::Query& q) {
   Pending& p = pool_[token];
   stats_.servfail++;
-  p.replyLen = static_cast<uint16_t>(dns::buildErrorReply(q, dns::Rcode::kServFail, p.reply, cfg_.replyCap));
+  const dns::Query& cq = p.rewritten ? p.clientQ : q;  // echo the client's own question
+  p.replyLen = static_cast<uint16_t>(dns::buildErrorReply(cq, dns::Rcode::kServFail, p.reply, cfg_.replyCap));
   completeSlot(static_cast<uint16_t>(token));
 }
 
@@ -541,6 +589,7 @@ DnsStats DnsService::stats() const {
   s.servfail = stats_.servfail.load();
   s.errors = stats_.errors.load();
   s.dropped = stats_.dropped.load();
+  s.rewritten = stats_.rewritten.load();
   return s;
 }
 

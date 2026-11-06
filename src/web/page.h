@@ -80,7 +80,7 @@ input[type=checkbox]{min-height:0;width:16px;height:16px;accent-color:var(--acce
 .blist{display:grid;grid-template-columns:auto 1fr auto auto;gap:6px 10px;align-items:center;font-size:13px}.blist .n{text-align:right;font-variant-numeric:tabular-nums}.blist .p{color:var(--muted);text-align:right;font-variant-numeric:tabular-nums;min-width:3.2em}
 table{width:100%;border-collapse:collapse}th,td{padding:8px 8px;text-align:left;border-bottom:1px solid var(--line);font-size:13px;vertical-align:middle}
 th{color:var(--muted);font-weight:500;font-size:12px}tr:last-child td{border-bottom:0}td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
-.tw{overflow-x:auto}.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px}
+.tw{overflow-x:auto}#rwT td:nth-child(3){white-space:nowrap}.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px}
 .mini{display:flex;gap:2px;height:8px;min-width:60px}.mini i{display:block;border-radius:2px}
 .badge{display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--ink2);white-space:nowrap}
 .tag{font-size:11px;border:1px solid var(--line);border-radius:5px;padding:1px 6px;color:var(--ink2);white-space:nowrap}
@@ -117,7 +117,7 @@ details summary{cursor:pointer;color:var(--accent);font-size:12.5px;margin-top:8
 <div class=brand><svg width=22 height=22 viewBox="0 0 24 24" aria-hidden=true><path fill=currentColor d="M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5l-8-3Zm-1.2 13.6L7.4 12.2l1.4-1.4 2 2 4.4-4.4 1.4 1.4-5.8 5.8Z"/></svg>AdBlock</div>
 <div class=pills><span id=pBlock class=pill><i class=dot></i><span>…</span></span><span id=pUp class=pill><i class=dot></i><span>…</span></span><span id=pClock class=pill><i class=dot></i><span>…</span></span><a id=pUpd class="pill is-info" href=#device hidden>update available</a></div>
 <button id=theme class=ghost title="Theme: auto" aria-label="Switch theme">&#9680;</button><button id=logout class=ghost>Log out</button></div>
-<nav class=tabs aria-label=Sections><a href=#overview class=on>Overview</a><a href=#lists>Blocklist &amp; rules</a><a href=#clients>Clients</a><a href=#settings>Settings</a><a href=#device>Device</a></nav></header>
+<nav class=tabs aria-label=Sections><a href=#overview class=on>Overview</a><a href=#lists>Blocklist &amp; rules</a><a href=#rewrites>Rewrites</a><a href=#clients>Clients</a><a href=#settings>Settings</a><a href=#device>Device</a></nav></header>
 <main>
 <div id=offline class="banner bad" hidden><p><b>Can't reach the device.</b> Retrying every few seconds; the page keeps the last values.</p></div>
 <div id=setup class="banner warn" hidden><p><b>Set a dashboard password.</b> Find the one-time setup code on the serial console (<code>pio device monitor</code>), enter it with a new password (10+ characters). Use the setup code you just logged in with.</p>
@@ -149,6 +149,21 @@ details summary{cursor:pointer;color:var(--accent);font-size:12.5px;margin-top:8
 <div class=hint>Blocks the domain and its subdomains.</div></div>
 <div class=card><h3>Allowlist</h3><form class=row data-add=allow><input id=addAllow placeholder="cdn.example.com" aria-label="Domain to allow" autocapitalize=off spellcheck=false><button>Allow</button></form><div class=chips id=ruleAllow></div>
 <div class=hint>Always resolves, even if the blocklist has it.</div></div></div></section>
+
+<section id=rewrites><h2>Rewrites</h2><div class=card>
+<p class="hint" style=margin-top:0>Answer a name with your own IP address or another domain for a while: a test server, a new host before its DNS changes, a LAN device. It ends on its own.</p>
+<form id=rwForm class=row><label class=fld>Domain<input name=d placeholder="nas.home or *.example.com" autocapitalize=off autocomplete=off spellcheck=false required maxlength=260></label>
+<label class=fld>Answer with<input name=t placeholder="IP address or other domain" autocapitalize=off autocomplete=off spellcheck=false required maxlength=260></label>
+<label class=fld style="flex:0 1 130px">For<select name=m><option value=15>15 minutes<option value=30>30 minutes<option value=60 selected>1 hour<option value=120>2 hours<option value=240>4 hours<option value=480>8 hours<option value=720>12 hours<option value=1440>24 hours</select></label>
+<button class=primary style=align-self:flex-end>Add rewrite</button></form>
+<div class=tw><table id=rwT><thead><tr><th>Domain</th><th>Answer</th><th>Ends</th><th></th></tr></thead><tbody></tbody></table></div>
+<div class=hint id=rwCount></div>
+<details><summary>How rewrites work</summary><ul class=hint style="margin:6px 0 0;padding-left:18px">
+<li><code>*.example.com</code> covers every subdomain, not <code>example.com</code> itself. An exact name wins over a wildcard.</li>
+<li>An IPv4 answer makes AAAA (IPv6) lookups empty, and the other way round; a name can have one of each. A domain answer is a CNAME: the device looks that domain up for you.</li>
+<li>Adding the same name again replaces its answer and time. Rewrites beat the block and allow lists and stay on while blocking is paused; banned devices stay blocked.</li>
+<li>Answers carry a TTL of at most 30 s, but a device may keep an older answer it already had for a few minutes. They survive a reboot and resume once the clock is set.</li></ul></details>
+</div></section>
 
 <section id=clients><h2>Clients</h2><div class=card><div class=row style=margin-top:0><input id=cFilter type=search placeholder="Filter by IP or MAC" aria-label="Filter clients" style="flex:0 1 260px"><span class=legend style=margin:0><span class=key><i class=sw style=background:var(--s-allowed)></i>allowed</span><span class=key><i class=sw style=background:var(--s-blocked)></i>blocked</span></span></div>
 <div class=tw><table id=clientT><thead><tr><th>Device</th><th>MAC</th><th class=n>Allowed</th><th class=n>Blocked</th><th style=width:22%>Share</th><th></th></tr></thead><tbody></tbody></table></div></div></section>
@@ -327,7 +342,7 @@ function render(s){const d=s.dns,bl=s.blocklist;
  if(document.activeElement!==$('blUrl'))$('blUrl').value=bl.url;if(document.activeElement!==$('blTime'))$('blTime').value=bl.time;
  for(const [list,id] of [['block','ruleBlock'],['allow','ruleAllow']]){const items=s.rules[list];
   $(id).replaceChildren(...(items.length?items.map(dm=>{const c=el('span',undefined,'chip'),b=el('button','×');b.title='Remove '+dm;b.setAttribute('aria-label','Remove '+dm);b.onclick=()=>api('/api/rules/remove',{list,d:dm});c.append(el('span',dm,'mono'),b);return c}):[el('span','No rules yet','hint')]))}
- renderClients();
+ renderClients();renderRewrites(s);
  // Device health
  const q=s.rssi>=-55?'excellent':s.rssi>=-67?'good':s.rssi>=-75?'fair':'weak',qp=Math.max(5,Math.min(100,(s.rssi+95)*100/60));
  const PSRAM=8388608,used=Math.max(0,PSRAM-s.psram);
@@ -352,6 +367,20 @@ function renderClients(){if(!last)return;const f=$('cFilter').value.trim().toLow
   const ac=el('td');ac.append(b);tr.append(ip,el('td',c.mac,'mono ink2'),el('td',fmt(c.allowed),'n'),el('td',fmt(c.blocked),'n'),sh,ac);return tr}));
  if(!shown.length){const tr=el('tr'),td=el('td',list.length?'No client matches the filter':'No clients yet','hint');td.colSpan=6;tr.append(td);tb.append(tr)}}
 $('cFilter').oninput=renderClients;
+
+// Rewrites: time left comes from the device at each poll.
+function left(sec){const m=Math.ceil(sec/60),h=Math.floor(m/60);return sec<60?'under 1 min':h?h+' h'+(m%60?' '+(m%60)+' min':''):m+' min'}
+const KIND={ipv4:'IPv4',ipv6:'IPv6',alias:'alias'};
+function renderRewrites(s){const rw=s.rewrites||{items:[],max:64},tb=$('rwT').tBodies[0];
+ tb.replaceChildren(...rw.items.map(r=>{const tr=el('tr'),dm=el('td',undefined,'mono'),an=el('td',undefined,'mono'),ac=el('td'),b=el('button','Remove','ghost');
+  dm.append(r.d);if(r.d.startsWith('*.'))dm.append(' ',el('span','subdomains','tag'));an.append(r.t,' ',el('span',KIND[r.k]||r.k,'tag'));
+  const ends=r.wait?'waiting for the clock':'in '+left(r.s)+' · '+new Date(Date.now()+r.s*1000).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+  b.setAttribute('aria-label','Remove rewrite '+r.d+' to '+r.t);b.onclick=()=>api('/api/rewrites/remove',{d:r.d,t:r.t});ac.append(b);
+  tr.append(dm,an,el('td',ends,r.wait?'hint':undefined),ac);return tr}));
+ if(!rw.items.length){const tr=el('tr'),td=el('td','No rewrites. Add one above.','hint');td.colSpan=4;tr.append(td);tb.append(tr)}
+ $('rwCount').textContent=rw.items.length+' of '+rw.max+' in use · '+fmt(s.dns.rewritten||0)+' lookups answered since boot'}
+$('rwForm').onsubmit=async e=>{e.preventDefault();const f=e.target,d=f.d.value.trim(),t=f.t.value.trim();if(!d||!t)return;
+ const b=f.querySelector('button');b.disabled=true;try{if(await api('/api/rewrites/add',{d,t,m:f.m.value})){f.d.value='';f.t.value='';f.d.focus()}}finally{b.disabled=false}};
 
 document.querySelectorAll('[data-pause]').forEach(b=>b.onclick=()=>api('/api/blocking/pause',{s:b.dataset.pause}));
 $('resume').onclick=()=>api('/api/blocking/resume');

@@ -5,6 +5,7 @@
 #include <cstdint>
 
 #include "dns/message.h"
+#include "dns/rewrite_reply.h"
 
 namespace dns {
 
@@ -12,6 +13,7 @@ enum class PolicyAction {
   kForward,  // cache / upstream
   kBlock,    // sinkhole (EDE 15 "Blocked")
   kBan,      // client is banned: sinkhole everything (EDE 17 "Filtered")
+  kRewrite,  // a DNS rewrite applies: answer from the RewriteAnswer (rewrite_reply.h)
 };
 
 class IQueryPolicy {
@@ -19,7 +21,8 @@ class IQueryPolicy {
   virtual ~IQueryPolicy() = default;
   // Called from the DNS task for every valid query: must be fast and never block
   // for long (no network, no flash writes). `clientIpv4` is in network byte order.
-  virtual PolicyAction decide(const Query& q, uint32_t clientIpv4) = 0;
+  // `rewrite` is filled when the result is kRewrite.
+  virtual PolicyAction decide(const Query& q, uint32_t clientIpv4, RewriteAnswer& rewrite) = 0;
 };
 
 }  // namespace dns

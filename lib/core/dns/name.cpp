@@ -1,5 +1,7 @@
 #include "dns/name.h"
 
+#include <cstring>
+
 namespace dns {
 
 namespace {
@@ -89,6 +91,56 @@ bool nameEquals(const uint8_t* pkt, size_t len, size_t off, const uint8_t* wire,
     i += 1 + l;
     w += 1 + l;
   }
+}
+
+size_t readName(const uint8_t* pkt, size_t len, size_t off, uint8_t* wireOut, size_t& wireLen) {
+  size_t i = off;
+  size_t w = 0;
+  size_t end = 0;  // past the name in the original stream (set at the first pointer)
+  int hops = 0;
+  wireLen = 0;
+  while (true) {
+    if (i >= len) return 0;
+    const uint8_t l = pkt[i];
+    if ((l & 0xC0) == 0xC0) {
+      if (i + 2 > len || ++hops > kMaxPointerHops) return 0;
+      if (!end) end = i + 2;
+      i = static_cast<size_t>(((l & 0x3F) << 8) | pkt[i + 1]);
+      continue;
+    }
+    if (l & 0xC0) return 0;
+    if (l == 0) {
+      if (w + 1 > kMaxNameWire) return 0;
+      wireOut[w++] = 0;
+      wireLen = w;
+      return end ? end : i + 1;
+    }
+    if (i + 1 + l > len || w + 1 + l + 1 > kMaxNameWire) return 0;
+    wireOut[w] = l;
+    memcpy(wireOut + w + 1, pkt + i + 1, l);
+    w += 1 + l;
+    i += 1 + l;
+  }
+}
+
+size_t encodeName(const char* text, size_t len, uint8_t* out, size_t cap) {
+  size_t w = 0;
+  size_t start = 0;
+  while (start < len) {
+    size_t dot = start;
+    while (dot < len && text[dot] != '.') dot++;
+    const size_t l = dot - start;
+    if (l == 0 || l > kMaxLabel || w + 1 + l + 1 > cap || w + 1 + l + 1 > kMaxNameWire) return 0;
+    out[w] = static_cast<uint8_t>(l);
+    memcpy(out + w + 1, text + start, l);
+    w += 1 + l;
+    if (dot == len) break;
+    start = dot + 1;
+    if (start == len) return 0;  // trailing dot: an empty last label
+  }
+  if (w + 1 > cap) return 0;
+  out[w++] = 0;
+  return w;
 }
 
 }  // namespace dns

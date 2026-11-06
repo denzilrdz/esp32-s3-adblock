@@ -208,6 +208,7 @@ struct ClientReplyOptions {
 // Turns an upstream/cached answer (without OPT) into the reply for this client:
 // client ID, RD from the query, RA=1, AD only if authenticated and wanted, our own
 // OPT if the client used EDNS, and TC=1 with empty sections if it does not fit.
+// `out` may be the same buffer as `answer`.
 size_t finalizeForClient(const uint8_t* answer, size_t len, const Query& q, const ClientReplyOptions& opt,
                          uint8_t* out, size_t cap);
 

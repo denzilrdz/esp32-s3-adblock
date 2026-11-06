@@ -33,6 +33,17 @@ size_t skipName(const uint8_t* pkt, size_t len, size_t off);
 // name, ignoring ASCII case. Pointer chains are followed with a hop limit.
 bool nameEquals(const uint8_t* pkt, size_t len, size_t off, const uint8_t* wire, size_t wireLen);
 
+// Reads a possibly compressed name at pkt[off] into its uncompressed wire form (case
+// kept), following pointers with a hop limit. Returns the offset just past the name in
+// the original byte stream, or 0 if it is malformed, loops, runs past len or exceeds
+// kMaxNameWire. `wireOut` must hold kMaxNameWire bytes.
+size_t readName(const uint8_t* pkt, size_t len, size_t off, uint8_t* wireOut, size_t& wireLen);
+
+// Encodes dotted text ("a.b.c", no trailing dot; "" = root) as a wire name. Returns the
+// wire length, or 0 if a label is empty or longer than 63 bytes, or the name doesn't
+// fit `cap` / kMaxNameWire. Bytes are copied as they are (no lowercasing).
+size_t encodeName(const char* text, size_t len, uint8_t* out, size_t cap);
+
 inline uint8_t asciiLower(uint8_t c) {
   return (c >= 'A' && c <= 'Z') ? static_cast<uint8_t>(c + ('a' - 'A')) : c;
 }

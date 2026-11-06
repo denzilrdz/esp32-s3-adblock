@@ -6,7 +6,21 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Temporary DNS rewrites** (new _Rewrites_ tab): answer a domain with your own IPv4
+  or IPv6 address, or point it at another domain (CNAME), for 15 minutes to 24 hours,
+  picked from a dropdown. `*.example.com` covers every subdomain; an exact name wins
+  over a wildcard. Rewrites beat the block and allow lists, keep working while blocking
+  is paused, survive a reboot (they resume once the clock is set) and end by
+  themselves. Answers use a TTL of at most 30 s, so devices let go of them quickly.
+  Also scriptable: `POST /api/rewrites/add` (`d`, `t`, `m` minutes) and
+  `/api/rewrites/remove`.
+
 ### Changed
+
+- The dashboard screenshots and the link-preview card show the new _Rewrites_ tab, and
+  the images are about 70% smaller.
 
 - The installer page says what the blocker does and shows a proper preview card when
   its link is shared; the README shows the dashboard.

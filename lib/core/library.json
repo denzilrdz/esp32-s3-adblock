@@ -1,7 +1,8 @@
 {
   "name": "core",
   "version": "0.2.8",
-  "description": "Portable ad-blocker core logic (no Arduino/ESP-IDF dependencies)",
+  "description": "Portable core of esp32-s3-adblock: DNS parsing and replies, blocklist index, DNS rewrites, response cache, upstream fallback chain and scheduler (no Arduino/ESP-IDF dependencies)",
+  "keywords": ["dns", "adblock", "dns-sinkhole", "dns-over-tls", "dns-rewrite", "blocklist", "esp32"],
   "license": "MIT",
   "build": {
     "flags": ["-Wall", "-Wextra"]

@@ -231,6 +231,8 @@ void Dashboard::begin() {
   s.on("/api/password", HTTP_POST, [this]() { handlePassword(); });
   s.on("/api/rules/add", HTTP_POST, [this]() { handleRule(true); });
   s.on("/api/rules/remove", HTTP_POST, [this]() { handleRule(false); });
+  s.on("/api/rewrites/add", HTTP_POST, [this]() { handleRewrite(true); });
+  s.on("/api/rewrites/remove", HTTP_POST, [this]() { handleRewrite(false); });
   s.on("/api/clients/ban", HTTP_POST, [this]() { handleBan(); });
   s.on("/api/blocking/pause", HTTP_POST, [this]() { handlePause(); });
   s.on("/api/blocking/resume", HTTP_POST, [this]() {
@@ -327,7 +329,8 @@ void Dashboard::handleStats() {
   j += ",\"dns\":{\"queries\":" + String(d.queries) + ",\"tcp\":" + String(d.tcpQueries) +
        ",\"blocked\":" + String(d.blocked) + ",\"local\":" + String(d.local) +
        ",\"cacheHits\":" + String(d.cacheHits) + ",\"forwarded\":" + String(d.forwarded) +
-       ",\"servfail\":" + String(d.servfail) + ",\"cacheEntries\":" + String(cs.entries) + "}";
+       ",\"servfail\":" + String(d.servfail) + ",\"rewritten\":" + String(d.rewritten) +
+       ",\"cacheEntries\":" + String(cs.entries) + "}";
   j += ",\"plainFallback\":" + String(b(us.plainFallback)) + ",\"upstreams\":[";
   for (size_t i = 0; i < us.count; i++) {
     const upstream::UpstreamStatus& u = us.status[i];
@@ -346,6 +349,18 @@ void Dashboard::handleStats() {
   j += "],\"allow\":[";
   const auto allow = ctx_.blocklist->rules(true);
   for (size_t i = 0; i < allow.size(); i++) j += (i ? "," : "") + q(allow[i]);
+  j += "]},\"rewrites\":{\"max\":" + String(rules::RewriteTable::kMax) + ",\"items\":[";
+  if (ctx_.rewrites) {
+    const auto rw = ctx_.rewrites->list();
+    for (size_t i = 0; i < rw.size(); i++) {
+      const rules::RewriteView& r = rw[i];
+      const char* kind = r.kind == rules::TargetKind::kIpv4   ? "ipv4"
+                         : r.kind == rules::TargetKind::kIpv6 ? "ipv6"
+                                                              : "alias";
+      j += String(i ? "," : "") + "{\"d\":" + q(r.domain) + ",\"t\":" + q(r.target) + ",\"k\":\"" + kind +
+           "\",\"s\":" + String(r.secondsLeft) + ",\"wait\":" + b(r.pending) + "}";
+    }
+  }
   j += "]},\"clients\":[";
   const auto clients = ctx_.clients->snapshot();
   for (size_t i = 0; i < clients.size(); i++) {
@@ -464,6 +479,36 @@ void Dashboard::handleRule(bool add) {
   const String d = ctx_.server->arg("d");
   const bool ok = add ? ctx_.blocklist->addRule(allow, d) : ctx_.blocklist->removeRule(allow, d);
   sendText(ok ? 200 : 400, ok ? "ok" : (add ? "invalid domain or list full" : "not found"));
+}
+
+void Dashboard::handleRewrite(bool add) {
+  if (!guard(Access::kAuth)) return;
+  if (!ctx_.rewrites) {
+    sendText(503, "rewrites unavailable");
+    return;
+  }
+  WebServer& s = *ctx_.server;
+  const String d = s.arg("d"), t = s.arg("t");
+  if (d.length() > 300 || t.length() > 300) {
+    sendText(400, "too long");
+    return;
+  }
+  rules::RewriteStatus st;
+  if (add) {
+    // Whole minutes, 1..1440. toInt() reads "15abc" as 15: insist on digits only.
+    const String m = s.arg("m");
+    bool digits = m.length() > 0 && m.length() <= 5;
+    for (size_t i = 0; digits && i < m.length(); i++) digits = m[i] >= '0' && m[i] <= '9';
+    st = digits ? ctx_.rewrites->add(d, t, static_cast<uint32_t>(m.toInt()))
+                : rules::RewriteStatus::kBadDuration;
+  } else {
+    st = ctx_.rewrites->remove(d, t);
+  }
+  const int code = rules::rewriteOk(st)                                                         ? 200
+                   : st == rules::RewriteStatus::kNotFound                                      ? 404
+                   : st == rules::RewriteStatus::kConflict || st == rules::RewriteStatus::kFull ? 409
+                                                                                                : 400;
+  sendText(code, rules::rewriteStatusMessage(st));
 }
 
 void Dashboard::handleBan() {

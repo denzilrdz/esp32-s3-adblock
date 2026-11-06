@@ -6,9 +6,9 @@ description: Rules and checklist for DNS packet handling. Use before changing an
 # DNS protocol rules
 
 Code: `lib/core/dns/message.{h,cpp}` (parse/build), `name.{h,cpp}`,
-`local_zones.{h,cpp}`, `query_policy.h`; the pipeline that applies them is
+`local_zones.{h,cpp}`, `rewrite_reply.{h,cpp}`, `query_policy.h`; the pipeline that applies them is
 `DnsService::processQuery()` in `src/tasks/dns_service.cpp`; the policy is
-`src/app/app_policy.h`. Tests: `test/test_dns`, `test/test_local_zones`.
+`src/app/app_policy.h`. Tests: `test/test_dns`, `test/test_local_zones`, `test/test_rules` (rewrites).
 Design: [ARCHITECTURE.md §5](../../../docs/ARCHITECTURE.md).
 
 ## Incoming query validation (in order)
@@ -39,6 +39,12 @@ Design: [ARCHITECTURE.md §5](../../../docs/ARCHITECTURE.md).
   zones → NXDOMAIN; `use-application-dns.net` → NXDOMAIN; iCloud Private Relay
   canaries → NXDOMAIN only if enabled.
 - **Upstream timeout / all upstreams down** → SERVFAIL (never silence).
+- **DNS rewrites** (`dns/rewrite_reply`, ARCHITECTURE.md §5.7): address rewrites
+  answer A/AAAA, other types NODATA + SOA; aliases answer a CNAME chain plus the
+  target's records (names decompressed, TTLs ≤ min(30 s, time left)), AD always 0,
+  SERVFAIL for loops or target rcodes other than NOERROR/NXDOMAIN, TC when too big.
+  A forwarded alias query carries the **client's** query in the pending slot: build
+  every reply (answer, SERVFAIL) for that question, not the target's.
 
 ## Forwarded answers
 
@@ -72,6 +78,10 @@ Design: [ARCHITECTURE.md §5](../../../docs/ARCHITECTURE.md).
    dig @<ip> doubleclick.net A        # 0.0.0.0, status NOERROR
    dig @<ip> doubleclick.net AAAA     # ::
    dig @<ip> doubleclick.net HTTPS    # NOERROR, ANSWER 0, AUTHORITY 1 (SOA), EDE 15
+   # with rewrites nas.home -> 192.168.1.20 and yt.home -> restrict.youtube.com:
+   dig @<ip> nas.home A               # 192.168.1.20, TTL <= 30, no ad flag
+   dig @<ip> nas.home AAAA            # NOERROR, ANSWER 0, AUTHORITY 1 (SOA)
+   dig @<ip> yt.home A                # CNAME restrict.youtube.com + its A records
    dig @<ip> example.com +dnssec      # flags include ad
    dig @<ip> txt-big.example +bufsize=512   # tc set, then +tcp works
    ```

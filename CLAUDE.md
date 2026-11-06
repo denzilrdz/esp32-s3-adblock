@@ -53,10 +53,10 @@ port troubleshooting: skill `build-flash`.
 
 ```
 lib/core/      portable C++17 logic, NO Arduino/IDF headers (tested natively)
-  dns/ blocklist/ cache/ upstream/ sched/ update/ config/ auth/ clients/ diag/ hal/ util/
+  dns/ blocklist/ rules/ cache/ upstream/ sched/ update/ config/ auth/ clients/ diag/ hal/ util/
 src/           ESP32-only: main.cpp (composition root), platform/ (HAL impls: TLS,
                transports, LittleFS, NVS, HTTP), tasks/ (DNS service tasks),
-               app/ (blocklist manager, client table, DNS policy),
+               app/ (blocklist manager, client table, DNS rewrites, DNS policy),
                web/ (dashboard REST API, page.h, Wi-Fi setup portal; skill web-ui)
 test/          Unity tests: test/test_<area>/test_main.cpp, fakes in test/fakes/
 tools/         blocklist builder, factory image, setup/format/lint/coverage scripts
@@ -154,6 +154,13 @@ native tests; pre-push = clang-tidy + esp32s3 firmware build.
 - **Restarts:** call `platform::restart("why")` (`src/platform/restart_info.h`), never
   `ESP.restart()`: the reason is kept in RTC memory and shown under _Device → Health_.
 - **IPv6 / browser secure DNS bypass** the blocker: docs/ROUTER_SETUP.md.
+- **DNS rewrites** (ARCHITECTURE.md §5.7) run before the blocklist and skip the
+  device's own lookups (127.0.0.1): test them from another LAN host
+  (`dig @<board-ip> nas.home`), never from the board. Replies they build must keep AD
+  clear and answer the client's question, not the alias target's.
+- **Docs images:** regenerate screenshots from a mock `/api/stats` (skill `web-ui`)
+  with headless Chrome at 1280 px, then palette-compress with Pillow's FASTOCTREE
+  quantizer (MEDIANCUT shifts the chart colours).
 - **GitHub Actions:** pin every action to a full commit SHA with a `# vX.Y.Z` comment,
   `persist-credentials: false` on checkout, per-job `permissions` with a comment per
   scope, `timeout-minutes`, no `${{ }}` inside `run:` (pass via `env:`), no caches in

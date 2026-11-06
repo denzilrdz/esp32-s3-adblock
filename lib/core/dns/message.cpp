@@ -425,12 +425,12 @@ size_t finalizeForClient(const uint8_t* answer, size_t len, const Query& q, cons
   size_t body;
   bool truncated = false;
   if (len + optLen <= limit) {
-    memcpy(out, answer, len);
+    memmove(out, answer, len);  // `out` may be `answer` (rewrite replies finalize in place)
     body = len;
   } else {
     const size_t qEnd = questionEnd(answer, len);
     if (qEnd == 0 || qEnd + optLen > cap) return 0;
-    memcpy(out, answer, qEnd);
+    memmove(out, answer, qEnd);
     writeU16Be(out + 6, 0);
     writeU16Be(out + 8, 0);
     writeU16Be(out + 10, 0);
