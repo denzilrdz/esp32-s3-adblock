@@ -6,7 +6,11 @@
     <meta name="color-scheme" content="light dark" />
     <meta
       name="description"
-      content="Open-source Pi-hole-style DNS ad blocker for the ESP32-S3: blocks ads and trackers for your whole network, encrypts other lookups with DNS-over-TLS and updates its blocklist daily. Flash it from your browser."
+      content="Open-source Pi-hole-style DNS ad blocker for the ESP32-S3: blocks ads and trackers for your whole network, encrypts other lookups with DNS-over-TLS, updates its blocklist daily and supports temporary DNS rewrites. Flash it from your browser."
+    />
+    <meta
+      name="keywords"
+      content="ESP32-S3, ad blocker, DNS sinkhole, Pi-hole alternative, DNS-over-TLS, DNS-over-HTTPS, network-wide ad blocking, tracker blocker, DNS rewrite, local DNS records, privacy, self-hosted, home network, PlatformIO"
     />
     <title>ESP32-S3 Ad Blocker: Pi-hole-style DNS blocker, browser installer</title>
     <!-- Link previews (Reddit, Slack, X…). Plain metadata: the browser loads none of it. -->
@@ -465,6 +469,10 @@
           <li>
             <b>Encrypts your DNS.</b> Allowed lookups go to Cloudflare or Quad9 over DNS-over-TLS, with
             DNS-over-HTTPS as a fallback, so your ISP can't read them.
+          </li>
+          <li>
+            <b>Your own DNS records, on a timer.</b> Point a name at a LAN device, a test server or another
+            domain for 15 minutes to 24 hours; the rewrite ends by itself.
           </li>
           <li>
             <b>Looks after itself.</b> The blocklist refreshes every night and firmware updates install from

@@ -125,5 +125,13 @@ The page starts on its login screen: answer `401` to `/api/*` until `POST /api/l
 succeeds, and set a cookie there that the mock then checks (or answer 200 from the start
 to skip the login).
 
+**README / link-preview images** (`docs/img/*.png`, `installer/social-preview.png`):
+serve the page from such a mock with realistic numbers, seed the chart history in
+`sessionStorage` (`ab.hist`) before the page script runs, and capture with headless
+Chrome (`--headless=new --window-size=1280,960 --virtual-time-budget=4000
+--screenshot=...`). Headless capture ignores scrolling: for one section, hide the
+others with injected CSS. Then compress to a 256-colour palette with Pillow's
+`FASTOCTREE` quantizer (keeps the chart colours exact; `MEDIANCUT` shifts them).
+
 Set `updateUrl` in the mock to a local `update.json` with a higher version to see
 the update states. Check desktop and ~390 px wide, light and dark, before committing.

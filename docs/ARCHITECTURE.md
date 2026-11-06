@@ -89,11 +89,15 @@ lib/core/                     portable C++17, unit-tested natively (pio test -e 
                                   truncation, blocked/NODATA/SERVFAIL synthesis
               name.{h,cpp}        wire-name parsing/compare, bounds-checked
               local_zones.{h,cpp} localhost, private reverse zones, canary domains
+              rewrite_reply.{h,cpp} replies for DNS rewrites (local A/AAAA, CNAME
+                                  chain + decompressed upstream records)
               query_policy.h      IQueryPolicy: forward / block / ban
   blocklist/  hash.h              FNV-1a 64 -> 48-bit domain hash
               format.{h,cpp}      v2 header, streaming + full-file validation, CRC
               index.{h,cpp}       MemoryIndex, FileIndex, IndexHolder (lock-free swap)
               matcher.{h,cpp}     custom allow/block sets + parent-domain matching
+  rules/      rewrites.{h,cpp}    timed DNS rewrites: input validation, exact/wildcard
+                                  matching, alias chains, loop checks, /rewrites.txt
   cache/      response_cache.{h,cpp}  fixed-pool LRU + TTL, slab payloads
   upstream/   transport.h         ITransport (strategy interface)
               framing.{h,cpp}     DoT 2-byte length framing, DoH HTTP/1.1 codec
@@ -120,6 +124,7 @@ src/                          ESP32 only (Arduino core 3.3.12 / ESP-IDF 5.5)
               tls_stream.* (mbedTLS + lwIP), transports.* (DoT, DoH, UDP)
   tasks/      dns_service.*       dns_io, dns_tcp and dns_up tasks
   app/        blocklist_manager.* list install/update, rules, status
+              rewrites.*          rules::RewriteTable in PSRAM + mutex + file (§5.7)
               clients.*           client table (stats, MACs) using clients::BanList
                                   and PauseTimer; bans apply even if the table is full
               app_policy.h        the DNS policy used by the tasks
@@ -175,8 +180,9 @@ flowchart LR
    on a loopback "wake" socket (self-pipe pattern), so it sleeps until there is
    work and never polls.
 2. Each datagram is validated (§5.1). Invalid → FORMERR/NOTIMP/drop.
-3. The **policy** decides: banned client, blocking paused, allowlist, custom
-   blocklist, main blocklist, local names.
+3. The **policy** decides: banned client, DNS rewrite (§5.7), blocking paused,
+   allowlist, custom blocklist, main blocklist. Local names (§5.5) are answered
+   just before it.
 4. Blocked/local replies are built in place and sent immediately.
 5. Allowed names are looked up in the **response cache**. Hits are served
    immediately with the client's id, decremented TTLs and fresh EDNS.
@@ -348,6 +354,66 @@ DO bit echoed, and the extended RCODE recomputed. Upstream queries carry our own
 | EDNS padding (RFC 7830 / RFC 8467)              | **on**  | Pads upstream DoT/DoH queries to a multiple of 128 bytes, so query length leaks less about the name. We do not pad replies to LAN clients (plain UDP; no value).                                                                                                                                                          |
 | DNSSEC AD-flag pass-through (RFC 6840 §5.7–5.8) | **on**  | Upstream queries set AD = 1. AD from an upstream reached over a verified DoT/DoH session is trusted and passed on, but only to clients that set AD or DO in their query. The dashboard shows the share of validated answers. AD is cleared on plain-UDP fallback (unauthenticated channel), and on blocked/local answers. |
 | Strict mode (no plain fallback)                 | off     | See §7.                                                                                                                                                                                                                                                                                                                   |
+
+### 5.7 DNS rewrites (temporary local records)
+
+The dashboard's _Rewrites_ tab answers a name with a fixed address or aliases it to
+another name, for 1 minute to 24 hours (the page offers 15 min … 24 h). Modelled on
+AdGuard Home's DNS rewrites and Pi-hole's local DNS / CNAME records, plus an expiry.
+Code: `lib/core/rules/rewrites.*` (table), `lib/core/dns/rewrite_reply.*` (replies),
+`src/app/rewrites.*` (lock + file), `DnsService::processRewrite()`.
+
+- **Matching:** `example.com` matches only that name; `*.example.com` matches every
+  name below it but not `example.com` itself. An exact entry hides every wildcard;
+  among wildcards the longest wins. Names are case-insensitive.
+- **Per name:** one IPv4 and/or one IPv6 entry, or one alias (CNAME), never both (RFC
+  1034 §3.6.2). Re-adding the same name and kind replaces the answer and the time.
+  At most 64 entries (`RewriteTable::kMax`).
+- **Order in the pipeline:** local zones (§5.5) → banned client → **rewrite** →
+  pause/blocklist. A rewrite therefore wins over the allow and block lists and works
+  while blocking is paused, but never helps a banned client. The device's own lookups
+  (127.0.0.1) are not rewritten, so a rewrite can't break NTP, the blocklist download
+  or the update check. Names answered locally anyway (localhost, private reverse
+  zones, `.local`, the canaries, with every optional zone counted as on) are refused
+  as rewrite names and as alias targets.
+- **Replies** (all: RA = 1, AA = 0, **AD = 0**, ID/RD/CD copied, question echoed, our
+  own OPT when the query had one, TC = 1 when it doesn't fit):
+
+  | Rewrite → query                    | Reply                                                                                                    |
+  | ---------------------------------- | -------------------------------------------------------------------------------------------------------- |
+  | IPv4 → A / IPv6 → AAAA             | the address                                                                                              |
+  | address → any other type           | NOERROR, no answer (NODATA) + synthetic SOA: a real AAAA or HTTPS record can't bypass the rewrite        |
+  | alias → CNAME query                | the CNAME chain only                                                                                     |
+  | alias → target has a rewrite       | the CNAME chain, then the target's address (or NODATA + SOA), all local                                  |
+  | alias → target without a rewrite   | the CNAME chain, then the answer and authority records of the target's own lookup (cache, else upstream) |
+  | loop, or a chain > 8 names / 512 B | SERVFAIL (add-time checks refuse these; this only guards entries that changed underneath)                |
+
+- **Alias resolution:** the client's query is re-issued for the last name in the chain
+  through the normal cache/upstream path, so the target's answer is cached under its
+  own name. The pending slot keeps the client's query and the chain; on the answer
+  (`onAnswer`) or a failure (`onFailure`) the reply is built for the client's
+  question, never the target's. The upstream records are copied with every name
+  decompressed (owner names and the RDATA of NS, CNAME, SOA, PTR, MX, SRV, DNAME and
+  the other RFC 3597 §4 types), because their compression pointers point into a
+  different message; other RDATA is copied byte for byte. Only NOERROR and NXDOMAIN
+  answers are wrapped (NXDOMAIN keeps the CNAME, RFC 6604); anything else becomes
+  SERVFAIL. The target is not checked against the blocklist: the user asked for it.
+- **TTL:** every record (synthetic or copied) is capped at
+  min(30 s, time left), so clients drop a rewrite within 30 s of its removal or
+  expiry; a copied TTL above 2³¹−1 counts as 0 (RFC 2181 §8).
+- **Time and persistence:** expiry is kept in monotonic milliseconds, so NTP steps
+  never shorten or extend a rewrite. `/rewrites.txt` stores one
+  `<domain> <answer> <unix expiry>` line per entry, written atomically (temp file,
+  delete, rename; boot recovers from a crash between the steps). Entries read at boot
+  stay inactive until the clock is synced, then get their remaining time back; those
+  already expired, or ending more than 24 h + 60 s in the future (a clock that was
+  wrong when they were saved), are dropped. Changes made before the clock is synced
+  are saved once it is (until then their absolute end time is unknown). The file is
+  written outside the table's mutex, so lookups never wait for flash; a failed write
+  is retried after a minute.
+- **Hot path:** `resolve()` is a linear scan of at most 64 entries (skipped without a
+  lock when the table is empty), allocation-free; the alias chain is built in a
+  per-task `RewriteAnswer` (not on the 6 KB task stacks).
 
 ---
 
@@ -768,13 +834,14 @@ blocks in one piece each, so watch the largest free block (`heapBlock` in
 
 ### PSRAM (8 MB)
 
-| Item                                                          | Default                                                                                                                                                                                             |
-| ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Blocklist index (one buffer; up to 2 during swap if free)     | 1.9 MB at 400k names; cap 1M names (4.3 MB)                                                                                                                                                         |
-| Response cache: entry pool (16k × 48 B) + payload arena       | 0.8 MB + 2 MB                                                                                                                                                                                       |
-| Pending-query pool (32 slots × ~4.6 KB: query + reply buffer) | 0.15 MB                                                                                                                                                                                             |
-| Stats, client table (256 clients), custom sets                | < 0.2 MB                                                                                                                                                                                            |
-| **Free**                                                      | about 0.8 MB at a 1M-name list (4.06 MiB list + 2.75 MiB cache + pools), before Wi-Fi/lwIP buffers offloaded to PSRAM. Two 1M lists never fit: the update swaps through the file-backed bridge (§6) |
+| Item                                                                        | Default                                                                                                                                                                                             |
+| --------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Blocklist index (one buffer; up to 2 during swap if free)                   | 1.9 MB at 400k names; cap 1M names (4.3 MB)                                                                                                                                                         |
+| Response cache: entry pool (16k × 48 B) + payload arena                     | 0.8 MB + 2 MB                                                                                                                                                                                       |
+| Pending-query pool (32 slots × ~5.7 KB: query, rewrite chain, reply buffer) | 0.18 MB                                                                                                                                                                                             |
+| DNS rewrite table (64 entries × ~550 B)                                     | 35 KB                                                                                                                                                                                               |
+| Stats, client table (256 clients), custom sets                              | < 0.2 MB                                                                                                                                                                                            |
+| **Free**                                                                    | about 0.8 MB at a 1M-name list (4.06 MiB list + 2.75 MiB cache + pools), before Wi-Fi/lwIP buffers offloaded to PSRAM. Two 1M lists never fit: the update swaps through the file-backed bridge (§6) |
 
 ### Sockets (lwIP: `CONFIG_LWIP_MAX_SOCKETS = 16`, fixed in the prebuilt libs)
 
@@ -797,7 +864,7 @@ nvs,       data, nvs,      0x9000,    0x5000     20 KB   settings, Wi-Fi, ETag
 otadata,   data, ota,      0xe000,    0x2000      8 KB
 app0,      app,  ota_0,    0x10000,   0x400000    4 MB   firmware slot A
 app1,      app,  ota_1,    0x410000,  0x400000    4 MB   firmware slot B
-spiffs,    data, spiffs,   0x810000,  0x7E0000  ~7.9 MB  LittleFS: blocklists, custom rules
+spiffs,    data, spiffs,   0x810000,  0x7E0000  ~7.9 MB  LittleFS: blocklists, custom rules, rewrites
 coredump,  data, coredump, 0xFF0000,  0x10000    64 KB   crash dumps
 ```
 

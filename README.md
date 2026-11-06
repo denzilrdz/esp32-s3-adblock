@@ -40,6 +40,7 @@ blocklist every day on its own**. No Raspberry Pi, no SD card, no OS to patch.
 | **Maintenance-free**                   | The blocklist updates itself daily; firmware updates are one button on the dashboard, with rollback.          |
 | **Fast**                               | Blocklist and answer cache live in RAM: repeat lookups are answered in milliseconds.                          |
 | **Dashboard**                          | `http://s3adblock.local`: live stats, clients, your own block/allow rules, pause blocking, settings.          |
+| **Temporary DNS rewrites**             | Point a name at your own IP or another domain for 15 min to 24 h (`nas.home → 192.168.1.20`); ends by itself. |
 | **Secure by default**                  | Password set with a one-time code from the serial console, login lockout, CSRF and DNS-rebinding guards.      |
 | **Tiny and low-power**                 | Runs from any stable 5 V USB supply; no computer to keep running.                                             |
 
@@ -76,6 +77,7 @@ blocklist every day on its own**. No Raspberry Pi, no SD card, no OS to patch.
 | Failed list update    | old list stays active                              | old list stays active       | can leave no list loaded                                                   |
 | Dashboard login       | login screen, hashed password, setup code, lockout | password                    | Basic Auth                                                                 |
 | Answer cache          | yes (PSRAM)                                        | yes                         | no                                                                         |
+| Local DNS records     | timed rewrites: IPv4, IPv6, CNAME, `*.` wildcards  | permanent A/AAAA and CNAME  | no                                                                         |
 | Slow upstream answer  | other queries keep flowing; SERVFAIL at 2.5 s      | other queries keep flowing  | stalls every client                                                        |
 | DHCP server, IPv6 DNS | not yet                                            | yes                         | no                                                                         |
 
@@ -164,6 +166,11 @@ and the _Overview_ should show a rising share of queries blocked.
 
 - **Network-wide blocking**: up to 1 million domains held in PSRAM (lookups are served
   from RAM); a listed domain also blocks its subdomains; your own block and allow rules.
+- **Temporary DNS rewrites**: answer a name (or every subdomain with `*.example.com`)
+  with an IPv4/IPv6 address or alias it to another domain (CNAME) for 15 minutes to
+  24 hours. Handy for testing a server before its DNS changes, reaching a LAN device by
+  name, or pointing a site somewhere else for a while. They survive a reboot and end on
+  their own.
 - **Encrypted upstream DNS**: DNS-over-TLS to Cloudflare (1.1.1.1) and Quad9
   (9.9.9.9) by fixed IP, certificates verified, TLS sessions resumed; DNS-over-HTTPS
   fallback; plain DNS only as a last resort (and you can switch that off).
@@ -175,8 +182,8 @@ and the _Overview_ should show a rising share of queries blocked.
 - **Privacy extras**: query padding, DNSSEC "validated" flag pass-through, local
   answers for private names, and Firefox's DoH canary so Firefox keeps using it.
 - **Dashboard** at `http://s3adblock.local`: live stats, upstream health, clients,
-  block/allow rules, pause blocking, settings, firmware and blocklist uploads, and a
-  one-click update check.
+  block/allow rules, DNS rewrites, pause blocking, settings, firmware and blocklist
+  uploads, and a one-click update check.
 - **Secure by default**: hashed dashboard password set with a one-time code from the
   serial console, login lockout, CSRF and DNS-rebinding checks, HTTPS-only list
   downloads, LAN-only DNS answers.
@@ -212,6 +219,7 @@ randomly, try another cable or charger. Keep the PCB antenna away from metal.
 flowchart LR
     C([Client query]) --> IO[dns_io task]
     IO -->|local name| L[Answer on the device]
+    IO -->|rewritten| RW["Your IP, or a CNAME<br/>to another domain"]
     IO -->|blocked| B["0.0.0.0 / :: / NODATA"]
     IO -->|cached| K[Answer from PSRAM cache]
     IO -->|otherwise| U[upstream task]
@@ -226,6 +234,13 @@ For `a.b.ads.example.com` the device checks the name and each parent down to
 everything, then your custom blocklist, then the main list. Blocked `A` queries get
 `0.0.0.0`, `AAAA` gets `::`, and anything else (including the `HTTPS` records modern
 browsers ask for) gets an empty answer, never NXDOMAIN.
+
+**Rewrites.** A rewrite answers a name with your own address before the blocklist is
+consulted (it also works while blocking is paused; banned devices stay blocked). An IP
+rewrite answers `A` or `AAAA` and leaves the other types empty, so a real IPv6 or
+`HTTPS` answer can't slip past it. A domain rewrite answers with a CNAME and resolves
+that domain for the client, following other rewrites on the way. Answers carry a TTL
+of at most 30 seconds, so devices let go of a rewrite soon after it ends.
 
 **Encrypted DNS.** Allowed queries go to Cloudflare or Quad9 over DNS-over-TLS (port
 853), connecting by IP and verifying the provider's certificate name, so no plaintext
@@ -269,9 +284,39 @@ what the page has seen since it opened (light and dark themes):
 | Blocklist URL and daily update time                                               | this repo's daily list, 02:00                              |
 | Time zone                                                                         | `UTC0` (POSIX TZ string; `<+03>-3` = UTC+3, sign inverted) |
 | Custom block / allow rules, banned clients, pause                                 |                                                            |
+| DNS rewrites (up to 64, each 15 min to 24 h)                                      | none                                                       |
 
 `src/secrets.h` only holds first-boot defaults (Wi-Fi, initial dashboard password, the
 network OTA password). It is gitignored.
+
+### DNS rewrites
+
+_Rewrites_ answers a name with an address or another domain for a set time. Type the
+domain, the answer (an IPv4 address, an IPv6 address or a domain name) and pick a
+duration from 15 minutes to 24 hours:
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/img/rewrites-dark.png" />
+  <img src="docs/img/rewrites-light.png" alt="The Rewrites tab: a form with domain, answer and duration, and a list of active rewrites with the time left" width="100%" />
+</picture>
+
+| You enter                                    | Clients get                                                              |
+| -------------------------------------------- | ------------------------------------------------------------------------ |
+| `nas.home` → `192.168.1.20`                  | `A 192.168.1.20`; AAAA and other types get an empty answer               |
+| `nas.home` → `fd00::20` (as well)            | `AAAA fd00::20` too: a name can have one IPv4 and one IPv6 answer        |
+| `*.staging.example.com` → `test-server.home` | every subdomain (not the name itself) gets a CNAME to `test-server.home` |
+| `yt.home` → `restrict.youtube.com`           | a CNAME plus the target's real addresses, looked up over encrypted DNS   |
+
+- An exact name beats a wildcard; the longest wildcard wins. A name gets addresses or
+  an alias, not both, and an alias chain (followed through your other rewrites) may be
+  at most 8 names long; loops are refused when you add them.
+- Adding the same name and kind again replaces its answer and restarts its time.
+- Names the device answers itself (`localhost`, `.local`, private reverse lookups, the
+  Firefox/iCloud canaries) can't be rewritten.
+- Rewrites are kept in flash with their end time. After a reboot they come back once
+  the clock is synced (NTP), minus the time the board was off.
+- Scripts: `curl -u admin:<password> -H 'X-Requested-With: adblock' -d d=nas.home -d t=192.168.1.20 -d m=60 http://s3adblock.local/api/rewrites/add`
+  (`m` = minutes, 1 to 1440; `/api/rewrites/remove` takes `d` and `t`).
 
 ### Your own blocklist
 
