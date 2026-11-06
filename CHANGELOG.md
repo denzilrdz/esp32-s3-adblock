@@ -6,6 +6,13 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-06
+
+Temporary DNS rewrites: point any name at your own IP address or another domain for
+15 minutes to 24 hours from the new _Rewrites_ tab. Update from the dashboard
+(_Device → Check for updates_); settings, bans and rules are kept, and going back to an
+older version is safe (it ignores the saved rewrites).
+
 ### Added
 
 - **Temporary DNS rewrites** (new _Rewrites_ tab): answer a domain with your own IPv4
@@ -358,7 +365,8 @@ password setup.
   flash are required), upstream's 40-bit blocklist format, the Japanese README,
   the C3 web-installer binaries and the C3 SuperMini enclosure.
 
-[Unreleased]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.2.8...HEAD
+[Unreleased]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.2.8...v0.3.0
 [0.2.8]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.2.7...v0.2.8
 [0.2.7]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.2.6...v0.2.7
 [0.2.6]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.2.5...v0.2.6
