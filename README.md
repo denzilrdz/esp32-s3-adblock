@@ -41,6 +41,7 @@ blocklist every day on its own**. No Raspberry Pi, no SD card, no OS to patch.
 | **Fast**                               | Blocklist and answer cache live in RAM: repeat lookups are answered in milliseconds.                          |
 | **Dashboard**                          | `http://s3adblock.local`: live stats, clients, your own block/allow rules, pause blocking, settings.          |
 | **Temporary DNS rewrites**             | Point a name at your own IP or another domain for 15 min to 24 h (`nas.home → 192.168.1.20`); ends by itself. |
+| **Backup and scheduled reboot**        | Export all settings and rules to one file and import them on any board; optional daily or weekly reboot.      |
 | **Secure by default**                  | Password set with a one-time code from the serial console, login lockout, CSRF and DNS-rebinding guards.      |
 | **Tiny and low-power**                 | Runs from any stable 5 V USB supply; no computer to keep running.                                             |
 
@@ -132,8 +133,10 @@ The dashboard always opens on a login screen and shows nothing before you log in
 stay logged in while it is open (up to 24 h); _Log out_ is in the top bar, and
 changing the password logs out every browser.
 
-While you're there, set your **time zone** under _Settings → Privacy & blocking_
-(default `UTC0`) so the daily list update runs at night for you.
+While you're there, pick your **time zone** under _Settings → Time & scheduled reboot_
+(default UTC; the page offers your browser's zone) so the daily list update runs at
+night for you. Restoring a board? _Device → Backup & restore → Import settings_ brings
+back everything you exported before.
 
 ### 4. Point your network at it
 
@@ -179,11 +182,17 @@ and the _Overview_ should show a rising share of queries blocked.
   bad firmware updates, Wi-Fi supervision.
 - **Self-updating blocklist**: daily at 02:00 local time (configurable). Unchanged
   lists aren't downloaded again (ETag); a bad download never replaces the working list.
+- **Backup and restore**: export every setting, the reboot schedule, the blocklist
+  URL and time, your block/allow rules and banned clients to one JSON file, and import
+  it on the same or a new board. A file with an error changes nothing.
+- **Scheduled reboot** (optional): every day or once a week at a time you pick, in
+  the device's time zone, never twice in a day and never right after a start.
 - **Privacy extras**: query padding, DNSSEC "validated" flag pass-through, local
   answers for private names, and Firefox's DoH canary so Firefox keeps using it.
 - **Dashboard** at `http://s3adblock.local`: live stats, upstream health, clients,
-  block/allow rules, DNS rewrites, pause blocking, settings, firmware and blocklist
-  uploads, and a one-click update check.
+  block/allow rules, DNS rewrites, pause blocking, settings (with dropdowns for time
+  zones, times and TTLs), firmware and blocklist uploads, settings backup, and a
+  one-click update check.
 - **Secure by default**: hashed dashboard password set with a one-time code from the
   serial console, login lockout, CSRF and DNS-rebinding checks, HTTPS-only list
   downloads, LAN-only DNS answers.
@@ -272,7 +281,12 @@ Design details, memory budget and threading: [docs/ARCHITECTURE.md](docs/ARCHITE
 Everything is on the dashboard at `http://s3adblock.local` (stored in flash/NVS,
 survives updates). Its overview shows the block rate, live queries per minute, how
 queries were answered, upstream health and per-client totals; the charts are drawn from
-what the page has seen since it opened (light and dark themes):
+what the page has seen since it opened (light and dark themes).
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/img/settings-dark.png" />
+  <img src="docs/img/settings-light.png" alt="The Settings tab: upstream DNS, privacy options, a blocked-answer TTL dropdown, and a time zone dropdown with a weekly reboot on Sunday at 04:00" width="100%" />
+</picture>
 
 | Setting                                                                           | Default                                                    |
 | --------------------------------------------------------------------------------- | ---------------------------------------------------------- |
@@ -282,12 +296,41 @@ what the page has seen since it opened (light and dark themes):
 | Blocked answer TTL                                                                | 10 s                                                       |
 | Firefox DoH canary / iCloud Private Relay opt-out / local private reverse lookups | on / off / on                                              |
 | Blocklist URL and daily update time                                               | this repo's daily list, 02:00                              |
-| Time zone                                                                         | `UTC0` (POSIX TZ string; `<+03>-3` = UTC+3, sign inverted) |
+| Time zone                                                                         | UTC (50 zones in a dropdown, or any POSIX TZ string)       |
+| Scheduled reboot                                                                  | never (or every day / every week at a set time)            |
 | Custom block / allow rules, banned clients, pause                                 |                                                            |
 | DNS rewrites (up to 64, each 15 min to 24 h)                                      | none                                                       |
 
 `src/secrets.h` only holds first-boot defaults (Wi-Fi, initial dashboard password, the
 network OTA password). It is gitignored.
+
+### Backup and restore
+
+_Device → Backup & restore → Export settings_ downloads one JSON file
+(`s3adblock-settings-<date>-<time>.json`) with everything in the table above except
+DNS rewrites, plus your block/allow rules and banned clients. **Passwords and Wi-Fi
+are never in it**, so it is safe to keep with your notes. _Import settings_ takes that
+file back, on the same board after an erase or on a second board:
+
+- The whole file is checked first; one bad value (named in the error, e.g.
+  `rules.block: invalid domain "ads..com"`) and nothing changes.
+- Each section in the file replaces that part of the device (rules and bans as whole
+  lists); a section you delete from the file leaves that part as it is. You can edit
+  the file by hand.
+- Changing the upstream DNS restarts the device; everything else applies at once.
+- Scripts: `curl -u admin:<password> http://s3adblock.local/api/settings/export -o settings.json`
+  and `curl -u admin:<password> -H 'X-Requested-With: adblock' -F f=@settings.json http://s3adblock.local/api/settings/import`.
+
+### Scheduled reboot
+
+The device doesn't need regular restarts, but if you want one (for example after a
+router that misbehaves until clients reconnect), set _Settings → Time & scheduled
+reboot_ to _Every day_ or _Every week_ and pick the day and time (device time zone).
+The dashboard shows the next one. It waits for the clock to be set, never reboots
+twice in one day (also when daylight saving time repeats an hour), skips a day if the
+device started less than 10 minutes before, and if it was off or busy (installing
+firmware) at that time it tries for an hour and then waits for the next one. The
+reason shows under _Device → Health → Last restart_.
 
 ### DNS rewrites
 

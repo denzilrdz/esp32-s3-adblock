@@ -34,6 +34,11 @@ test/
   test_netsim/test_main.cpp      90 days of bad internet: scheduler + updater + watchdog
   test_local_zones/test_main.cpp localhost, canary domains, private reverse zones
   test_util/test_main.cpp        CRC-32, civil time, SHA-256/HMAC/PBKDF2 vectors, paced send
+  test_json/test_main.cpp        JSON reader/writer (malformed input, depth, escapes),
+                                 weekday/addDays/HH:MM parsing
+  test_reboot/test_main.cpp      scheduled reboot: window, DST, midnight, fresh boot, once a day
+  test_backup/test_main.cpp      settings file round trip, every rejection path, rb_* keys,
+                                 rule-domain normal form
 ```
 
 Each `test_<area>` folder is a separate binary. Only folders starting `test_` are run.

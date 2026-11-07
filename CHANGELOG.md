@@ -6,6 +6,32 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Settings backup and restore** (_Device → Backup & restore_): export the settings,
+  reboot schedule, blocklist URL and update time, custom block/allow rules and banned
+  clients to one JSON file, and import it on the same or another board. The whole file
+  is validated first and a bad one changes nothing (the error names the field);
+  sections missing from a file are left as they are. Passwords, Wi-Fi and rewrites are
+  never exported. Scriptable: `GET /api/settings/export`, `POST /api/settings/import`.
+- **Scheduled reboot** (_Settings → Time & scheduled reboot_): never (default), every
+  day, or once a week, at a time in the device's time zone. The dashboard shows the
+  next one; it waits for the clock, never runs twice in a day (DST included), skips a
+  day right after a start, and waits while firmware is being installed. The reason
+  shows under _Last restart_.
+
+### Changed
+
+- **Dropdowns instead of typing**: time zone (50 common zones with daylight saving
+  rules, a _Use this browser's time zone_ shortcut, or a custom POSIX string),
+  blocklist update time and reboot time (hour and minute), blocked-answer TTL, and
+  readable upstream and log-level names.
+- The blocklist update time is checked strictly (`HH:MM`); `2:5x` used to be read as
+  02:05.
+- README: a Settings screenshot, a tidier Rewrites one (no longer cut off mid-row), and
+  sections on backup and scheduled reboot. New images are palette-compressed (~70%
+  smaller).
+
 ## [0.3.0] - 2026-11-06
 
 Temporary DNS rewrites: point any name at your own IP address or another domain for

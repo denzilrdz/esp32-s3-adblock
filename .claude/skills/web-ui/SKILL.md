@@ -100,6 +100,15 @@ them** (legend lists). A new entity takes the next slot (green `#008300`, violet
 `.meter` · `.kv` (definition list) · `.chk` (checkbox + label + `<small>` help) ·
 `.fld` (label above input) · `button.primary|danger|ghost` · `#toast` (aria-live).
 
+**Prefer dropdowns** for anything with a known set of values (times, durations, time
+zones, TTLs): `tpInit(id)`/`tpSet(id,'HH:MM')`/`tpGet(id)` build a `.tp` hour + minute
+picker (5-minute steps); a form field it feeds is a hidden input set on submit.
+Fill selects from data with `setVal(select, v)`: it adds an option for a value the
+list lacks (set by a script, an import or an older page) instead of silently showing
+the first option and saving that. Time zones come from the `TZ` table in page.h (label |
+POSIX string from the IANA database | IANA names, for the browser-zone shortcut);
+verify new strings against nayarsystems/posix_tz_db `zones.csv`.
+
 `[hidden]{display:none!important}` is required: component classes set `display`.
 
 ## Security (also security-checklist)
@@ -135,3 +144,11 @@ others with injected CSS. Then compress to a 256-colour palette with Pillow's
 
 Set `updateUrl` in the mock to a local `update.json` with a higher version to see
 the update states. Check desktop and ~390 px wide, light and dark, before committing.
+
+Headless gotchas: the viewport is never narrower than **500 px** whatever
+`--window-size` says, so check phone width by loading the mock in a 390 px `<iframe>`
+from a local wrapper page. `--force-prefers-color-scheme` loses to the page's own theme
+choice: for a light/dark capture, inject `localStorage.setItem('ab.theme','light')` at
+the start of the page script. The tab highlight follows scrolling, so with other
+sections hidden, set the active tab with injected CSS (`nav.tabs a[href="#settings"]`).
+Pillow isn't in `.venv`: `uv run --no-project --with pillow python compress.py`.

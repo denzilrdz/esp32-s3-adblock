@@ -98,14 +98,17 @@ lib/core/                     portable C++17, unit-tested natively (pio test -e 
               matcher.{h,cpp}     custom allow/block sets + parent-domain matching
   rules/      rewrites.{h,cpp}    timed DNS rewrites: input validation, exact/wildcard
                                   matching, alias chains, loop checks, /rewrites.txt
+              rule_domain.{h,cpp} normal form of custom block/allow rule domains
   cache/      response_cache.{h,cpp}  fixed-pool LRU + TTL, slab payloads
   upstream/   transport.h         ITransport (strategy interface)
               framing.{h,cpp}     DoT 2-byte length framing, DoH HTTP/1.1 codec
               health.{h,cpp}      per-upstream health state machine
               forwarder.{h,cpp}   ordered fallback chain, in-flight table, hedging
   sched/      daily_scheduler.{h,cpp}  02:00 local trigger, retry, dedupe
+              reboot_schedule.{h,cpp}  optional daily/weekly reboot (§8.2)
   update/     updater.{h,cpp}     download -> validate -> swap, boot recovery
   config/     config.{h,cpp}      settings, validation, NVS, upstream chain builder
+              backup.{h,cpp}      settings file export/import and validation (§8.1)
   auth/       auth.{h,cpp}        password hashing, setup code, lockout, Host/Origin,
                                   login sessions
   diag/       restart.{h,cpp}     restart cause names, crash-record summary and
@@ -114,7 +117,8 @@ lib/core/                     portable C++17, unit-tested natively (pio test -e 
               pause_timer.h       pause blocking for N s or until resumed (64-bit ms)
   hal/        clock.h, random.h, kv_store.h, file_system.h, http_client.h,
               logger.h            hardware-abstraction interfaces
-  util/       crc32, sha256 (+HMAC, PBKDF2), civil_time, bytes
+  util/       crc32, sha256 (+HMAC, PBKDF2), civil_time (+weekday, HH:MM), bytes,
+              json (settings-file reader/writer)
 
 src/                          ESP32 only (Arduino core 3.3.12 / ESP-IDF 5.5)
   main.cpp                    composition root: builds objects, injects
@@ -671,25 +675,76 @@ automatically. This is a circuit-breaker with exponential backoff.
 
 ## 8. Configuration
 
-- **`Config` struct** (core, validated):
-  - upstream list and order;
-  - `allow_plain_fallback`, EDNS padding, AD pass-through;
-  - `blocked_ttl`;
-  - blocklist URL, update hour/minute (default 02:00), timezone (default
-    `UTC0`);
-  - cache size, local-answer toggles, dashboard user and password hash.
-- **Storage:** stored in NVS through `IKeyValueStore` (namespace `cfg`, with a
-  `schema` version key for migrations).
-- **Dashboard updates:** `POST /api/config` takes JSON. The values are validated,
-  stored, and applied live where possible (upstreams, TTLs, schedule); otherwise
-  the device reboots.
+- **`config::AppConfig`** (`lib/core/config`, validated field by field with
+  `setField()` and as a whole with `validate()`): upstream providers and the custom
+  DoT server, DoH and plain fallbacks, padding, AD pass-through, blocked TTL, local
+  answer toggles, time zone (POSIX TZ, default `UTC0`), log level, and the reboot
+  schedule (`rb_mode`, `rb_day`, `rb_time`). The blocklist URL and update time belong
+  to `BlocklistManager` (own NVS keys); rules and bans live in LittleFS files.
+- **Storage:** NVS through `IKeyValueStore`, one key per field plus `cfg_ver`
+  (schema version; firmware never loads settings written by a newer schema). New keys
+  are additive: older settings load with defaults for them.
+- **Dashboard updates:** `POST /api/config` takes form fields named like the NVS keys.
+  The batch is validated, saved, and applied live (time zone, log level, reboot
+  schedule); upstream changes restart the device (`requiresRestart()`).
 - **`secrets.h`** (gitignored; `secrets.example.h` is committed) only provides
-  first-boot defaults:
-  - optional Wi-Fi credentials;
-  - initial dashboard password;
-  - OTA password;
-  - optional firmware-signing public key.
-  - Values set on the dashboard override them.
+  first-boot defaults: optional Wi-Fi credentials, the initial dashboard password and
+  the OTA password. Values set on the dashboard override them.
+
+### 8.1 Settings file (export / import)
+
+`lib/core/config/backup.{h,cpp}` with a small JSON reader/writer (`util/json`). A file
+(abridged: `settings` holds every `config::kKeys` entry):
+
+```json
+{
+  "format": "esp32-s3-adblock-settings",
+  "version": 1,
+  "firmware": "0.4.0",
+  "hostname": "s3adblock",
+  "exported": "2026-11-07 14:02",
+  "settings": { "up_pri": "cloudflare", "pad": true, "blk_ttl": 10, "rb_mode": "weekly" },
+  "blocklist": { "url": "", "time": "02:00" },
+  "rules": { "block": ["ads.example.com"], "allow": [] },
+  "bans": ["192.168.1.50"]
+}
+```
+
+- **Export** (`GET /api/settings/export`, logged in): always complete. `url` is empty
+  for the built-in list, so a later default change still applies. Never includes
+  passwords, Wi-Fi credentials, rewrites (temporary) or statistics.
+- **Import** (`POST /api/settings/import`, multipart, logged in + CSRF checks): the
+  upload goes into one PSRAM buffer sized from Content-Length (at most 640 KB:
+  2 × 1000 rules of 253 characters), then `parseBackup()` validates the **whole** file
+  before anything is applied. Settings go through the same `setField()`/`validate()` as
+  the form (starting from the current values, so a file with a few keys changes only
+  those); rule domains use the same normal form as the dashboard
+  (`rules/rule_domain`), duplicates collapse; bans must be IPv4. The first problem is
+  reported with its path (`rules.block: invalid domain "…"`).
+- **Semantics:** a section present replaces that part (rules and bans as whole lists);
+  a missing section leaves it unchanged. `format` and `version` are required; a higher
+  `version` is refused (newer firmware), unknown keys are skipped and counted, so a
+  file from newer firmware with only new keys still imports.
+- **Parser limits** (hostile input): strict RFC 8259 syntax, nesting depth 16,
+  unsigned integers only, strings longer than their field are errors (never
+  truncated), `\u0000` and lone surrogates rejected, values decoded before validation.
+- **Apply order:** settings are saved to NVS first; if that fails nothing else changes.
+  Then blocklist URL/time, rules, bans. An upstream change restarts the device.
+
+### 8.2 Scheduled reboot
+
+`lib/core/sched/reboot_schedule.{h,cpp}`, checked every 2 s from `loop()`:
+
+| Rule                     | Why                                                                                         |
+| ------------------------ | ------------------------------------------------------------------------------------------- |
+| Clock synced, year valid | no reboot at a time nobody chose                                                            |
+| 60-minute window         | a busy board (firmware upload in progress) or a DST gap still gets it; no catch-up later on |
+| Started < 10 min before  | it has just restarted: skip the day (also stops a loop if NVS can't be written)             |
+| `rb_last` = slot date    | saved before restarting: never twice for one day, also across DST's repeated hour           |
+
+The date recorded is the slot's own day, so a 23:30 slot that fires at 00:10 belongs
+to the day before. The restart reason (`scheduled reboot (weekly, Sun 04:00)`) is kept
+in RTC memory like every deliberate restart.
 
 ---
 
@@ -841,6 +896,7 @@ blocks in one piece each, so watch the largest free block (`heapBlock` in
 | Pending-query pool (32 slots × ~5.7 KB: query, rewrite chain, reply buffer) | 0.18 MB                                                                                                                                                                                             |
 | DNS rewrite table (64 entries × ~550 B)                                     | 35 KB                                                                                                                                                                                               |
 | Stats, client table (256 clients), custom sets                              | < 0.2 MB                                                                                                                                                                                            |
+| Settings import buffer (only while an import runs, §8.1)                    | up to 0.64 MB, sized from the request; refused with 507 if it does not fit                                                                                                                          |
 | **Free**                                                                    | about 0.8 MB at a 1M-name list (4.06 MiB list + 2.75 MiB cache + pools), before Wi-Fi/lwIP buffers offloaded to PSRAM. Two 1M lists never fit: the update swaps through the file-backed bridge (§6) |
 
 ### Sockets (lwIP: `CONFIG_LWIP_MAX_SOCKETS = 16`, fixed in the prebuilt libs)
