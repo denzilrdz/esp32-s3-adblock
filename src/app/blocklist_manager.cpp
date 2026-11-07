@@ -6,6 +6,7 @@
 #include <memory>
 
 #include "platform/psram.h"
+#include "rules/rule_domain.h"
 
 namespace app {
 
@@ -171,6 +172,10 @@ update::UpdateReport BlocklistManager::installUpload(const char* path) {
   return r;
 }
 
+const char* BlocklistManager::defaultUrl() {
+  return DEFAULT_BLOCKLIST_URL;
+}
+
 bool BlocklistManager::setUrl(const String& url) {
   if (url.length() && !url.startsWith("https://")) return false;
   platform::LockGuard g(stateMutex_);
@@ -190,17 +195,10 @@ void BlocklistManager::setTime(uint8_t hour, uint8_t minute) {
 }
 
 bool BlocklistManager::normalise(const String& in, String& out) {
-  out = in;
-  out.trim();
-  out.toLowerCase();
-  while (out.startsWith("*.") || out.startsWith(".")) out.remove(0, out.startsWith("*.") ? 2 : 1);
-  while (out.endsWith(".")) out.remove(out.length() - 1);
-  if (out.length() < 3 || out.length() > 253 || out.indexOf('.') <= 0) return false;
-  for (size_t i = 0; i < out.length(); i++) {
-    const char c = out[i];
-    if (!((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' || c == '.' || c == '_')) return false;
-  }
-  return out.indexOf("..") < 0;
+  char buf[rules::kMaxRuleDomain + 1];
+  if (!rules::normaliseRuleDomain(in.c_str(), in.length(), buf, sizeof(buf))) return false;
+  out = buf;
+  return true;
 }
 
 void BlocklistManager::loadRules() {
@@ -273,6 +271,24 @@ bool BlocklistManager::removeRule(bool allow, const String& domain) {
     }
   }
   return false;
+}
+
+bool BlocklistManager::replaceRules(bool allow, const std::string& lines) {
+  std::vector<String> next;
+  String d;
+  size_t start = 0;
+  while (start < lines.size()) {
+    size_t nl = lines.find('\n', start);
+    if (nl == std::string::npos) nl = lines.size();
+    if (normalise(String(lines.substr(start, nl - start).c_str()), d) && next.size() < kMaxRules)
+      next.push_back(d);
+    start = nl + 1;
+  }
+  platform::LockGuard g(stateMutex_);
+  (allow ? allow_ : block_).swap(next);
+  const bool saved = saveRules(allow);
+  rebuildSets();
+  return saved;
 }
 
 std::vector<String> BlocklistManager::rules(bool allow) {

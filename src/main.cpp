@@ -8,6 +8,7 @@
 #include <ArduinoOTA.h>
 #include <ESPmDNS.h>
 #include <LittleFS.h>
+#include <Update.h>
 #include <WebServer.h>
 #include <WiFi.h>
 #include <esp_netif.h>
@@ -34,6 +35,7 @@
 #include "platform/serial_logger.h"
 #include "platform/transports.h"
 #include "platform/watchdog.h"
+#include "sched/reboot_schedule.h"
 #include "secrets.h"  // first-boot defaults only (copy secrets.example.h); gitignored
 #include "tasks/dns_service.h"
 #include "web/dashboard.h"
@@ -70,6 +72,9 @@ auth::LoginGuard gLogins(gClock);
 auth::SessionStore gSessions(gClock, gRandom);
 web::Dashboard* gDashboard = nullptr;
 diag::RestartInfo gRestart;
+// Scheduled reboot (Settings): the plan changes in the web task, due() runs in loop().
+sched::RebootScheduler* gReboots = nullptr;  // created once NVS is open
+platform::Mutex gRebootMutex;
 
 // Software watchdog (lib/core/diag/liveness.h) for what the 5 s hardware one can't
 // cover. Limits: the web task's library-bounded waits are seconds, its slowest
@@ -135,6 +140,35 @@ void applyLiveConfig(const config::AppConfig& c) {
   setenv("TZ", c.timezone, 1);
   tzset();
   gLog.setLevel(static_cast<hal::LogLevel>(c.logLevel));
+  platform::LockGuard g(gRebootMutex);
+  if (gReboots) gReboots->setPlan(c.reboot);
+}
+
+bool nextReboot(util::CivilTime& out) {
+  platform::LockGuard g(gRebootMutex);
+  return gReboots && gReboots->next(out);
+}
+
+// Restarts at the scheduled time (Settings → Scheduled reboot). Waits while a firmware
+// upload is being written: the reboot window is an hour long.
+void maybeScheduledReboot() {
+  char why[48];
+  {
+    platform::LockGuard g(gRebootMutex);
+    if (!gReboots || !gReboots->due()) return;
+    if (Update.isRunning()) return;
+    const sched::RebootPlan p = gReboots->plan();
+    static const char* const kDays[] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
+    if (p.mode == sched::RebootMode::kWeekly)
+      snprintf(why, sizeof(why), "scheduled reboot (weekly, %s %02u:%02u)", kDays[p.weekday % 7], p.hour,
+               p.minute);
+    else
+      snprintf(why, sizeof(why), "scheduled reboot (daily, %02u:%02u)", p.hour, p.minute);
+    gReboots->markRebooting();  // before restarting: never twice for the same day
+  }
+  gLog.log(hal::LogLevel::kInfo, "boot", "%s: restarting", why);
+  delay(200);
+  platform::restart(why);
 }
 
 // Wall clock: SNTP via hard-coded Cloudflare time IPs (no DNS needed) plus the pool.
@@ -351,6 +385,7 @@ void setup() {
   if (!LittleFS.begin(true)) Serial.println("[ERROR] LittleFS failed");
   if (!gKv.begin()) Serial.println("[ERROR] NVS failed");
   config::load(gKv, gConfig);
+  gReboots = new sched::RebootScheduler(gClock, gKv);
   applyLiveConfig(gConfig);
 
   gPasswords = new auth::PasswordStore(gKv, gRandom, WEB_USER, WEB_PASS);
@@ -386,6 +421,7 @@ void setup() {
   ctx.sessions = &gSessions;
   ctx.restart = &gRestart;
   ctx.alive = []() { gLiveness.beat(gWebAlive); };
+  ctx.nextReboot = nextReboot;
   ctx.clock = &gClock;
 #ifdef ADBLOCK_SELFTEST
   ctx.selftest = selftest;
@@ -421,6 +457,7 @@ void loop() {
     superviseWifi();
     maintainOtaHealth();
     gRewrites->tick();  // restores saved rewrites once the clock syncs
+    maybeScheduledReboot();
     if (gLivenessRunning && gLiveness.checkerStalled(kCheckerStalledMs)) {  // who watches the watchdog
       gLog.log(hal::LogLevel::kError, "boot", "software watchdog stopped running: rebooting");
       delay(200);

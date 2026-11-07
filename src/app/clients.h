@@ -39,7 +39,9 @@ class ClientTable {
 
   // Web / maintenance -------------------------------------------------------------
   BanResult toggleBan(uint32_t ip);
-  void pause(uint32_t seconds);  // 0 = until resumed
+  clients::BanList bans();                         // copy (settings export)
+  void replaceBans(const clients::BanList& list);  // settings import
+  void pause(uint32_t seconds);                    // 0 = until resumed
   void resume();
   uint32_t resumeInSeconds();
   void tick();                // auto-resume a timed pause

@@ -7,6 +7,7 @@
 #include <cstdint>
 
 #include "hal/kv_store.h"
+#include "sched/reboot_schedule.h"
 #include "upstream/transport.h"
 
 namespace config {
@@ -32,18 +33,24 @@ struct AppConfig {
   bool icloudRelay = false;
   bool privateReverse = true;
   char timezone[48] = "UTC0";
-  uint8_t logLevel = 2;  // 0 error .. 3 debug
+  uint8_t logLevel = 2;      // 0 error .. 3 debug
+  sched::RebootPlan reboot;  // scheduled reboot, off by default
 };
 
 enum class SetResult { kOk, kUnknownKey, kInvalid };
 
-// Sets one field from text (dashboard form). Keys are the NVS keys below.
+// Sets one field from text (dashboard form). Keys are the NVS keys below; the reboot
+// schedule is rb_mode (off|daily|weekly), rb_day (0 = Sunday .. 6) and rb_time (HH:MM).
 SetResult setField(AppConfig& cfg, const char* key, const char* value);
 // Cross-field checks after a batch of setField() calls. `why` gets a reason.
 bool validate(const AppConfig& cfg, const char** why);
 
 bool load(const hal::IKeyValueStore& kv, AppConfig& out);  // missing keys keep defaults
 bool save(hal::IKeyValueStore& kv, const AppConfig& cfg);
+
+// Keys setField() accepts, in a stable order (export, dashboard).
+extern const char* const kKeys[];
+extern const size_t kKeyCount;
 
 // Upstream changes rebuild the transports, which needs a restart.
 bool requiresRestart(const AppConfig& before, const AppConfig& after);

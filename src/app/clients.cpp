@@ -119,6 +119,18 @@ ClientTable::BanResult ClientTable::toggleBan(uint32_t ip) {
   return ban ? BanResult::kBanned : BanResult::kUnbanned;
 }
 
+clients::BanList ClientTable::bans() {
+  platform::LockGuard g(mutex_);
+  return bans_;
+}
+
+void ClientTable::replaceBans(const clients::BanList& list) {
+  platform::LockGuard g(mutex_);
+  bans_ = list;
+  for (int i = 0; i < count_; i++) entries_[i].info.banned = bans_.contains(entries_[i].info.ip);
+  saveBans();
+}
+
 void ClientTable::pause(uint32_t seconds) {
   platform::LockGuard g(mutex_);
   pause_.pause(nowMs(), seconds);

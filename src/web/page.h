@@ -91,6 +91,7 @@ fieldset{border:1px solid var(--line);border-radius:var(--r);padding:12px 16px;m
 legend{font-weight:600;padding:0 6px}
 .chk{display:flex;gap:9px;align-items:flex-start;margin:9px 0}.chk input{margin-top:2px}.chk small{display:block;color:var(--muted)}
 .fld{display:flex;flex-direction:column;gap:4px;flex:1 1 140px;font-size:12.5px;color:var(--ink2)}
+.tp{display:inline-flex;align-items:center;gap:4px}.tp select{padding-right:4px}
 .kv{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;font-size:13px}.kv dt{color:var(--muted)}.kv dd{margin:0;overflow-wrap:anywhere}
 .meter{height:8px;border-radius:4px;background:var(--raised);overflow:hidden;margin:4px 0 10px}.meter i{display:block;height:100%;border-radius:4px;background:var(--accent)}
 .status{display:flex;gap:10px;align-items:flex-start}.status .ic{font-size:18px;line-height:1.2}
@@ -141,7 +142,7 @@ details summary{cursor:pointer;color:var(--accent);font-size:12.5px;margin-top:8
 <section id=lists><h2>Blocklist &amp; rules</h2><div class=grid>
 <div class=card><h3>Blocklist</h3><div id=blInfo></div>
 <div class=row><label class=fld style=flex-basis:100%>List URL<input id=blUrl placeholder="https://.../blocklist.bin"></label></div>
-<div class=row><label class=fld style="flex:0 1 120px">Daily update at<input id=blTime placeholder=02:00 inputmode=numeric></label><span class=hint style="flex:1 1 140px;align-self:flex-end">device time zone</span></div>
+<div class=row><div class=fld style="flex:0 1 auto">Daily update at<span class=tp id=blTime role=group aria-label="Daily update time"></span></div><span class=hint style="flex:1 1 140px;align-self:flex-end">device time zone, plus up to 10 min so not every device downloads at once</span></div>
 <div class=row><button id=blSave>Save</button><button id=blNow>Update now</button></div>
 <div class=row><input type=file id=blFile accept=.bin aria-label="Blocklist file"><button id=blUpload>Upload list</button></div>
 <div class=hint>Format v2 lists from <code>tools/build_blocklist.py</code>. A bad download or upload never replaces the current list.</div></div>
@@ -170,7 +171,7 @@ details summary{cursor:pointer;color:var(--accent);font-size:12.5px;margin-top:8
 
 <section id=settings><h2>Settings</h2><form id=cfg class=grid>
 <fieldset><legend>Upstream</legend>
-<div class=row><label class=fld>Primary<select name=up_pri><option>cloudflare<option>quad9<option>custom</select></label><label class=fld>Secondary<select name=up_sec><option>quad9<option>cloudflare<option>custom<option>none</select></label></div>
+<div class=row><label class=fld>Primary<select name=up_pri><option value=cloudflare>Cloudflare<option value=quad9>Quad9<option value=custom>Custom (below)</select></label><label class=fld>Secondary<select name=up_sec><option value=quad9>Quad9<option value=cloudflare>Cloudflare<option value=custom>Custom (below)<option value=none>None</select></label></div>
 <label class=chk><input type=checkbox name=up_doh><span>DoH fallback<small>Use DNS-over-HTTPS if port 853 is blocked</small></span></label>
 <label class=chk><input type=checkbox name=up_plain><span>Plain DNS as last resort<small>Only while every encrypted upstream is down</small></span></label>
 <div class=row><label class=fld>Custom DoT IP<input name=up_cip placeholder="IP"></label><label class=fld>Second IP<input name=up_cip2 placeholder="IP 2"></label></div>
@@ -182,8 +183,17 @@ details summary{cursor:pointer;color:var(--accent);font-size:12.5px;margin-top:8
 <label class=chk><input type=checkbox name=ff_canary><span>Stop Firefox bypassing via its own DoH</span></label>
 <label class=chk><input type=checkbox name=icloud><span>Disable iCloud Private Relay on this network</span></label>
 <label class=chk><input type=checkbox name=priv_rev><span>Answer private reverse lookups locally</span></label>
-<div class=row><label class=fld style="flex:0 1 130px">Blocked answer TTL (s)<input name=blk_ttl inputmode=numeric></label><label class=fld>Time zone<input name=tz placeholder=UTC0 title="POSIX TZ string: UTC0, or e.g. &lt;+03&gt;-3 for UTC+3 and &lt;-05&gt;5 for UTC-5 (the sign is inverted)"></label><label class=fld style="flex:0 1 110px">Log level<select name=log><option value=0>error<option value=1>warn<option value=2>info<option value=3>debug</select></label></div>
-<div class=hint>Time zone is a POSIX TZ string: <code>UTC0</code>, <code>&lt;+03&gt;-3</code> for UTC+3, <code>&lt;-05&gt;5</code> for UTC−5 (the sign is inverted).</div></fieldset>
+<div class=row><label class=fld style="flex:0 1 160px">Blocked answer TTL<select name=blk_ttl><option value=0>0 s (not cached)<option value=5>5 s<option value=10>10 s (default)<option value=30>30 s<option value=60>1 min<option value=300>5 min<option value=900>15 min<option value=3600>1 hour</select></label><label class=fld style="flex:0 1 110px">Log level<select name=log><option value=0>Errors<option value=1>Warnings<option value=2>Info<option value=3>Debug</select></label></div>
+<small class=hint>How long devices may cache a blocked answer. Short means an allowlist change works sooner.</small></fieldset>
+<fieldset><legend>Time &amp; scheduled reboot</legend>
+<div class=row><label class=fld style="flex-basis:100%">Time zone<select id=tzSel></select></label></div>
+<div class=row id=tzRow><label class=fld style="flex-basis:100%">POSIX TZ string<input name=tz placeholder=UTC0 autocapitalize=off spellcheck=false maxlength=47></label></div>
+<div class=hint id=tzHint>Daylight saving time switches automatically. Custom: <code>&lt;+03&gt;-3</code> is UTC+3, <code>&lt;-05&gt;5</code> is UTC−5 (the sign is inverted).</div>
+<div class=row><button type=button id=tzUse class=ghost hidden></button></div>
+<div class=row><label class=fld style="flex:0 1 130px">Reboot<select name=rb_mode><option value=off>Never<option value=daily>Every day<option value=weekly>Every week</select></label>
+<label class=fld style="flex:0 1 130px" id=rbDayF>On<select name=rb_day><option value=1>Monday<option value=2>Tuesday<option value=3>Wednesday<option value=4>Thursday<option value=5>Friday<option value=6>Saturday<option value=0>Sunday</select></label>
+<div class=fld style="flex:0 1 auto" id=rbTimeF>At<span class=tp id=rbTime role=group aria-label="Reboot time"></span><input type=hidden name=rb_time></div></div>
+<div class=hint id=rbNext></div></fieldset>
 <div class="row" style="grid-column:1/-1"><button class=primary>Save settings</button><span class=hint>Upstream changes restart the device.</span></div></form></section>
 
 <section id=device><h2>Device</h2><div class=grid>
@@ -194,6 +204,10 @@ details summary{cursor:pointer;color:var(--accent);font-size:12.5px;margin-top:8
 <div class=card><h3>Health</h3><div id=dev></div></div>
 <div class=card><h3>Maintenance</h3><div class=row><button id=flush>Flush DNS cache</button><button id=reboot>Reboot</button><button id=forget class=danger>Forget Wi-Fi</button></div>
 <h3 style=margin-top:14px>Change password</h3><div class=row><input id=pCur type=password placeholder=current autocomplete=current-password aria-label="Current password"><input id=pNew type=password placeholder="new (10+ characters)" autocomplete=new-password aria-label="New password"><button id=pSave>Change</button></div></div>
+<div class=card><h3>Backup &amp; restore</h3><p class=hint style=margin-top:0>One JSON file with the settings, reboot schedule, blocklist URL and time, custom rules and banned clients. Use it to restore after an erase or to set up a second board. Passwords, Wi-Fi and rewrites are not included.</p>
+<div class=row><button id=exp class=primary>Export settings</button></div>
+<div class=row><input type=file id=imFile accept=".json,application/json" aria-label="Settings file"><button id=imp>Import settings</button></div>
+<div class=hint>Importing replaces what the file contains and keeps the rest. A file with an error changes nothing.</div></div>
 </div></section>
 </main><div id=toast role=status aria-live=polite></div>
 <script>
@@ -291,12 +305,94 @@ function tile(label,value,sub,trend,color){const c=el('div',undefined,'card tile
 function transport(n,enc){return /doh/.test(n)?'DoH':/udp/.test(n)||!enc?'UDP (plain)':'DoT'}
 function stateBadge(st){const m={up:['is-good','up'],down:['is-bad','down'],unknown:['','standby']}[st]||['',st];const b=el('span',undefined,'badge '+m[0]);b.append(el('i',undefined,'dot'),m[1]);return b}
 
+// Dropdown helpers. setVal() keeps a value the list doesn't offer (set by a script or an
+// older dashboard) by adding it, so saving never changes it behind the user's back.
+function setVal(i,v){v=String(v);if(i.tagName==='SELECT'&&![...i.options].some(o=>o.value===v)){const o=el('option',v);o.value=v;i.append(o)}i.value=v}
+// Time picker: hour + minute (5-minute steps) dropdowns.
+function tpInit(id){const w=$(id),h=el('select'),m=el('select');h.setAttribute('aria-label','Hour');m.setAttribute('aria-label','Minute');
+ for(let i=0;i<24;i++){const o=el('option',p2(i));o.value=p2(i);h.append(o)}for(let i=0;i<60;i+=5){const o=el('option',p2(i));o.value=p2(i);m.append(o)}
+ w.append(h,el('span',':'),m);w.onchange=()=>{w.dataset.dirty=1}}
+function tpSet(id,t){const m=/^(\d{1,2}):(\d{2})$/.exec(t||'');if(!m)return;const s=$(id).querySelectorAll('select');setVal(s[0],p2(+m[1]));setVal(s[1],m[2])}
+function tpGet(id){const s=$(id).querySelectorAll('select');return s[0].value+':'+s[1].value}
+tpInit('blTime');tpInit('rbTime');
+const DAYS=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+function syncRb(){const f=$('cfg').elements,m=f.rb_mode.value;$('rbDayF').hidden=m!=='weekly';$('rbTimeF').hidden=m==='off'}
+$('cfg').elements.rb_mode.onchange=syncRb;
+// Time zones: label | POSIX TZ (from the IANA database) | IANA names, to preselect the browser's zone.
+const TZ=`(UTC) Coordinated Universal Time|UTC0|UTC Etc/UTC
+(UTC−10) Honolulu|HST10|Pacific/Honolulu
+(UTC−09) Anchorage|AKST9AKDT,M3.2.0,M11.1.0|America/Anchorage
+(UTC−08) Los Angeles, Vancouver|PST8PDT,M3.2.0,M11.1.0|America/Los_Angeles America/Vancouver
+(UTC−07) Denver|MST7MDT,M3.2.0,M11.1.0|America/Denver America/Edmonton
+(UTC−07) Phoenix|MST7|America/Phoenix
+(UTC−06) Chicago|CST6CDT,M3.2.0,M11.1.0|America/Chicago America/Winnipeg
+(UTC−06) Mexico City|CST6|America/Mexico_City
+(UTC−05) New York, Toronto|EST5EDT,M3.2.0,M11.1.0|America/New_York America/Toronto America/Detroit
+(UTC−05) Bogotá, Lima|<-05>5|America/Bogota America/Lima
+(UTC−04) Halifax|AST4ADT,M3.2.0,M11.1.0|America/Halifax
+(UTC−04) Caracas, La Paz|<-04>4|America/Caracas America/La_Paz
+(UTC−04) Santiago|<-04>4<-03>,M9.1.6/24,M4.1.6/24|America/Santiago
+(UTC−03:30) St. John's|NST3:30NDT,M3.2.0,M11.1.0|America/St_Johns
+(UTC−03) São Paulo, Buenos Aires|<-03>3|America/Sao_Paulo America/Argentina/Buenos_Aires America/Montevideo
+(UTC−01) Azores|<-01>1<+00>,M3.5.0/0,M10.5.0/1|Atlantic/Azores
+(UTC+00) London|GMT0BST,M3.5.0/1,M10.5.0|Europe/London
+(UTC+00) Dublin|IST-1GMT0,M10.5.0,M3.5.0/1|Europe/Dublin
+(UTC+00) Lisbon|WET0WEST,M3.5.0/1,M10.5.0|Europe/Lisbon
+(UTC+01) Berlin, Paris, Rome, Madrid, Amsterdam|CET-1CEST,M3.5.0,M10.5.0/3|Europe/Berlin Europe/Paris Europe/Rome Europe/Madrid Europe/Amsterdam Europe/Brussels Europe/Vienna Europe/Zurich Europe/Stockholm Europe/Oslo Europe/Copenhagen Europe/Warsaw Europe/Prague Europe/Budapest
+(UTC+01) Lagos|WAT-1|Africa/Lagos
+(UTC+02) Athens, Kyiv, Helsinki, Bucharest|EET-2EEST,M3.5.0/3,M10.5.0/4|Europe/Athens Europe/Kyiv Europe/Kiev Europe/Helsinki Europe/Bucharest Europe/Sofia
+(UTC+02) Cairo|EET-2EEST,M4.5.5/0,M10.5.4/24|Africa/Cairo
+(UTC+02) Johannesburg|SAST-2|Africa/Johannesburg
+(UTC+02) Jerusalem|IST-2IDT,M3.4.4/26,M10.5.0|Asia/Jerusalem
+(UTC+03) Moscow|MSK-3|Europe/Moscow
+(UTC+03) Istanbul, Riyadh|<+03>-3|Europe/Istanbul Asia/Riyadh Asia/Qatar Asia/Baghdad
+(UTC+03) Nairobi|EAT-3|Africa/Nairobi
+(UTC+03:30) Tehran|<+0330>-3:30|Asia/Tehran
+(UTC+04) Dubai|<+04>-4|Asia/Dubai Asia/Muscat
+(UTC+04:30) Kabul|<+0430>-4:30|Asia/Kabul
+(UTC+05) Karachi|PKT-5|Asia/Karachi
+(UTC+05:30) India|IST-5:30|Asia/Kolkata Asia/Calcutta
+(UTC+05:30) Colombo|<+0530>-5:30|Asia/Colombo
+(UTC+05:45) Kathmandu|<+0545>-5:45|Asia/Kathmandu
+(UTC+06) Dhaka|<+06>-6|Asia/Dhaka
+(UTC+06:30) Yangon|<+0630>-6:30|Asia/Yangon
+(UTC+07) Bangkok, Ho Chi Minh City|<+07>-7|Asia/Bangkok Asia/Ho_Chi_Minh
+(UTC+07) Jakarta|WIB-7|Asia/Jakarta
+(UTC+08) Beijing, Shanghai, Taipei|CST-8|Asia/Shanghai Asia/Taipei
+(UTC+08) Hong Kong|HKT-8|Asia/Hong_Kong
+(UTC+08) Singapore, Kuala Lumpur|<+08>-8|Asia/Singapore Asia/Kuala_Lumpur
+(UTC+08) Manila|PST-8|Asia/Manila
+(UTC+08) Perth|AWST-8|Australia/Perth
+(UTC+09) Seoul|KST-9|Asia/Seoul
+(UTC+09) Tokyo|JST-9|Asia/Tokyo
+(UTC+09:30) Darwin|ACST-9:30|Australia/Darwin
+(UTC+09:30) Adelaide|ACST-9:30ACDT,M10.1.0,M4.1.0/3|Australia/Adelaide
+(UTC+10) Brisbane|AEST-10|Australia/Brisbane
+(UTC+10) Sydney, Melbourne|AEST-10AEDT,M10.1.0,M4.1.0/3|Australia/Sydney Australia/Melbourne Australia/Canberra
+(UTC+12) Auckland|NZST-12NZDT,M9.5.0,M4.1.0/3|Pacific/Auckland`.split('\n').map(l=>l.split('|'));
+let myTz='';try{myTz=Intl.DateTimeFormat().resolvedOptions().timeZone||''}catch(e){}
+const myZone=TZ.find(z=>z[2].split(' ').includes(myTz));
+for(const z of TZ){const o=el('option',z[0]);o.value=z[1];$('tzSel').append(o)}
+{const o=el('option','Custom POSIX TZ string…');o.value='';$('tzSel').append(o)}
+// The dropdown drives the hidden tz field; "Custom" shows it for a hand-written string.
+function syncTz(){const v=$('cfg').elements.tz.value,known=TZ.some(z=>z[1]===v)&&v;$('tzSel').value=known?v:'';$('tzRow').hidden=!!known;$('tzHint').hidden=!!known;
+ const u=$('tzUse');u.hidden=!myZone||myZone[1]===v;if(myZone)u.textContent='Use this browser\'s time zone: '+myZone[0]}
+$('tzSel').onchange=()=>{const v=$('tzSel').value;if(v)$('cfg').elements.tz.value=v;syncTz();if(!v){$('tzRow').hidden=false;$('tzHint').hidden=false;$('cfg').elements.tz.focus()}};
+$('tzUse').onclick=()=>{$('cfg').elements.tz.value=myZone[1];syncTz();toast('Time zone set to '+myZone[0]+'. Save settings to apply.')};
+// Backup & restore: one JSON file (Device card).
+$('exp').onclick=async()=>{try{const r=await fetch('/api/settings/export',{cache:'no-store'});if(r.status===401){setAuth('out');return}if(!r.ok)throw Error(await r.text()||r.statusText);
+ const blob=await r.blob(),a=el('a'),m=/filename="([^"]+)"/.exec(r.headers.get('Content-Disposition')||'');a.href=URL.createObjectURL(blob);a.download=m?m[1]:'adblock-settings.json';
+ document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),4000);toast('Settings exported to '+a.download)}catch(e){toast('export failed: '+e.message,true)}};
+$('imp').onclick=async()=>{const f=$('imFile').files[0];if(!f)return toast('choose a settings file first',true);
+ if(!confirm('Import settings from '+f.name+'?\n\nEverything in the file replaces what is on the device now: settings, reboot schedule, blocklist URL and time, custom rules and banned clients. Upstream DNS changes restart the device.'))return;
+ const fd=new FormData();fd.append('f',f);if(await api('/api/settings/import',null,fd)){$('imFile').value='';cfgLoaded=false;load()}};
 let cfgLoaded=false,last=null,updChecked=false;
 async function load(){let s;
  try{const r=await fetch('/api/stats',{cache:'no-store'});if(r.status===401){setAuth('out');return}s=await r.json()}catch(e){setAuth('in');$('offline').hidden=false;setPill('pUp','offline','bad');return}
  setAuth('in');$('offline').hidden=true;record(s);last=s;render(s);
  if(!updChecked){updChecked=true;checkUpdate()}
- if(!cfgLoaded){try{const c=await (await fetch('/api/config')).json();for(const [k,v] of Object.entries(c)){const i=$('cfg').elements[k];if(!i)continue;if(i.type==='checkbox')i.checked=v;else i.value=v}cfgLoaded=true}catch(e){}}}
+ if(!cfgLoaded){try{const c=await (await fetch('/api/config')).json();for(const [k,v] of Object.entries(c)){const i=$('cfg').elements[k];if(!i)continue;if(i.type==='checkbox')i.checked=v;else setVal(i,v)}
+  tpSet('rbTime',c.rb_time||'04:00');syncTz();syncRb();cfgLoaded=true}catch(e){}}}
 function render(s){const d=s.dns,bl=s.blocklist;
  document.title=(s.blocking?'':'(paused) ')+'AdBlock · '+s.hostname;
  setPill('pBlock',s.blocking?'blocking on':(s.resumeIn?'paused · '+Math.ceil(s.resumeIn/60)+' min left':'paused'),s.blocking?'good':'warn');
@@ -339,7 +435,8 @@ function render(s){const d=s.dns,bl=s.blocklist;
  const st=el('div',undefined,'badge is-'+(bl.lastOk?'good':'warn'));st.append(el('i',undefined,'dot'),'Last update '+bl.lastAttempt+': '+bl.lastResult);
  const dl=el('dl',undefined,'kv');for(const [k,v] of [['Domains',fmt(bl.entries)+(bl.inMemory?' (in PSRAM)':' (from flash)')],['Built',bl.built],['Next update','daily at '+bl.time]])dl.append(el('dt',k),el('dd',v));
  $('blInfo').replaceChildren(dl,el('div',undefined,'row'));$('blInfo').lastChild.append(st);
- if(document.activeElement!==$('blUrl'))$('blUrl').value=bl.url;if(document.activeElement!==$('blTime'))$('blTime').value=bl.time;
+ if(document.activeElement!==$('blUrl'))$('blUrl').value=bl.url;if(!$('blTime').dataset.dirty)tpSet('blTime',bl.time);
+ const rb=s.reboot||{mode:'off'};$('rbNext').textContent=rb.mode==='off'?'The device restarts only when it needs to (updates, settings).':rb.next?'Next reboot: '+DAYS[rb.nextDay]+' '+rb.next.slice(0,10)+', '+rb.next.slice(11)+' (device time)':'Waiting for the clock to sync before scheduling.';
  for(const [list,id] of [['block','ruleBlock'],['allow','ruleAllow']]){const items=s.rules[list];
   $(id).replaceChildren(...(items.length?items.map(dm=>{const c=el('span',undefined,'chip'),b=el('button','×');b.title='Remove '+dm;b.setAttribute('aria-label','Remove '+dm);b.onclick=()=>api('/api/rules/remove',{list,d:dm});c.append(el('span',dm,'mono'),b);return c}):[el('span','No rules yet','hint')]))}
  renderClients();renderRewrites(s);
@@ -385,7 +482,7 @@ $('rwForm').onsubmit=async e=>{e.preventDefault();const f=e.target,d=f.d.value.t
 document.querySelectorAll('[data-pause]').forEach(b=>b.onclick=()=>api('/api/blocking/pause',{s:b.dataset.pause}));
 $('resume').onclick=()=>api('/api/blocking/resume');
 document.querySelectorAll('form[data-add]').forEach(f=>f.onsubmit=async e=>{e.preventDefault();const list=f.dataset.add,i=f.querySelector('input');if(i.value.trim()&&await api('/api/rules/add',{list,d:i.value.trim()}))i.value=''});
-$('blSave').onclick=()=>api('/api/blocklist/settings',{u:$('blUrl').value.trim(),t:$('blTime').value.trim()});
+$('blSave').onclick=async()=>{if(await api('/api/blocklist/settings',{u:$('blUrl').value.trim(),t:tpGet('blTime')}))delete $('blTime').dataset.dirty};
 $('blNow').onclick=()=>api('/api/blocklist/update');
 function upload(path,input){const f=$(input).files[0];if(!f)return toast('choose a file first',true);const fd=new FormData();fd.append('f',f);toast('uploading '+(f.size/1048576).toFixed(2)+' MB...');api(path,null,fd)}
 $('blUpload').onclick=()=>upload('/api/blocklist/upload','blFile');
@@ -434,7 +531,7 @@ $('fwUpload').onclick=()=>{if(confirm('Flash this firmware? The device reboots a
 $('flush').onclick=()=>api('/api/cache/flush');
 $('reboot').onclick=()=>{if(confirm('Reboot the device?'))api('/api/reboot')};
 $('forget').onclick=()=>{if(confirm('Forget Wi-Fi and reboot into the setup access point?'))api('/api/wifi/forget')};
-$('cfg').onsubmit=e=>{e.preventDefault();const data={};for(const i of $('cfg').elements){if(!i.name)continue;data[i.name]=i.type==='checkbox'?(i.checked?'1':'0'):i.value}api('/api/config',data)};
+$('cfg').onsubmit=e=>{e.preventDefault();$('cfg').elements.rb_time.value=tpGet('rbTime');const data={};for(const i of $('cfg').elements){if(!i.name)continue;data[i.name]=i.type==='checkbox'?(i.checked?'1':'0'):i.value}api('/api/config',data)};
 $('sSave').onclick=()=>api('/api/password',{current:$('sCode').value.trim(),next:$('sNew').value});
 $('pSave').onclick=()=>api('/api/password',{current:$('pCur').value,next:$('pNew').value});
 load();setInterval(()=>{if(document.body.dataset.auth!=='out')load()},4000);

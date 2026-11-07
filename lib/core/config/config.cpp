@@ -5,6 +5,8 @@
 #include <cstring>
 #include <initializer_list>
 
+#include "util/civil_time.h"
+
 namespace config {
 
 namespace {
@@ -158,6 +160,13 @@ SetResult setField(AppConfig& c, const char* key, const char* raw) {
   else if (!strcmp(key, "log")) {
     ok = parseU32(v, 0, 3, n);
     if (ok) c.logLevel = static_cast<uint8_t>(n);
+  } else if (!strcmp(key, "rb_mode")) {
+    ok = sched::parseRebootMode(v, c.reboot.mode);
+  } else if (!strcmp(key, "rb_day")) {
+    ok = parseU32(v, 0, 6, n);
+    if (ok) c.reboot.weekday = static_cast<uint8_t>(n);
+  } else if (!strcmp(key, "rb_time")) {
+    ok = util::parseHhMm(v, c.reboot.hour, c.reboot.minute);
   } else {
     return SetResult::kUnknownKey;
   }
@@ -182,11 +191,11 @@ bool load(const hal::IKeyValueStore& kv, AppConfig& c) {
   if (!kv.getU32("cfg_ver", ver)) return true;  // nothing saved yet: defaults
   if (ver > kSchemaVersion) return false;       // written by newer firmware: keep defaults
   char buf[64];
-  const char* textKeys[] = {"up_pri", "up_sec", "up_cip", "up_cip2", "up_cname", "tz"};
+  const char* textKeys[] = {"up_pri", "up_sec", "up_cip", "up_cip2", "up_cname", "tz", "rb_mode", "rb_time"};
   for (const char* k : textKeys)
     if (kv.getString(k, buf, sizeof(buf))) setField(c, k, buf);
-  const char* u32Keys[] = {"up_doh",  "up_plain",  "up_cdoh", "pad",      "ad",
-                           "blk_ttl", "ff_canary", "icloud",  "priv_rev", "log"};
+  const char* u32Keys[] = {"up_doh",    "up_plain", "up_cdoh",  "pad", "ad",    "blk_ttl",
+                           "ff_canary", "icloud",   "priv_rev", "log", "rb_day"};
   for (const char* k : u32Keys) {
     uint32_t v;
     if (kv.getU32(k, v)) {
@@ -208,8 +217,17 @@ bool save(hal::IKeyValueStore& kv, const AppConfig& c) {
             kv.setU32("pad", c.padding) && kv.setU32("ad", c.passAd) && kv.setU32("blk_ttl", c.blockedTtl) &&
             kv.setU32("ff_canary", c.firefoxCanary) && kv.setU32("icloud", c.icloudRelay) &&
             kv.setU32("priv_rev", c.privateReverse) && kv.setU32("log", c.logLevel);
+  char hhmm[6];
+  snprintf(hhmm, sizeof(hhmm), "%02u:%02u", c.reboot.hour % 24u, c.reboot.minute % 60u);
+  ok = ok && kv.setString("rb_mode", sched::rebootModeName(c.reboot.mode)) &&
+       kv.setU32("rb_day", c.reboot.weekday) && kv.setString("rb_time", hhmm);
   return ok && kv.setU32("cfg_ver", kSchemaVersion);
 }
+
+const char* const kKeys[] = {"up_pri",  "up_sec", "up_doh",  "up_plain", "up_cip",    "up_cip2", "up_cname",
+                             "up_cdoh", "pad",    "ad",      "blk_ttl",  "ff_canary", "icloud",  "priv_rev",
+                             "tz",      "log",    "rb_mode", "rb_day",   "rb_time"};
+const size_t kKeyCount = sizeof(kKeys) / sizeof(kKeys[0]);
 
 bool requiresRestart(const AppConfig& a, const AppConfig& b) {
   return a.primary != b.primary || a.secondary != b.secondary || a.dohFallback != b.dohFallback ||

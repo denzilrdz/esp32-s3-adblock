@@ -24,4 +24,13 @@ CivilTime civilFromUnix(int64_t unixSeconds, int32_t utcOffsetSeconds);
 // Inverse of civilFromUnix for a local civil time at a fixed UTC offset.
 int64_t unixFromCivil(const CivilTime& local, int32_t utcOffsetSeconds);
 
+// Day of the week of the civil date: 0 = Sunday .. 6 = Saturday.
+int weekday(const CivilTime& t);
+
+// The calendar date `days` after (or before, if negative) t's date; time of day kept.
+CivilTime addDays(const CivilTime& t, int days);
+
+// Strict "H:MM" / "HH:MM" (00:00..23:59): no signs, spaces or extra characters.
+bool parseHhMm(const char* s, uint8_t& hour, uint8_t& minute);
+
 }  // namespace util

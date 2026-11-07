@@ -18,11 +18,13 @@
 #include "app/clients.h"
 #include "app/rewrites.h"
 #include "auth/auth.h"
+#include "config/backup.h"
 #include "config/config.h"
 #include "diag/restart.h"
 #include "hal/clock.h"
 #include "hal/kv_store.h"
 #include "hal/logger.h"
+#include "platform/psram.h"
 #include "tasks/dns_service.h"
 
 namespace web {
@@ -45,6 +47,7 @@ struct DashboardContext {
   const char* version = "";
   std::function<void(const config::AppConfig&)> applyLive;  // timezone, log level
   std::function<void()> alive;  // web task progress during long uploads (software watchdog)
+  std::function<bool(util::CivilTime&)> nextReboot;  // scheduled reboot, local time
 #ifdef ADBLOCK_SELFTEST
   std::function<void(const String&)> selftest;  // POST /api/selftest?hang=<what>
 #endif
@@ -71,8 +74,9 @@ class Dashboard {
   bool hasSession();
   bool guard(Access access);  // sends the error response itself
   void sendText(int code, const String& text);
-  void uploadProgress();
-  void sendPage();  // feeds both watchdogs while one upload runs in handleClient()
+  void uploadProgress();  // feeds both watchdogs while one upload runs in handleClient()
+  // Sends a body in TCP-sized pieces under one deadline (slow clients can't hold the task).
+  void sendBody(const char* data, size_t len, const char* type, bool progmem);
 
   void handleStats();
   void handleGetConfig();
@@ -89,10 +93,17 @@ class Dashboard {
   void handleListUploadDone();
   void handleFirmwareUpload();
   void handleFirmwareUploadDone();
+  void handleExport();
+  void handleImportUpload();
+  void handleImportDone();
 
   DashboardContext ctx_;
   bool uploadAuthorized_ = false;
   String uploadResult_;
+  platform::LargeBuffer importBuf_;  // settings file being uploaded (PSRAM)
+  size_t importCap_ = 0, importLen_ = 0;
+  const char* importError_ = nullptr;  // set when the upload can't be kept...
+  int importErrorCode_ = 400;          // ...with this HTTP status
 };
 
 }  // namespace web

@@ -51,4 +51,32 @@ int64_t unixFromCivil(const CivilTime& local, int32_t utcOffsetSeconds) {
   return days * 86400 + local.hour * 3600 + local.minute * 60 + local.second - utcOffsetSeconds;
 }
 
+int weekday(const CivilTime& t) {
+  const int64_t days = daysFromCivil(t.year, static_cast<unsigned>(t.month), static_cast<unsigned>(t.day));
+  // 1970-01-01 was a Thursday (4).
+  return static_cast<int>(((days + 4) % 7 + 7) % 7);
+}
+
+CivilTime addDays(const CivilTime& t, int days) {
+  CivilTime out = t;
+  civilFromDays(daysFromCivil(t.year, static_cast<unsigned>(t.month), static_cast<unsigned>(t.day)) + days,
+                out.year, out.month, out.day);
+  return out;
+}
+
+bool parseHhMm(const char* s, uint8_t& hour, uint8_t& minute) {
+  if (!s) return false;
+  auto digit = [](char c) { return c >= '0' && c <= '9'; };
+  int h = 0, i = 0;
+  while (digit(s[i]) && i < 2) h = h * 10 + (s[i++] - '0');
+  if (i == 0 || s[i] != ':') return false;
+  const char* m = s + i + 1;
+  if (!digit(m[0]) || !digit(m[1]) || m[2]) return false;
+  const int mm = (m[0] - '0') * 10 + (m[1] - '0');
+  if (h > 23 || mm > 59) return false;
+  hour = static_cast<uint8_t>(h);
+  minute = static_cast<uint8_t>(mm);
+  return true;
+}
+
 }  // namespace util

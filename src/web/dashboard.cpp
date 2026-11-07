@@ -9,6 +9,7 @@
 
 #include "platform/restart_info.h"
 #include "platform/watchdog.h"
+#include "util/civil_time.h"
 #include "util/send_deadline.h"
 #include "web/page.h"
 #include "web/portal.h"
@@ -113,23 +114,25 @@ bool parseBasicAuth(const String& header, String& user, String& pass) {
 
 }  // namespace
 
-// The page (46 KB, several TCP send buffers) goes out in pieces under one deadline: a
-// client reading a trickle at a time would otherwise hold the single web task for hours
-// (each byte sent resets NetworkClient's retry count). Normal clients take well under
-// a second; a cut-off page just reloads.
-void Dashboard::sendPage() {
+// The page (46 KB, several TCP send buffers) and settings exports go out in pieces under
+// one deadline: a client reading a trickle at a time would otherwise hold the single web
+// task for hours (each byte sent resets NetworkClient's retry count). Normal clients
+// take well under a second; a cut-off page just reloads.
+void Dashboard::sendBody(const char* data, size_t len, const char* type, bool progmem) {
   WebServer& s = *ctx_.server;
-  const size_t len = sizeof(kPage) - 1;
   s.setContentLength(len);
-  s.send(200, "text/html", "");
+  s.send(200, type, "");
   const util::SendResult r =
       util::sendWithDeadline(len, kPageSendPiece, kPageSendBudgetMs, *ctx_.clock, [&](size_t off, size_t n) {
-        s.sendContent_P(kPage + off, n);
+        if (progmem)
+          s.sendContent_P(data + off, n);
+        else
+          s.sendContent(data + off, n);
         if (ctx_.alive) ctx_.alive();
         return s.client().connected();
       });
   if (!r.complete) {
-    ctx_.log->log(LogLevel::kWarn, kTag, "page send to %s cut off after %u of %u bytes (slow client)",
+    ctx_.log->log(LogLevel::kWarn, kTag, "send to %s cut off after %u of %u bytes (slow client)",
                   s.client().remoteIP().toString().c_str(), static_cast<unsigned>(r.sent),
                   static_cast<unsigned>(len));
     s.client().stop();
@@ -221,7 +224,7 @@ void Dashboard::begin() {
     static const String csp = pageCsp();
     ctx_.server->sendHeader("Content-Security-Policy", csp);
     ctx_.server->sendHeader("X-Frame-Options", "DENY");
-    sendPage();
+    sendBody(kPage, sizeof(kPage) - 1, "text/html", true);
   });
   s.on("/api/stats", HTTP_GET, [this]() { handleStats(); });
   s.on("/api/config", HTTP_GET, [this]() { handleGetConfig(); });
@@ -273,6 +276,10 @@ void Dashboard::begin() {
     delay(500);
     platform::restart("Reboot button (dashboard)");
   });
+  s.on("/api/settings/export", HTTP_GET, [this]() { handleExport(); });
+  s.on(
+      "/api/settings/import", HTTP_POST, [this]() { handleImportDone(); },
+      [this]() { handleImportUpload(); });
   s.on(
       "/api/blocklist/upload", HTTP_POST, [this]() { handleListUploadDone(); },
       [this]() { handleListUpload(); });
@@ -324,6 +331,16 @@ void Dashboard::handleStats() {
     j += "}";
   }
   j += ",\"timeSynced\":" + String(b(bl.timeSynced)) + ",\"now\":" + q(formatTime(time(nullptr)));
+  {
+    const sched::RebootPlan& rp = ctx_.config->reboot;
+    util::CivilTime next;
+    char when[20] = "";
+    if (ctx_.nextReboot && ctx_.nextReboot(next))
+      snprintf(when, sizeof(when), "%04d-%02d-%02d %02d:%02d", next.year, next.month, next.day, next.hour,
+               next.minute);
+    j += ",\"reboot\":{\"mode\":" + q(sched::rebootModeName(rp.mode)) + ",\"next\":" + q(when) +
+         ",\"nextDay\":" + String(when[0] ? util::weekday(next) : -1) + "}";
+  }
   j += ",\"blocking\":" + String(b(ctx_.clients->blockingOn())) +
        ",\"resumeIn\":" + String(ctx_.clients->resumeInSeconds());
   j += ",\"dns\":{\"queries\":" + String(d.queries) + ",\"tcp\":" + String(d.tcpQueries) +
@@ -385,7 +402,11 @@ void Dashboard::handleGetConfig() {
   j += ",\"pad\":" + String(b(c.padding)) + ",\"ad\":" + b(c.passAd) + ",\"blk_ttl\":" + String(c.blockedTtl);
   j += ",\"ff_canary\":" + String(b(c.firefoxCanary)) + ",\"icloud\":" + b(c.icloudRelay) +
        ",\"priv_rev\":" + b(c.privateReverse);
-  j += ",\"tz\":" + q(c.timezone) + ",\"log\":" + String(c.logLevel) + "}";
+  char rbTime[8];
+  snprintf(rbTime, sizeof(rbTime), "%02u:%02u", c.reboot.hour % 24u, c.reboot.minute % 60u);
+  j += ",\"tz\":" + q(c.timezone) + ",\"log\":" + String(c.logLevel);
+  j += ",\"rb_mode\":" + q(sched::rebootModeName(c.reboot.mode)) + ",\"rb_day\":" + String(c.reboot.weekday) +
+       ",\"rb_time\":" + q(rbTime) + "}";
   ctx_.server->send(200, "application/json", j);
 }
 
@@ -546,14 +567,14 @@ void Dashboard::handleBlocklistSettings() {
     return;
   }
   if (s.hasArg("t")) {
-    const String t = s.arg("t");
-    const int c = t.indexOf(':');
-    const long h = c > 0 ? t.substring(0, c).toInt() : -1, m = c > 0 ? t.substring(c + 1).toInt() : -1;
-    if (h < 0 || h > 23 || m < 0 || m > 59) {
+    String t = s.arg("t");
+    t.trim();
+    uint8_t h = 0, m = 0;
+    if (!util::parseHhMm(t.c_str(), h, m)) {
       sendText(400, "time must be HH:MM");
       return;
     }
-    ctx_.blocklist->setTime(static_cast<uint8_t>(h), static_cast<uint8_t>(m));
+    ctx_.blocklist->setTime(h, m);
   }
   sendText(200, "saved");
 }
@@ -640,6 +661,161 @@ void Dashboard::handleFirmwareUploadDone() {
     delay(500);
     platform::restart("firmware update (dashboard)");
   }
+}
+
+// ---- settings file (config/backup.h) ----------------------------------------------
+
+void Dashboard::handleExport() {
+  if (!guard(Access::kRead)) return;
+  config::Backup b;
+  b.settings = *ctx_.config;
+  const app::BlocklistStatus bl = ctx_.blocklist->status();
+  if (bl.url != app::BlocklistManager::defaultUrl()) b.blocklistUrl = bl.url.c_str();  // "" = default
+  b.blocklistHour = bl.hour;
+  b.blocklistMinute = bl.minute;
+  for (const String& d : ctx_.blocklist->rules(false)) config::addRule(b.blockRules, b.blockCount, d.c_str());
+  for (const String& d : ctx_.blocklist->rules(true)) config::addRule(b.allowRules, b.allowCount, d.c_str());
+  b.bans = ctx_.clients->bans();
+
+  const time_t now = time(nullptr);
+  struct tm tmv;
+  localtime_r(&now, &tmv);
+  char exported[24] = "", file[64];
+  if (ctx_.clock->wallClockSynced()) {
+    strftime(exported, sizeof(exported), "%Y-%m-%d %H:%M", &tmv);
+    char stamp[16];
+    strftime(stamp, sizeof(stamp), "%Y%m%d-%H%M", &tmv);
+    snprintf(file, sizeof(file), "%s-settings-%s.json", ctx_.hostname, stamp);
+  } else {
+    snprintf(file, sizeof(file), "%s-settings.json", ctx_.hostname);
+  }
+  config::BackupMeta meta;
+  meta.firmware = ctx_.version;
+  meta.hostname = ctx_.hostname;
+  meta.exported = exported;
+  std::string text;
+  text.reserve(2048 + b.blockRules.size() + b.allowRules.size() + b.blockCount * 8 + b.allowCount * 8);
+  config::writeBackup(b, meta, text);
+  ctx_.server->sendHeader("Content-Disposition", String("attachment; filename=\"") + file + "\"");
+  ctx_.server->sendHeader("Cache-Control", "no-store");
+  sendBody(text.data(), text.size(), "application/json", false);
+  ctx_.log->log(LogLevel::kInfo, kTag, "settings exported (%u bytes)", static_cast<unsigned>(text.size()));
+}
+
+// The file is collected in one PSRAM buffer (kMaxBackupBytes at most, sized from the
+// request), then validated as a whole before anything changes.
+void Dashboard::handleImportUpload() {
+  HTTPUpload& u = ctx_.server->upload();
+  switch (u.status) {
+    case UPLOAD_FILE_START: {
+      const Check c = check(Access::kAuth);
+      uploadAuthorized_ = c.ok;
+      importBuf_.reset();
+      importCap_ = importLen_ = 0;
+      importError_ = nullptr;
+      importErrorCode_ = 400;
+      if (!c.ok) break;
+      // The request size bounds the file (multipart adds a few hundred bytes).
+      const int body = ctx_.server->clientContentLength();
+      importCap_ = body > 0 && static_cast<size_t>(body) < config::kMaxBackupBytes ? static_cast<size_t>(body)
+                                                                                   : config::kMaxBackupBytes;
+      importBuf_ = platform::makeLargeBuffer(importCap_);
+      if (!importBuf_) {
+        importError_ = "not enough free memory for the file";
+        importErrorCode_ = 507;
+      }
+      break;
+    }
+    case UPLOAD_FILE_WRITE:
+      uploadProgress();
+      if (!uploadAuthorized_ || importError_) break;
+      if (u.currentSize > importCap_ - importLen_) {
+        importError_ = "file too large for a settings file";
+        importErrorCode_ = 413;
+        importBuf_.reset();
+        break;
+      }
+      memcpy(importBuf_.get() + importLen_, u.buf, u.currentSize);
+      importLen_ += u.currentSize;
+      break;
+    case UPLOAD_FILE_END: break;
+    case UPLOAD_FILE_ABORTED:
+      importError_ = "upload aborted";
+      importBuf_.reset();
+      break;
+  }
+}
+
+void Dashboard::handleImportDone() {
+  if (!uploadAuthorized_) {
+    guard(Access::kAuth);  // sends the proper 401/403/429
+    return;
+  }
+  uploadAuthorized_ = false;
+  platform::LargeBuffer buf = std::move(importBuf_);
+  const size_t len = importLen_;
+  importLen_ = importCap_ = 0;
+  if (importError_) {
+    sendText(importErrorCode_, String("nothing changed: ") + importError_);
+    return;
+  }
+  if (!buf || len == 0) {
+    sendText(400, "no settings file received (or it is empty)");
+    return;
+  }
+  config::Backup b;
+  char why[160];
+  if (!config::parseBackup(reinterpret_cast<const char*>(buf.get()), len, *ctx_.config, b, why,
+                           sizeof(why))) {
+    ctx_.log->log(LogLevel::kWarn, kTag, "settings import refused: %s", why);
+    sendText(400, String("nothing changed: ") + why);
+    return;
+  }
+  buf.reset();
+
+  // Apply. Settings first: if they can't be saved, nothing else changes either.
+  const config::AppConfig before = *ctx_.config;
+  if (b.hasSettings && !config::save(*ctx_.kv, b.settings)) {
+    sendText(500, "could not save settings; nothing changed");
+    return;
+  }
+  String done;
+  auto part = [&](const String& what) { done += (done.length() ? ", " : "") + what; };
+  bool writeFailed = false;
+  if (b.hasSettings) part("settings");
+  if (b.hasBlocklist) {
+    ctx_.blocklist->setUrl(String(b.blocklistUrl.c_str()));  // validated: "" or https://
+    ctx_.blocklist->setTime(b.blocklistHour, b.blocklistMinute);
+    part("blocklist URL and time");
+  }
+  if (b.hasBlockRules) {
+    writeFailed |= !ctx_.blocklist->replaceRules(false, b.blockRules);
+    part(String(b.blockCount) + " block rule" + (b.blockCount == 1 ? "" : "s"));
+  }
+  if (b.hasAllowRules) {
+    writeFailed |= !ctx_.blocklist->replaceRules(true, b.allowRules);
+    part(String(b.allowCount) + " allow rule" + (b.allowCount == 1 ? "" : "s"));
+  }
+  if (b.hasBans) {
+    ctx_.clients->replaceBans(b.bans);
+    part(String(b.bans.size()) + " banned client" + (b.bans.size() == 1 ? "" : "s"));
+  }
+  String msg = done.length() ? "imported " + done : String("the file has nothing to import");
+  if (b.ignoredKeys) msg += " (" + String(b.ignoredKeys) + " unknown entries skipped)";
+  if (writeFailed) msg += "; warning: a rule file could not be saved to flash";
+  ctx_.log->log(LogLevel::kInfo, kTag, "settings import: %s", msg.c_str());
+  if (!b.hasSettings) {
+    sendText(200, msg);
+    return;
+  }
+  *ctx_.config = b.settings;
+  if (config::requiresRestart(before, b.settings)) {
+    sendText(200, msg + "; restarting to apply DNS settings");
+    delay(500);
+    platform::restart("settings imported (dashboard)");
+  }
+  if (ctx_.applyLive) ctx_.applyLive(b.settings);
+  sendText(200, msg);
 }
 
 }  // namespace web

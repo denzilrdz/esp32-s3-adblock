@@ -5,6 +5,7 @@
 
 #include <Arduino.h>
 
+#include <string>
 #include <vector>
 
 #include "blocklist/index.h"
@@ -56,13 +57,17 @@ class BlocklistManager final : public update::IListInstaller {
 
   update::UpdateReport installUpload(const char* path);
   void requestUpdate() { scheduler_.requestNow(); }
-  bool setUrl(const String& url);
+  bool setUrl(const String& url);  // "" = the built-in default list
+  static const char* defaultUrl();
   void setTime(uint8_t hour, uint8_t minute);
 
   // Custom rules (`allow` selects the allowlist). Domains are normalised/validated.
   bool addRule(bool allow, const String& domain);
   bool removeRule(bool allow, const String& domain);
   std::vector<String> rules(bool allow);
+  // Replaces a whole list (settings import): `lines` holds one domain per line. False
+  // if the rule file could not be written (the list in memory is replaced anyway).
+  bool replaceRules(bool allow, const std::string& lines);
 
   BlocklistStatus status();
 
