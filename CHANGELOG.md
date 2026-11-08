@@ -6,6 +6,11 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-11-08
+
+Fixes a false spike in the dashboard's queries-per-minute chart. Update from the
+dashboard (_Device → Check for updates_); settings are kept.
+
 ### Fixed
 
 - The _Queries per minute_ chart no longer shows a false spike (e.g. 1,800/min) right
@@ -424,7 +429,8 @@ password setup.
   flash are required), upstream's 40-bit blocklist format, the Japanese README,
   the C3 web-installer binaries and the C3 SuperMini enclosure.
 
-[Unreleased]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.4.2...HEAD
+[0.4.2]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.2.8...v0.3.0
