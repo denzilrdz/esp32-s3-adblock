@@ -6,6 +6,11 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-11-08
+
+Fixes a restart loop while the router reboots. Update from the dashboard (_Device →
+Check for updates_); settings are kept.
+
 ### Fixed
 
 - A board that has joined its Wi-Fi before no longer ends up restarting over and over
@@ -412,7 +417,8 @@ password setup.
   flash are required), upstream's 40-bit blocklist format, the Japanese README,
   the C3 web-installer binaries and the C3 SuperMini enclosure.
 
-[Unreleased]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.2.8...v0.3.0
 [0.2.8]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.2.7...v0.2.8
