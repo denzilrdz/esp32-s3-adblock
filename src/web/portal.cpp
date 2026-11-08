@@ -149,11 +149,11 @@ bool connectWifi() {
       return true;
     }
     const uint16_t reason = lastDisconnectReason;
-    if (policy.onFailure(util::classifyDisconnect(reason)) == util::JoinAction::kSetupPortal) return false;
-    Serial.printf("WiFi: \"%s\" not joined (reason %u, attempt %d); retrying in 5 s\n", ssid, reason,
-                  attempt);
+    if (policy.onFailure() == util::JoinAction::kSetupPortal) return false;
+    Serial.printf("WiFi: \"%s\" not joined (reason %u, attempt %d); retrying in %lu s\n", ssid, reason,
+                  attempt, static_cast<unsigned long>(policy.retryDelayMs() / 1000));
     WiFi.disconnect();
-    delay(5000);
+    delay(policy.retryDelayMs());
   }
 }
 

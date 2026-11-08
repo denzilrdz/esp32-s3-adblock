@@ -221,53 +221,29 @@ static void test_check_credentials() {
   TEST_ASSERT_EQUAL(name, check(33, "12345678", WifiSecurity::kPsk));
 }
 
-static void test_classify_disconnect_reasons() {
-  using util::JoinFailure;
-  TEST_ASSERT_EQUAL(static_cast<int>(JoinFailure::kNotFound),
-                    static_cast<int>(util::classifyDisconnect(201)));
-  TEST_ASSERT_EQUAL(static_cast<int>(JoinFailure::kNotFound),
-                    static_cast<int>(util::classifyDisconnect(210)));
-  TEST_ASSERT_EQUAL(static_cast<int>(JoinFailure::kPassword), static_cast<int>(util::classifyDisconnect(15)));
-  TEST_ASSERT_EQUAL(static_cast<int>(JoinFailure::kPassword),
-                    static_cast<int>(util::classifyDisconnect(202)));
-  TEST_ASSERT_EQUAL(static_cast<int>(JoinFailure::kPassword),
-                    static_cast<int>(util::classifyDisconnect(204)));
-  TEST_ASSERT_EQUAL(static_cast<int>(JoinFailure::kOther), static_cast<int>(util::classifyDisconnect(200)));
-  TEST_ASSERT_EQUAL(static_cast<int>(JoinFailure::kOther), static_cast<int>(util::classifyDisconnect(0)));
-}
-
 static void test_join_never_joined_opens_portal_at_once() {
-  using util::JoinAction;
-  using util::JoinFailure;
   // New or mistyped credentials: the wrong-password flow is unchanged.
-  for (JoinFailure f : {JoinFailure::kNotFound, JoinFailure::kPassword, JoinFailure::kOther}) {
-    util::JoinRetryPolicy policy(false);
-    TEST_ASSERT_EQUAL(static_cast<int>(JoinAction::kSetupPortal), static_cast<int>(policy.onFailure(f)));
-  }
+  util::JoinRetryPolicy policy(false);
+  TEST_ASSERT_EQUAL(static_cast<int>(util::JoinAction::kSetupPortal), static_cast<int>(policy.onFailure()));
 }
 
-static void test_join_known_network_retries_while_router_is_down() {
-  using util::JoinAction;
-  using util::JoinFailure;
+static void test_join_known_network_never_opens_portal() {
+  // Router down, booting, or a mesh node failing handshakes (reason 15/204) for an hour:
+  // a known network is always retried, never the setup portal and its restart loop.
   util::JoinRetryPolicy policy(true);
-  for (int i = 0; i < 1000; i++) {
-    const JoinFailure f = i % 2 ? JoinFailure::kNotFound : JoinFailure::kOther;
-    TEST_ASSERT_EQUAL(static_cast<int>(JoinAction::kRetry), static_cast<int>(policy.onFailure(f)));
-  }
+  for (int i = 0; i < 1000; i++)
+    TEST_ASSERT_EQUAL(static_cast<int>(util::JoinAction::kRetry), static_cast<int>(policy.onFailure()));
 }
 
-static void test_join_known_network_portal_after_repeated_password_rejections() {
-  using util::JoinAction;
-  using util::JoinFailure;
-  const int retry = static_cast<int>(JoinAction::kRetry), portal = static_cast<int>(JoinAction::kSetupPortal);
+static void test_join_retry_delay_backs_off_to_30s() {
   util::JoinRetryPolicy policy(true);
-  // A stray rejection while the router boots is forgiven once something else happens.
-  TEST_ASSERT_EQUAL(retry, static_cast<int>(policy.onFailure(JoinFailure::kPassword)));
-  TEST_ASSERT_EQUAL(retry, static_cast<int>(policy.onFailure(JoinFailure::kPassword)));
-  TEST_ASSERT_EQUAL(retry, static_cast<int>(policy.onFailure(JoinFailure::kNotFound)));
-  for (int i = 1; i < util::JoinRetryPolicy::kMaxPasswordFailures; i++)
-    TEST_ASSERT_EQUAL(retry, static_cast<int>(policy.onFailure(JoinFailure::kPassword)));
-  TEST_ASSERT_EQUAL(portal, static_cast<int>(policy.onFailure(JoinFailure::kPassword)));
+  const uint32_t expected[] = {5000, 10000, 20000, 30000, 30000};
+  for (uint32_t want : expected) {
+    policy.onFailure();
+    TEST_ASSERT_EQUAL_UINT32(want, policy.retryDelayMs());
+  }
+  for (int i = 0; i < 100; i++) policy.onFailure();
+  TEST_ASSERT_EQUAL_UINT32(util::JoinRetryPolicy::kMaxDelayMs, policy.retryDelayMs());
 }
 
 static void test_send_with_deadline_sends_everything_in_pieces() {
@@ -331,9 +307,8 @@ int main(int, char**) {
   RUN_TEST(test_pick_networks_keeps_strongest_within_cap);
   RUN_TEST(test_signal_bars_thresholds);
   RUN_TEST(test_check_credentials);
-  RUN_TEST(test_classify_disconnect_reasons);
   RUN_TEST(test_join_never_joined_opens_portal_at_once);
-  RUN_TEST(test_join_known_network_retries_while_router_is_down);
-  RUN_TEST(test_join_known_network_portal_after_repeated_password_rejections);
+  RUN_TEST(test_join_known_network_never_opens_portal);
+  RUN_TEST(test_join_retry_delay_backs_off_to_30s);
   return UNITY_END();
 }

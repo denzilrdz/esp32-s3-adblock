@@ -6,6 +6,16 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- A board that has joined its Wi-Fi before no longer ends up restarting over and over
+  while the router comes back from a reboot. Mesh routers (e.g. TP-Link Deco) can show
+  their network before they let devices in, and the failed joins looked like a wrong
+  password, so the board opened its setup network and restarted every few minutes. It
+  now keeps retrying a known network (every 5 s, slowing to every 30 s) and never
+  opens the setup network on its own. To enter a new Wi-Fi password, hold **BOOT**
+  while powering on or use _Forget Wi-Fi_ in the dashboard.
+
 ### Changed
 
 - The link-preview card (installer site and GitHub) also lists backup and restore.
