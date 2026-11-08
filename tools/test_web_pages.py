@@ -105,6 +105,30 @@ class DashboardPageTest(unittest.TestCase):
             self.assertTrue(x["ok"], x)
             self.assertLessEqual(x["n"], max_ + 1)
 
+    @unittest.skipUnless(shutil.which("node"), "node not installed")
+    def test_rates_ignore_samples_taken_a_moment_apart(self):
+        # Regression: a login or button press records a sample right after a poll; 30
+        # queries in that second showed as an 1,800/min spike in the chart.
+        start = self.html.index("function rates(){")
+        fn = self.html[
+            start : self.html.index("return out}", start) + len("return out}")
+        ]
+        js = fn + r"""
+        let hist = [{t: 0, q: 100, b: 10}, {t: 1000, q: 130, b: 12}];
+        const early = rates();
+        for (let k = 1; k <= 10; k++) hist.push({t: 1000 + 4000 * k, q: 130 + 4 * k, b: 12 + k});
+        hist.push({t: 41500, q: 175, b: 23});  // a button press right after a poll
+        console.log(JSON.stringify({early, later: rates()}));"""
+        r = subprocess.run(["node", "-e", js], capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        res = json.loads(r.stdout)
+        self.assertEqual(res["early"], [])
+        later = res["later"]
+        self.assertTrue(later)
+        for p in later:
+            self.assertLess(p["a"] + p["b"], 200, p)  # real rate: about 60 per minute
+        self.assertEqual(sorted(p["t"] for p in later), [p["t"] for p in later])
+
 
 class PortalPageTest(unittest.TestCase):
     def test_works_offline_without_script(self):

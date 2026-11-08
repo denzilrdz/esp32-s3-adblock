@@ -6,6 +6,13 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- The _Queries per minute_ chart no longer shows a false spike (e.g. 1,800/min) right
+  after logging in, pressing a button or a reboot. Two samples taken a moment apart
+  turned a few queries into a huge per-minute rate; rates now need at least 10 s of
+  history.
+
 ## [0.4.1] - 2026-11-08
 
 Fixes a restart loop while the router reboots. Update from the dashboard (_Device →

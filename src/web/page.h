@@ -258,8 +258,11 @@ function record(s){const now=Date.now(),d=s.dns,p=hist[hist.length-1];
  hist.push({t:now,q:d.queries,b:d.blocked});while(hist.length&&now-hist[0].t>WINDOW)hist.shift();
  for(const u of s.upstreams){if(!u.ok&&!u.failed)continue;const a=lat[u.name]||(lat[u.name]=[]);a.push(u.latencyMs);if(a.length>40)a.shift()}
  try{sessionStorage.setItem('ab.hist',JSON.stringify({s:hist,l:lat}))}catch(e){}}
-// Per-minute rates over a ~20 s sliding window (smooths the 4 s polls).
-function rates(){const out=[];for(let i=1;i<hist.length;i++){const j=Math.max(0,i-5),a=hist[j],z=hist[i],dt=(z.t-a.t)/60000;if(dt<=0)continue;
+// Per-minute rates over a ~20 s sliding window (smooths the 4 s polls). Samples also come
+// from button presses and logins, a moment apart: a rate over under 10 s would scale a
+// few queries up to thousands a minute, so those points wait for more history.
+function rates(){const out=[];let j=0;for(let i=1;i<hist.length;i++){const z=hist[i];while(j+1<i&&z.t-hist[j+1].t>=20000)j++;
+ const a=hist[j],dt=(z.t-a.t)/60000;if(dt<10000/60000)continue;
  const q=(z.q-a.q)/dt,b=(z.b-a.b)/dt;out.push({t:z.t,a:Math.max(0,q-b),b:Math.max(0,b)})}return out}
 // Round time ticks (every 5 s, 1 min, 15 min, ...) aligned to local clock time, at most `max` of them.
 function timeTicks(t0,t1,max){const steps=[1,2,5,10,15,30,60,120,300,600,900,1800].map(s=>s*1000),off=-new Date(t0).getTimezoneOffset()*60000;let step=steps[steps.length-1];for(const s of steps)if((t1-t0)/s<=max){step=s;break}const ticks=[];for(let t=Math.ceil((t0+off)/step)*step-off;t<=t1;t+=step)ticks.push(t);return {step,ticks}}
