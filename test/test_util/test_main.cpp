@@ -7,6 +7,7 @@
 #include <cstring>
 #include <string>
 
+#include <vector>
 #include "fakes/fake_clock.h"
 #include "util/bytes.h"
 #include "util/civil_time.h"
@@ -246,6 +247,61 @@ static void test_join_retry_delay_backs_off_to_30s() {
   TEST_ASSERT_EQUAL_UINT32(util::JoinRetryPolicy::kMaxDelayMs, policy.retryDelayMs());
 }
 
+static void test_wifi_supervisor_retries_with_backoff() {
+  // Regression: a running board left offline after a Deco reboot (the core's auto-reconnect
+  // gave up); now it retries 10 s after the drop, 20 s later, then every 30 s.
+  util::WifiSupervisor sup;
+  const int none = static_cast<int>(util::WifiAction::kNone);
+  TEST_ASSERT_FALSE(sup.tick(true, 1000).cameBack);
+  util::WifiStep st = sup.tick(false, 2000);
+  TEST_ASSERT_TRUE(st.wentDown);
+  TEST_ASSERT_EQUAL(none, static_cast<int>(st.action));
+  std::vector<uint32_t> retries;
+  for (uint32_t t = 4000; t <= 2000 + 130000; t += 2000) {
+    st = sup.tick(false, t);
+    if (st.action == util::WifiAction::kReconnect) {
+      TEST_ASSERT_EQUAL_UINT32(retries.size() + 1, st.attempt);
+      retries.push_back(t - 2000);  // ms since the drop
+    } else {
+      TEST_ASSERT_EQUAL(none, static_cast<int>(st.action));
+    }
+  }
+  const std::vector<uint32_t> want = {10000, 30000, 60000, 90000, 120000};
+  TEST_ASSERT_EQUAL(want.size(), retries.size());
+  for (size_t i = 0; i < want.size(); i++) TEST_ASSERT_EQUAL_UINT32(want[i], retries[i]);
+}
+
+static void test_wifi_supervisor_reports_recovery_and_resets() {
+  util::WifiSupervisor sup;
+  sup.tick(false, 0);
+  sup.tick(false, 10000);  // retry 1
+  util::WifiStep st = sup.tick(true, 25000);
+  TEST_ASSERT_TRUE(st.cameBack);
+  TEST_ASSERT_EQUAL_UINT32(25000, st.downMs);
+  TEST_ASSERT_EQUAL_UINT32(1, st.attempt);
+  TEST_ASSERT_FALSE(sup.down());
+  // A new outage starts the backoff again from 10 s.
+  TEST_ASSERT_TRUE(sup.tick(false, 100000).wentDown);
+  TEST_ASSERT_EQUAL(static_cast<int>(util::WifiAction::kNone),
+                    static_cast<int>(sup.tick(false, 108000).action));
+  st = sup.tick(false, 110000);
+  TEST_ASSERT_EQUAL(static_cast<int>(util::WifiAction::kReconnect), static_cast<int>(st.action));
+  TEST_ASSERT_EQUAL_UINT32(1, st.attempt);
+}
+
+static void test_wifi_supervisor_reboots_after_10_min_across_millis_wrap() {
+  util::WifiSupervisor sup;
+  const uint32_t t0 = 0xFFFFFFFFu - 60000;  // millis() wraps during the outage
+  sup.tick(false, t0);
+  util::WifiStep st;
+  for (uint32_t dt = 2000; dt < util::WifiSupervisor::kRebootAfterMs; dt += 2000) {
+    st = sup.tick(false, t0 + dt);
+    TEST_ASSERT_NOT_EQUAL(static_cast<int>(util::WifiAction::kReboot), static_cast<int>(st.action));
+  }
+  st = sup.tick(false, t0 + util::WifiSupervisor::kRebootAfterMs);
+  TEST_ASSERT_EQUAL(static_cast<int>(util::WifiAction::kReboot), static_cast<int>(st.action));
+}
+
 static void test_send_with_deadline_sends_everything_in_pieces() {
   FakeClock clock;
   std::string out;
@@ -310,5 +366,8 @@ int main(int, char**) {
   RUN_TEST(test_join_never_joined_opens_portal_at_once);
   RUN_TEST(test_join_known_network_never_opens_portal);
   RUN_TEST(test_join_retry_delay_backs_off_to_30s);
+  RUN_TEST(test_wifi_supervisor_retries_with_backoff);
+  RUN_TEST(test_wifi_supervisor_reports_recovery_and_resets);
+  RUN_TEST(test_wifi_supervisor_reboots_after_10_min_across_millis_wrap);
   return UNITY_END();
 }

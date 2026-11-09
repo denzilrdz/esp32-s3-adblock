@@ -17,6 +17,7 @@
 #include <esp_sntp.h>
 #include <esp_task_wdt.h>
 #include <esp_timer.h>
+#include <esp_wifi.h>
 
 #include "app/app_policy.h"
 #include "app/blocklist_manager.h"
@@ -38,6 +39,7 @@
 #include "sched/reboot_schedule.h"
 #include "secrets.h"  // first-boot defaults only (copy secrets.example.h); gitignored
 #include "tasks/dns_service.h"
+#include "util/wifi_join.h"
 #include "web/dashboard.h"
 #include "web/portal.h"
 
@@ -288,21 +290,79 @@ void maintainOtaHealth() {
   }
 }
 
-// Reconnects are automatic (WiFi.setAutoReconnect); if the network stays gone for 10
-// minutes, reboot (a never-configured device still gets the setup portal).
-void superviseWifi() {
-  static uint32_t downSince = 0;
-  if (WiFi.status() == WL_CONNECTED) {
-    if (downSince)
-      gLog.log(hal::LogLevel::kInfo, "wifi", "reconnected after %lu s", (millis() - downSince) / 1000);
-    downSince = 0;
-    return;
+// Wi-Fi events, recorded by the Arduino event task and reported by superviseWifi().
+// Reasons 8 (ASSOC_LEAVE) and 36 (STA_LEAVING) come from our own or the core's
+// disconnect before a retry, so they don't hide the router's reason.
+volatile uint16_t gWifiReason = 0;
+volatile uint32_t gWifiDisconnects = 0;
+util::WifiSupervisor gWifiSup;
+
+const char* wifiReasonName(uint16_t r) {
+  switch (r) {  // missing from the Arduino core's name table
+    case 0: return "none";
+    case 210: return "NO_AP_FOUND_W_COMPATIBLE_SECURITY";
+    case 211: return "NO_AP_FOUND_IN_AUTHMODE_THRESHOLD";
+    case 212: return "NO_AP_FOUND_IN_RSSI_THRESHOLD";
+    default: {
+      const char* n = WiFi.STA.disconnectReasonName(static_cast<wifi_err_reason_t>(r));
+      return n && *n ? n : "?";
+    }
   }
-  if (!downSince) {
-    downSince = millis() | 1;
-    gLog.log(hal::LogLevel::kWarn, "wifi", "disconnected");
-  } else if (millis() - downSince > 600000UL) {
-    gLog.log(hal::LogLevel::kError, "wifi", "down for 10 min: rebooting");
+}
+
+// Every event at DEBUG level (Settings -> Log level): the reason the router gave, and
+// which mesh node and channel the board joins. Found the root cause of the v0.4.2
+// offline-after-router-reboot bug (reason 210 while a Deco boots).
+void watchWifiEvents() {
+  WiFi.onEvent(
+      [](arduino_event_id_t, arduino_event_info_t info) {
+        const uint16_t r = info.wifi_sta_disconnected.reason;
+        if (r != WIFI_REASON_ASSOC_LEAVE && r != WIFI_REASON_STA_LEAVING) gWifiReason = r;
+        gWifiDisconnects = gWifiDisconnects + 1;
+        gLog.log(hal::LogLevel::kDebug, "wifi", "event: disconnected, reason %u %s, rssi %d", r,
+                 wifiReasonName(r), info.wifi_sta_disconnected.rssi);
+      },
+      ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
+  WiFi.onEvent(
+      [](arduino_event_id_t, arduino_event_info_t info) {
+        const uint8_t* b = info.wifi_sta_connected.bssid;
+        gLog.log(hal::LogLevel::kDebug, "wifi",
+                 "event: associated with %02x:%02x:%02x:%02x:%02x:%02x, channel %u", b[0], b[1], b[2], b[3],
+                 b[4], b[5], info.wifi_sta_connected.channel);
+      },
+      ARDUINO_EVENT_WIFI_STA_CONNECTED);
+  WiFi.onEvent([](arduino_event_id_t,
+                  arduino_event_info_t) { gLog.log(hal::LogLevel::kDebug, "wifi", "event: got IP"); },
+               ARDUINO_EVENT_WIFI_STA_GOT_IP);
+  WiFi.onEvent([](arduino_event_id_t,
+                  arduino_event_info_t) { gLog.log(hal::LogLevel::kDebug, "wifi", "event: lost IP"); },
+               ARDUINO_EVENT_WIFI_STA_LOST_IP);
+}
+
+// Arduino's auto-reconnect stops for good on some reasons, so we retry ourselves
+// (util::WifiSupervisor: 10 s, 20 s, then every 30 s) and reboot after 10 minutes down
+// (a never-configured device still gets the setup portal).
+void superviseWifi() {
+  const util::WifiStep st = gWifiSup.tick(WiFi.status() == WL_CONNECTED, millis());
+  if (st.wentDown) {
+    gLog.log(hal::LogLevel::kWarn, "wifi", "disconnected (reason %u %s)", gWifiReason,
+             wifiReasonName(gWifiReason));
+  } else if (st.cameBack) {
+    gLog.log(hal::LogLevel::kInfo, "wifi", "reconnected after %lu s (%lu retries, rssi %d)",
+             static_cast<unsigned long>(st.downMs / 1000), static_cast<unsigned long>(st.attempt),
+             static_cast<int>(WiFi.RSSI()));
+  }
+  if (st.action == util::WifiAction::kReconnect) {
+    gLog.log(hal::LogLevel::kInfo, "wifi",
+             "still down after %lu s (last reason %u %s, %lu events): retry %lu",
+             static_cast<unsigned long>(st.downMs / 1000), gWifiReason, wifiReasonName(gWifiReason),
+             static_cast<unsigned long>(gWifiDisconnects), static_cast<unsigned long>(st.attempt));
+    esp_wifi_disconnect();  // stops a stuck attempt; a no-op when idle
+    const esp_err_t err = esp_wifi_connect();
+    if (err != ESP_OK) gLog.log(hal::LogLevel::kWarn, "wifi", "esp_wifi_connect: %s", esp_err_to_name(err));
+  } else if (st.action == util::WifiAction::kReboot) {
+    gLog.log(hal::LogLevel::kError, "wifi", "down for 10 min (last reason %u %s): rebooting", gWifiReason,
+             wifiReasonName(gWifiReason));
     delay(200);
     platform::restart("Wi-Fi down for 10 min");
   }
@@ -403,7 +463,8 @@ void setup() {
   clearWifiIfBootHeld();
   if (!web::connectWifi()) web::runSetupPortal(gServer, kApPrefix, kHostname);  // reboots when done
   Serial.printf("Wi-Fi up: %s\n", WiFi.localIP().toString().c_str());
-  WiFi.setAutoReconnect(true);
+  WiFi.setAutoReconnect(true);  // the core's quick retry; superviseWifi() covers the rest
+  watchWifiEvents();
   if (MDNS.begin(kHostname)) MDNS.addService("http", "tcp", 80);
 
   startDnsService();

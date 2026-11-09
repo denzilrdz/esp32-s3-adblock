@@ -6,6 +6,20 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- After a router reboot the board could stay offline for 10 minutes, until it
+  restarted itself, even though the Wi-Fi was back: while a mesh router (e.g. TP-Link
+  Deco) starts up it reports a reason the Wi-Fi driver doesn't retry. The board now
+  retries on its own (10 s after the drop, 20 s later, then every 30 s) and rejoins
+  within about 30 s of the router being ready. Devices using it for DNS no longer show
+  "no internet" for those minutes.
+
+### Changed
+
+- The log names the reason for each Wi-Fi drop. With _Settings → Log level → debug_ it
+  also shows every disconnect and which mesh node and channel the board joins.
+
 ## [0.4.2] - 2026-11-08
 
 Fixes a false spike in the dashboard's queries-per-minute chart. Update from the

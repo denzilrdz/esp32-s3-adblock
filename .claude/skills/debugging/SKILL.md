@@ -118,10 +118,21 @@ retries hourly (up to 6 times a day) and the old list stays active.
 
 ## Wi-Fi drops
 
-- Our log shows `[W][wifi] disconnected` / `reconnected after N s`; after 10 minutes
-  down the device reboots. For the driver's reason codes, build with
-  `-DCORE_DEBUG_LEVEL=3` (Arduino core log). Common ones: `201 NO_AP_FOUND`,
-  `15 4WAY_HANDSHAKE_TIMEOUT` (wrong password or weak signal), `8 ASSOC_LEAVE`.
+- Our log shows `[W][wifi] disconnected (reason N NAME)`, `still down after N s (last
+reason ...): retry N` (our own retries: 10 s, 20 s, then every 30 s) and
+  `reconnected after N s (N retries, rssi ...)`; after 10 minutes down the device
+  reboots. Set _Settings → Log level_ to **debug** for every driver event: each
+  disconnect with its reason and RSSI, and which BSSID (mesh node) and channel it joins.
+- Common reasons: `201 NO_AP_FOUND` (router off), `210` (network seen, security doesn't
+  match: a Deco reboots in stages), `6 NOT_AUTHED`, `200 BEACON_TIMEOUT`, `15`
+  (handshake timeout: wrong password or weak signal). `8 ASSOC_LEAVE` and
+  `36 STA_LEAVING` are our own or the core's disconnects before a retry.
+- **Arduino's auto-reconnect gives up for good** on reasons outside its list in
+  `WiFi/src/STA.cpp` (`_is_staReconnectableReason`, e.g. 202, 210-212): that's why
+  `superviseWifi()` (`util::WifiSupervisor`) retries on its own. Test reconnects by
+  rebooting the router while recording the UART log (`/dev/cu.usbmodem…` = "USB Single
+  Serial", the CH343; "USB JTAG_serial debug unit" is the native port, which only shows
+  ROM boot lines).
 - RSSI below about −75 dBm causes instability: move the board, or keep the antenna
   end clear of metal.
 - `WiFi.setSleep(false)` is set; power save adds DNS latency.
