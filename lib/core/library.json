@@ -1,6 +1,6 @@
 {
   "name": "core",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "description": "Portable core of esp32-s3-adblock: DNS parsing and replies, blocklist index, DNS rewrites, response cache, upstream fallback chain and scheduler (no Arduino/ESP-IDF dependencies)",
   "keywords": ["dns", "adblock", "dns-sinkhole", "dns-over-tls", "dns-rewrite", "blocklist", "esp32"],
   "license": "MIT",

@@ -6,6 +6,11 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.4.3] - 2026-11-09
+
+Fixes the board staying offline for up to 10 minutes after a router reboot. Update
+from the dashboard (_Device → Check for updates_); settings are kept.
+
 ### Fixed
 
 - After a router reboot the board could stay offline for 10 minutes, until it
@@ -443,7 +448,8 @@ password setup.
   flash are required), upstream's 40-bit blocklist format, the Japanese README,
   the C3 web-installer binaries and the C3 SuperMini enclosure.
 
-[Unreleased]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.4.2...HEAD
+[Unreleased]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.4.3...HEAD
+[0.4.3]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.4.2...v0.4.3
 [0.4.2]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.3.0...v0.4.0
