@@ -295,6 +295,7 @@ void maintainOtaHealth() {
 // disconnect before a retry, so they don't hide the router's reason.
 volatile uint16_t gWifiReason = 0;
 volatile uint32_t gWifiDisconnects = 0;
+volatile bool gWifiAssociated = false;  // joined the access point, with or without an IP
 util::WifiSupervisor gWifiSup;
 
 const char* wifiReasonName(uint16_t r) {
@@ -318,6 +319,7 @@ void watchWifiEvents() {
       [](arduino_event_id_t, arduino_event_info_t info) {
         const uint16_t r = info.wifi_sta_disconnected.reason;
         if (r != WIFI_REASON_ASSOC_LEAVE && r != WIFI_REASON_STA_LEAVING) gWifiReason = r;
+        gWifiAssociated = false;
         gWifiDisconnects = gWifiDisconnects + 1;
         gLog.log(hal::LogLevel::kDebug, "wifi", "event: disconnected, reason %u %s, rssi %d", r,
                  wifiReasonName(r), info.wifi_sta_disconnected.rssi);
@@ -325,6 +327,7 @@ void watchWifiEvents() {
       ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
   WiFi.onEvent(
       [](arduino_event_id_t, arduino_event_info_t info) {
+        gWifiAssociated = true;
         const uint8_t* b = info.wifi_sta_connected.bssid;
         gLog.log(hal::LogLevel::kDebug, "wifi",
                  "event: associated with %02x:%02x:%02x:%02x:%02x:%02x, channel %u", b[0], b[1], b[2], b[3],
@@ -343,7 +346,12 @@ void watchWifiEvents() {
 // (util::WifiSupervisor: 10 s, 20 s, then every 30 s) and reboot after 10 minutes down
 // (a never-configured device still gets the setup portal).
 void superviseWifi() {
-  const util::WifiStep st = gWifiSup.tick(WiFi.status() == WL_CONNECTED, millis());
+  const util::WifiStep st = gWifiSup.tick(WiFi.status() == WL_CONNECTED, gWifiAssociated, millis());
+  static bool heldLogged = false;
+  if (st.heldForDhcp && !heldLogged) {
+    gLog.log(hal::LogLevel::kInfo, "wifi", "joined, waiting for an address (DHCP) before retrying");
+  }
+  heldLogged = st.heldForDhcp;
   if (st.wentDown) {
     gLog.log(hal::LogLevel::kWarn, "wifi", "disconnected (reason %u %s)", gWifiReason,
              wifiReasonName(gWifiReason));

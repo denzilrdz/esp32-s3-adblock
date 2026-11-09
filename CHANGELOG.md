@@ -6,6 +6,13 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- A slow router no longer cuts off the board's own reconnect. A TP-Link Deco that is
+  still starting took up to 25 s to hand out an address; the board now waits up to
+  30 s for it instead of restarting the join. At boot every join attempt gets 30 s
+  (it was 15 s after the first).
+
 ## [0.4.3] - 2026-11-09
 
 Fixes the board staying offline for up to 10 minutes after a router reboot. Update

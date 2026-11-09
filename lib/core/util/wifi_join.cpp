@@ -15,8 +15,10 @@ JoinAction JoinRetryPolicy::onFailure() {
 
 namespace util {
 
-WifiStep WifiSupervisor::tick(bool connected, uint32_t nowMs) {
+WifiStep WifiSupervisor::tick(bool connected, bool associated, uint32_t nowMs) {
   WifiStep st;
+  if (associated && !associated_) associatedSince_ = nowMs;
+  associated_ = associated;
   if (connected) {
     if (down_) {
       st.cameBack = true;
@@ -39,6 +41,10 @@ WifiStep WifiSupervisor::tick(bool connected, uint32_t nowMs) {
   if (st.downMs >= kRebootAfterMs) {
     st.action = WifiAction::kReboot;
   } else if (static_cast<int32_t>(nowMs - nextAt_) >= 0) {
+    if (associated && nowMs - associatedSince_ < kDhcpGraceMs) {
+      st.heldForDhcp = true;  // stays due: retried as soon as the grace runs out
+      return st;
+    }
     st.action = WifiAction::kReconnect;
     st.attempt = ++attempts_;
     delay_ = delay_ * 2 < kMaxRetryMs ? delay_ * 2 : kMaxRetryMs;

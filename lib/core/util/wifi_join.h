@@ -22,6 +22,9 @@ class JoinRetryPolicy {
  public:
   static constexpr uint32_t kFirstDelayMs = 5000;
   static constexpr uint32_t kMaxDelayMs = 30000;
+  // How long each attempt may take, joining plus DHCP: a mesh router that is still
+  // starting took 16 s to hand out an address, so a shorter limit cut working joins off.
+  static constexpr uint32_t kAttemptMs = 30000;
 
   explicit JoinRetryPolicy(bool joinedBefore) : joinedBefore_(joinedBefore) {}
 
@@ -45,15 +48,18 @@ namespace util {
 // disconnect reasons (e.g. 202 AUTH_FAIL, 210-212 security mismatch), which a mesh router
 // can report while it reboots, leaving the board offline until the 10-minute reboot.
 // This drives our own reconnect attempts: the first 10 s after the drop, then 20 s later,
-// then every 30 s, and asks for a reboot after 10 minutes down as a last resort.
+// then every 30 s, and asks for a reboot after 10 minutes down as a last resort. A retry
+// is held back while the board is associated and waiting for DHCP (up to kDhcpGraceMs
+// from the association): restarting the join then would only throw that progress away.
 enum class WifiAction : uint8_t { kNone, kReconnect, kReboot };
 
 struct WifiStep {
   WifiAction action = WifiAction::kNone;
-  bool wentDown = false;  // first tick without a connection
-  bool cameBack = false;  // first tick connected again
-  uint32_t downMs = 0;    // how long it has been (or was) down
-  uint32_t attempt = 0;   // reconnect attempt number (with kReconnect)
+  bool wentDown = false;     // first tick without a connection
+  bool cameBack = false;     // first tick connected again
+  bool heldForDhcp = false;  // a retry was due but the board is waiting for an address
+  uint32_t downMs = 0;       // how long it has been (or was) down
+  uint32_t attempt = 0;      // reconnect attempt number (with kReconnect)
 };
 
 class WifiSupervisor {
@@ -61,9 +67,11 @@ class WifiSupervisor {
   static constexpr uint32_t kFirstRetryMs = 10000;
   static constexpr uint32_t kMaxRetryMs = 30000;
   static constexpr uint32_t kRebootAfterMs = 600000;
+  static constexpr uint32_t kDhcpGraceMs = 30000;
 
-  // Called every couple of seconds with the current link state. Wrap-safe millis().
-  WifiStep tick(bool connected, uint32_t nowMs);
+  // Called every couple of seconds. `connected` = has an IP; `associated` = joined the
+  // access point (with or without an IP yet). Wrap-safe millis().
+  WifiStep tick(bool connected, bool associated, uint32_t nowMs);
   bool down() const { return down_; }
 
  private:
@@ -72,6 +80,8 @@ class WifiSupervisor {
   uint32_t nextAt_ = 0;
   uint32_t delay_ = kFirstRetryMs;
   uint32_t attempts_ = 0;
+  bool associated_ = false;
+  uint32_t associatedSince_ = 0;
 };
 
 }  // namespace util

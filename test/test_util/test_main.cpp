@@ -252,13 +252,13 @@ static void test_wifi_supervisor_retries_with_backoff() {
   // gave up); now it retries 10 s after the drop, 20 s later, then every 30 s.
   util::WifiSupervisor sup;
   const int none = static_cast<int>(util::WifiAction::kNone);
-  TEST_ASSERT_FALSE(sup.tick(true, 1000).cameBack);
-  util::WifiStep st = sup.tick(false, 2000);
+  TEST_ASSERT_FALSE(sup.tick(true, true, 1000).cameBack);
+  util::WifiStep st = sup.tick(false, false, 2000);
   TEST_ASSERT_TRUE(st.wentDown);
   TEST_ASSERT_EQUAL(none, static_cast<int>(st.action));
   std::vector<uint32_t> retries;
   for (uint32_t t = 4000; t <= 2000 + 130000; t += 2000) {
-    st = sup.tick(false, t);
+    st = sup.tick(false, false, t);
     if (st.action == util::WifiAction::kReconnect) {
       TEST_ASSERT_EQUAL_UINT32(retries.size() + 1, st.attempt);
       retries.push_back(t - 2000);  // ms since the drop
@@ -273,18 +273,18 @@ static void test_wifi_supervisor_retries_with_backoff() {
 
 static void test_wifi_supervisor_reports_recovery_and_resets() {
   util::WifiSupervisor sup;
-  sup.tick(false, 0);
-  sup.tick(false, 10000);  // retry 1
-  util::WifiStep st = sup.tick(true, 25000);
+  sup.tick(false, false, 0);
+  sup.tick(false, false, 10000);  // retry 1
+  util::WifiStep st = sup.tick(true, true, 25000);
   TEST_ASSERT_TRUE(st.cameBack);
   TEST_ASSERT_EQUAL_UINT32(25000, st.downMs);
   TEST_ASSERT_EQUAL_UINT32(1, st.attempt);
   TEST_ASSERT_FALSE(sup.down());
   // A new outage starts the backoff again from 10 s.
-  TEST_ASSERT_TRUE(sup.tick(false, 100000).wentDown);
+  TEST_ASSERT_TRUE(sup.tick(false, false, 100000).wentDown);
   TEST_ASSERT_EQUAL(static_cast<int>(util::WifiAction::kNone),
-                    static_cast<int>(sup.tick(false, 108000).action));
-  st = sup.tick(false, 110000);
+                    static_cast<int>(sup.tick(false, false, 108000).action));
+  st = sup.tick(false, false, 110000);
   TEST_ASSERT_EQUAL(static_cast<int>(util::WifiAction::kReconnect), static_cast<int>(st.action));
   TEST_ASSERT_EQUAL_UINT32(1, st.attempt);
 }
@@ -292,13 +292,58 @@ static void test_wifi_supervisor_reports_recovery_and_resets() {
 static void test_wifi_supervisor_reboots_after_10_min_across_millis_wrap() {
   util::WifiSupervisor sup;
   const uint32_t t0 = 0xFFFFFFFFu - 60000;  // millis() wraps during the outage
-  sup.tick(false, t0);
+  sup.tick(false, false, t0);
   util::WifiStep st;
   for (uint32_t dt = 2000; dt < util::WifiSupervisor::kRebootAfterMs; dt += 2000) {
-    st = sup.tick(false, t0 + dt);
+    st = sup.tick(false, false, t0 + dt);
     TEST_ASSERT_NOT_EQUAL(static_cast<int>(util::WifiAction::kReboot), static_cast<int>(st.action));
   }
-  st = sup.tick(false, t0 + util::WifiSupervisor::kRebootAfterMs);
+  st = sup.tick(false, false, t0 + util::WifiSupervisor::kRebootAfterMs);
+  TEST_ASSERT_EQUAL(static_cast<int>(util::WifiAction::kReboot), static_cast<int>(st.action));
+}
+
+static void test_wifi_supervisor_waits_for_dhcp_before_retrying() {
+  // A mesh router that is still starting took 16 s to hand out an address: a retry
+  // during that wait would restart the join and throw the progress away.
+  util::WifiSupervisor sup;
+  const int none = static_cast<int>(util::WifiAction::kNone);
+  const int retry = static_cast<int>(util::WifiAction::kReconnect);
+  sup.tick(false, false, 0);                        // dropped
+  util::WifiStep st = sup.tick(false, true, 8000);  // associated, no IP yet
+  TEST_ASSERT_EQUAL(none, static_cast<int>(st.action));
+  st = sup.tick(false, true, 10000);  // retry due, held: 2 s into DHCP
+  TEST_ASSERT_TRUE(st.heldForDhcp);
+  TEST_ASSERT_EQUAL(none, static_cast<int>(st.action));
+  st = sup.tick(false, true, 36000);  // still within 30 s of the association
+  TEST_ASSERT_TRUE(st.heldForDhcp);
+  st = sup.tick(false, true, 38000);  // 30 s without an address: retry now
+  TEST_ASSERT_FALSE(st.heldForDhcp);
+  TEST_ASSERT_EQUAL(retry, static_cast<int>(st.action));
+  TEST_ASSERT_EQUAL_UINT32(1, st.attempt);
+}
+
+static void test_wifi_supervisor_dhcp_grace_restarts_with_each_association() {
+  util::WifiSupervisor sup;
+  const int retry = static_cast<int>(util::WifiAction::kReconnect);
+  sup.tick(false, false, 0);
+  sup.tick(false, true, 2000);   // associated...
+  sup.tick(false, false, 6000);  // ...and dropped again before DHCP finished
+  util::WifiStep st = sup.tick(false, false, 10000);
+  TEST_ASSERT_EQUAL(retry, static_cast<int>(st.action));  // not associated: no hold
+  sup.tick(false, true, 50000);                           // a new association gets its own 30 s
+  st = sup.tick(false, true, 72000);
+  TEST_ASSERT_TRUE(st.heldForDhcp);
+  st = sup.tick(false, true, 80000);
+  TEST_ASSERT_EQUAL(retry, static_cast<int>(st.action));
+}
+
+static void test_wifi_supervisor_dhcp_hold_never_blocks_the_reboot() {
+  util::WifiSupervisor sup;
+  sup.tick(false, false, 0);
+  util::WifiStep st;
+  // Associated but never given an address: retries every 30 s, then the reboot.
+  for (uint32_t t = 2000; t < util::WifiSupervisor::kRebootAfterMs; t += 2000) st = sup.tick(false, true, t);
+  st = sup.tick(false, true, util::WifiSupervisor::kRebootAfterMs);
   TEST_ASSERT_EQUAL(static_cast<int>(util::WifiAction::kReboot), static_cast<int>(st.action));
 }
 
@@ -369,5 +414,8 @@ int main(int, char**) {
   RUN_TEST(test_wifi_supervisor_retries_with_backoff);
   RUN_TEST(test_wifi_supervisor_reports_recovery_and_resets);
   RUN_TEST(test_wifi_supervisor_reboots_after_10_min_across_millis_wrap);
+  RUN_TEST(test_wifi_supervisor_waits_for_dhcp_before_retrying);
+  RUN_TEST(test_wifi_supervisor_dhcp_grace_restarts_with_each_association);
+  RUN_TEST(test_wifi_supervisor_dhcp_hold_never_blocks_the_reboot);
   return UNITY_END();
 }

@@ -134,7 +134,7 @@ bool connectWifi() {
   for (int attempt = 1;; attempt++) {
     lastDisconnectReason = 0;
     WiFi.begin(ssid, pass);
-    const uint32_t t0 = millis(), limit = attempt == 1 ? 30000 : 15000;
+    const uint32_t t0 = millis(), limit = util::JoinRetryPolicy::kAttemptMs;
     while (WiFi.status() != WL_CONNECTED && millis() - t0 < limit) {
       delay(250);
       Serial.print(".");
