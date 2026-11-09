@@ -6,6 +6,11 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.4.4] - 2026-11-09
+
+Makes the board's reconnect after a router reboot more reliable with slow routers.
+Update from the dashboard (_Device → Check for updates_); settings are kept.
+
 ### Fixed
 
 - A slow router no longer cuts off the board's own reconnect. A TP-Link Deco that is
@@ -455,7 +460,8 @@ password setup.
   flash are required), upstream's 40-bit blocklist format, the Japanese README,
   the C3 web-installer binaries and the C3 SuperMini enclosure.
 
-[Unreleased]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.4.3...HEAD
+[Unreleased]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.4.4...HEAD
+[0.4.4]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.4.3...v0.4.4
 [0.4.3]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.4.2...v0.4.3
 [0.4.2]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.4.0...v0.4.1
