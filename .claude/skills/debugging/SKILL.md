@@ -119,7 +119,8 @@ retries hourly (up to 6 times a day) and the old list stays active.
 ## Wi-Fi drops
 
 - Our log shows `[W][wifi] disconnected (reason N NAME)`, `still down after N s (last
-reason ...): retry N` (our own retries: 10 s, 20 s, then every 30 s) and
+reason ...): retry N` (our own retries: 10 s, 20 s, then every 30 s; a due retry waits
+  up to 30 s while associated and waiting for DHCP: `joined, waiting for an address`) and
   `reconnected after N s (N retries, rssi ...)`; after 10 minutes down the device
   reboots. Set _Settings → Log level_ to **debug** for every driver event: each
   disconnect with its reason and RSSI, and which BSSID (mesh node) and channel it joins.
