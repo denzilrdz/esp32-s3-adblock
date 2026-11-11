@@ -6,6 +6,11 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-11
+
+Adds a one-click test of every upstream DNS server. Update from the dashboard
+(_Device → Check for updates_); settings are kept.
+
 ### Added
 
 - _Test all upstreams_ under Upstream DNS on the dashboard: looks up `example.com`
@@ -473,7 +478,8 @@ password setup.
   flash are required), upstream's 40-bit blocklist format, the Japanese README,
   the C3 web-installer binaries and the C3 SuperMini enclosure.
 
-[Unreleased]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.4.4...HEAD
+[Unreleased]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.4.4...v0.5.0
 [0.4.4]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.4.3...v0.4.4
 [0.4.3]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.4.2...v0.4.3
 [0.4.2]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.4.1...v0.4.2
