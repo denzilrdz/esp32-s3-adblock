@@ -75,6 +75,7 @@ struct DnsStats {
 struct UpstreamSnapshot {
   size_t count = 0;
   bool plainFallback = false;
+  bool testing = false;  // an upstream test (startUpstreamTest) is running
   uint32_t totalOk = 0;
   upstream::UpstreamStatus status[upstream::Forwarder::kMaxUpstreams];
 };
@@ -93,6 +94,9 @@ class DnsService : private upstream::IForwarderSink {
   UpstreamSnapshot upstreams() const;
   cache::CacheStats cacheStats();
   void flushCache();
+  // Asks dns_up to test every upstream once (results in upstreams().status[i].probe).
+  // False if a test is already running. Any task.
+  bool startUpstreamTest();
 
  private:
   enum class Origin : uint8_t { kUdp, kTcp };
@@ -209,6 +213,7 @@ class DnsService : private upstream::IForwarderSink {
   mutable platform::Mutex snapshotMutex_;
   UpstreamSnapshot snapshot_;
   uint64_t lastSnapshotMs_ = 0;
+  std::atomic<bool> testRequested_{false};
 
   // Per-task buffers (each touched by one task only).
   uint8_t udpRx_[dns::kMaxUdpPayload + 256];

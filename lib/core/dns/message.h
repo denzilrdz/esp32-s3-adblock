@@ -102,6 +102,11 @@ enum class ParseStatus {
 // fields that could be parsed are filled so an error reply can be built.
 ParseStatus parseQuery(const uint8_t* pkt, size_t len, Query& out);
 
+// Builds the query a client would send for `name` (dotted text): ID 0, RD set, class
+// IN, no EDNS. For the device's own lookups, e.g. the upstream test. False if `name`
+// isn't a valid domain name.
+bool makeSelfQuery(const char* name, uint16_t qtype, Query& out);
+
 // ---------------------------------------------------------------------------
 // Building replies we synthesize (blocked, local, errors).
 

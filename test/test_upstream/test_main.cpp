@@ -810,6 +810,137 @@ static void test_tls_stage_connect_errors_are_logged() {
   TEST_ASSERT_EQUAL(1, logger.count(hal::LogLevel::kWarn, "cf-dot: TLS connect failed (error -0x7f00)"));
 }
 
+// --- upstream test (dashboard "Test upstreams") ------------------------------------
+
+using upstream::ProbeResult;
+
+static int probeOf(size_t i) {
+  return static_cast<int>(fwd->upstreamStatus(i).probe.result);
+}
+static int stateOf(size_t i) {
+  return static_cast<int>(fwd->upstreamStatus(i).state);
+}
+
+static void runProbe(uint64_t stepMs = 100) {
+  for (int i = 0; i < 400 && fwd->probing(); i++) {
+    fwd->poll(0);
+    fakeClock.advanceMs(stepMs);
+  }
+  TEST_ASSERT_FALSE(fwd->probing());
+}
+
+static void test_probe_tests_every_upstream_including_plain_with_fallback_off() {
+  upstream::ForwarderConfig cfg;
+  cfg.allowPlainFallback = false;
+  build(cfg);
+  TEST_ASSERT_EQUAL(static_cast<int>(ProbeResult::kNone), probeOf(0));
+  TEST_ASSERT_TRUE(fwd->startProbe(query("example.com")));
+  TEST_ASSERT_TRUE(fwd->probing());
+  for (size_t i = 0; i < 4; i++) TEST_ASSERT_EQUAL(static_cast<int>(ProbeResult::kPending), probeOf(i));
+  runProbe();
+  for (size_t i = 0; i < 4; i++) TEST_ASSERT_EQUAL(static_cast<int>(ProbeResult::kOk), probeOf(i));
+  for (FakeTransport* t : {dot1.get(), dot2.get(), doh.get(), plain.get()})
+    TEST_ASSERT_EQUAL(1, t->sent.size());
+  TEST_ASSERT_TRUE(sink.results.empty());  // probes never reach the client side
+  // A test isn't traffic: standbys stay standby, with no OK count or latency.
+  for (size_t i = 0; i < 4; i++) {
+    TEST_ASSERT_EQUAL(static_cast<int>(HealthState::kUnknown), stateOf(i));
+    TEST_ASSERT_EQUAL_UINT32(0, fwd->upstreamStatus(i).stats.ok);
+  }
+  TEST_ASSERT_FALSE(fwd->plainFallbackActive());
+}
+
+static void test_probe_clears_a_stale_down_state() {
+  // Found on hardware: after a short outage the standby upstreams showed "down" for
+  // days, because nothing uses a standby while the primary works.
+  downAll(*dot1);
+  downAll(*dot2);
+  for (int i = 0; i < 3; i++) {
+    fwd->submit(i, query("q" + std::to_string(i) + ".example"));
+    fwd->poll(0);
+  }
+  TEST_ASSERT_EQUAL(static_cast<int>(HealthState::kDown), stateOf(1));
+  dot1->mode = FakeTransport::Mode::kAnswer;
+  dot2->mode = FakeTransport::Mode::kAnswer;
+  TEST_ASSERT_TRUE(fwd->startProbe(query("example.com")));
+  runProbe();
+  TEST_ASSERT_EQUAL(static_cast<int>(ProbeResult::kOk), probeOf(1));
+  // Back to standby, usable again; its failure history is kept.
+  TEST_ASSERT_EQUAL(static_cast<int>(HealthState::kUnknown), stateOf(1));
+  TEST_ASSERT_EQUAL_UINT32(0, fwd->upstreamStatus(1).stats.ok);
+  TEST_ASSERT_TRUE(fwd->upstreamStatus(1).stats.failed > 0);
+}
+
+static void test_probe_leaves_the_active_upstream_up_and_its_counters_alone() {
+  fwd->submit(1, query("a.example"));
+  fwd->poll(0);
+  TEST_ASSERT_EQUAL(static_cast<int>(HealthState::kUp), stateOf(0));
+  const uint32_t ok = fwd->upstreamStatus(0).stats.ok;
+  TEST_ASSERT_TRUE(fwd->startProbe(query("example.com")));
+  runProbe();
+  TEST_ASSERT_EQUAL(static_cast<int>(HealthState::kUp), stateOf(0));
+  TEST_ASSERT_EQUAL_UINT32(ok, fwd->upstreamStatus(0).stats.ok);
+  TEST_ASSERT_EQUAL(static_cast<int>(HealthState::kUnknown), stateOf(1));
+}
+
+static void test_probe_failures_are_reported_without_changing_health() {
+  dot2->mode = FakeTransport::Mode::kRefuseConnect;
+  dot2->tlsError = -0x2700;  // certificate verification failed
+  doh->mode = FakeTransport::Mode::kSilent;
+  plain->mode = FakeTransport::Mode::kFailSend;
+  TEST_ASSERT_TRUE(fwd->startProbe(query("example.com")));
+  runProbe();
+  TEST_ASSERT_EQUAL(static_cast<int>(ProbeResult::kOk), probeOf(0));
+  TEST_ASSERT_EQUAL(static_cast<int>(ProbeResult::kConnectFailed), probeOf(1));
+  TEST_ASSERT_EQUAL_INT32(-0x2700, fwd->upstreamStatus(1).probe.tlsError);
+  TEST_ASSERT_EQUAL(static_cast<int>(ProbeResult::kTimeout), probeOf(2));
+  TEST_ASSERT_EQUAL(static_cast<int>(ProbeResult::kSendFailed), probeOf(3));
+  for (size_t i = 1; i < 4; i++) {
+    TEST_ASSERT_EQUAL(static_cast<int>(HealthState::kUnknown), stateOf(i));
+    TEST_ASSERT_EQUAL_UINT32(0, fwd->upstreamStatus(i).stats.failed);
+  }
+}
+
+static void test_probe_closed_connection_is_reported() {
+  dot2->mode = FakeTransport::Mode::kCloseAfterSend;
+  TEST_ASSERT_TRUE(fwd->startProbe(query("example.com")));
+  runProbe();
+  TEST_ASSERT_EQUAL(static_cast<int>(ProbeResult::kClosed), probeOf(1));
+  TEST_ASSERT_EQUAL(static_cast<int>(HealthState::kUnknown), stateOf(1));
+}
+
+static void test_probe_runs_alongside_client_queries_and_never_takes_their_slot() {
+  dot1->holdReplies = true;
+  for (uint32_t i = 0; i < Forwarder::kMaxInFlight; i++)
+    TEST_ASSERT_TRUE(fwd->submit(i, query("c" + std::to_string(i) + ".example")));
+  TEST_ASSERT_TRUE(fwd->startProbe(query("example.com")));
+  TEST_ASSERT_FALSE(fwd->startProbe(query("example.com")));  // one run at a time
+  fwd->poll(0);
+  TEST_ASSERT_TRUE(fwd->probing());
+  dot1->release();
+  dot1->holdReplies = false;
+  runProbe(10);
+  TEST_ASSERT_EQUAL(Forwarder::kMaxInFlight, sink.results.size());
+  for (const Result& r : sink.results) TEST_ASSERT_TRUE(r.ok);
+  for (size_t i = 0; i < 4; i++) TEST_ASSERT_EQUAL(static_cast<int>(ProbeResult::kOk), probeOf(i));
+}
+
+static void test_probe_respects_the_tls_connection_limit() {
+  TEST_ASSERT_TRUE(fwd->startProbe(query("example.com")));
+  for (int i = 0; i < 400 && fwd->probing(); i++) {
+    fwd->poll(0);
+    TEST_ASSERT_TRUE(tlsConnected() <= 2);
+    fakeClock.advanceMs(100);
+  }
+  TEST_ASSERT_EQUAL(static_cast<int>(ProbeResult::kOk), probeOf(2));
+}
+
+static void test_probe_result_names() {
+  TEST_ASSERT_EQUAL_STRING("ok", upstream::probeResultName(ProbeResult::kOk));
+  TEST_ASSERT_EQUAL_STRING("connect failed", upstream::probeResultName(ProbeResult::kConnectFailed));
+  TEST_ASSERT_EQUAL_STRING("timeout", upstream::probeResultName(ProbeResult::kTimeout));
+}
+
 int main(int, char**) {
   UNITY_BEGIN();
   RUN_TEST(test_health_goes_down_after_three_failures_and_backs_off);
@@ -848,5 +979,13 @@ int main(int, char**) {
   RUN_TEST(test_tls_connections_are_capped_closing_the_idlest);
   RUN_TEST(test_no_new_tls_connection_while_every_open_one_is_busy);
   RUN_TEST(test_tls_stage_connect_errors_are_logged);
+  RUN_TEST(test_probe_tests_every_upstream_including_plain_with_fallback_off);
+  RUN_TEST(test_probe_clears_a_stale_down_state);
+  RUN_TEST(test_probe_leaves_the_active_upstream_up_and_its_counters_alone);
+  RUN_TEST(test_probe_failures_are_reported_without_changing_health);
+  RUN_TEST(test_probe_closed_connection_is_reported);
+  RUN_TEST(test_probe_runs_alongside_client_queries_and_never_takes_their_slot);
+  RUN_TEST(test_probe_respects_the_tls_connection_limit);
+  RUN_TEST(test_probe_result_names);
   return UNITY_END();
 }

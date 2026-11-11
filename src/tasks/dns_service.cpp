@@ -28,6 +28,9 @@ constexpr uint32_t kTcpWriteTimeoutMs = 500;   // a client that doesn't read is 
 constexpr uint32_t kTcpPartialFrameMs = 2000;  // slow-loris: a frame must arrive quickly
 constexpr uint8_t kTcpMaxInFlightPerConn = 4;  // pipelined queries awaiting upstream
 constexpr uint8_t kTcpMaxInFlightTotal = 8;    // share of the pending pool for all TCP
+// Looked up through each upstream by startUpstreamTest(): reserved by RFC 2606, so it
+// always resolves and is never on a blocklist.
+constexpr const char* kUpstreamTestName = "example.com";
 
 // Only answer the LAN: RFC 1918, loopback and link-local sources. Prevents the
 // device from becoming an open resolver if port 53 is ever exposed.
@@ -530,6 +533,7 @@ void DnsService::publishSnapshot() {
   UpstreamSnapshot s;
   s.count = forwarder_->upstreamCount();
   s.plainFallback = forwarder_->plainFallbackActive();
+  s.testing = forwarder_->probing() || testRequested_.load();
   for (size_t i = 0; i < s.count; i++) {
     s.status[i] = forwarder_->upstreamStatus(i);
     s.totalOk += s.status[i].stats.ok;
@@ -543,7 +547,14 @@ void DnsService::upstreamLoop() {
   while (true) {
     // Block on new work when idle; just poll the queue while queries are in flight.
     uint16_t idx;
-    TickType_t wait = forwarder_->inFlight() > 0 ? 0 : pdMS_TO_TICKS(1000);
+    if (testRequested_.load()) {
+      dns::Query q;
+      if (dns::makeSelfQuery(kUpstreamTestName, dns::kTypeA, q)) forwarder_->startProbe(q);
+      testRequested_.store(false);
+      publishSnapshot();  // show "testing" right away
+    }
+    const bool busy = forwarder_->inFlight() > 0 || forwarder_->probing();
+    TickType_t wait = busy ? 0 : pdMS_TO_TICKS(1000);
     while (xQueueReceive(upQ_, &idx, wait) == pdTRUE) {
       wait = 0;
       if (!forwarder_->submit(idx, pool_[idx].q)) onFailure(idx, pool_[idx].q);
@@ -554,7 +565,7 @@ void DnsService::upstreamLoop() {
       esp_task_wdt_reset();
       if (cfg_.liveness) cfg_.liveness->beat(cfg_.livenessId);
     }
-    forwarder_->poll(forwarder_->inFlight() > 0 ? 10 : 0);
+    forwarder_->poll(forwarder_->inFlight() > 0 || forwarder_->probing() ? 10 : 0);
     esp_task_wdt_reset();
     if (cfg_.liveness) cfg_.liveness->beat(cfg_.livenessId);
 #ifdef ADBLOCK_SELFTEST
@@ -595,12 +606,22 @@ DnsStats DnsService::stats() const {
 
 UpstreamSnapshot DnsService::upstreams() const {
   platform::LockGuard g(snapshotMutex_);
-  return snapshot_;
+  UpstreamSnapshot s = snapshot_;
+  // The snapshot can be ~1 s old: a test asked for just now is already "testing".
+  if (testRequested_.load()) s.testing = true;
+  return s;
 }
 
 cache::CacheStats DnsService::cacheStats() {
   platform::LockGuard g(cacheMutex_);
   return cache_->stats();
+}
+
+bool DnsService::startUpstreamTest() {
+  if (!running_) return false;
+  if (upstreams().testing) return false;
+  bool expected = false;
+  return testRequested_.compare_exchange_strong(expected, true);
 }
 
 void DnsService::flushCache() {

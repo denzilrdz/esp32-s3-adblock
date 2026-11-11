@@ -254,6 +254,13 @@ void Dashboard::begin() {
     ctx_.dns->flushCache();
     sendText(200, "cache flushed");
   });
+  s.on("/api/upstreams/test", HTTP_POST, [this]() {
+    if (!guard(Access::kAuth)) return;
+    if (ctx_.dns->startUpstreamTest())
+      sendText(200, "testing every upstream; results appear under Upstream DNS");
+    else
+      sendText(409, "an upstream test is already running");
+  });
   s.on("/api/wifi/forget", HTTP_POST, [this]() {
     if (!guard(Access::kAuth)) return;
     sendText(200, "Wi-Fi forgotten; rebooting into the setup portal");
@@ -348,13 +355,20 @@ void Dashboard::handleStats() {
        ",\"cacheHits\":" + String(d.cacheHits) + ",\"forwarded\":" + String(d.forwarded) +
        ",\"servfail\":" + String(d.servfail) + ",\"rewritten\":" + String(d.rewritten) +
        ",\"cacheEntries\":" + String(cs.entries) + "}";
-  j += ",\"plainFallback\":" + String(b(us.plainFallback)) + ",\"upstreams\":[";
+  j += ",\"plainFallback\":" + String(b(us.plainFallback)) + ",\"upstreamTest\":" + b(us.testing) +
+       ",\"upstreams\":[";
   for (size_t i = 0; i < us.count; i++) {
     const upstream::UpstreamStatus& u = us.status[i];
     if (i) j += ",";
     j += "{\"name\":" + q(u.name) + ",\"encrypted\":" + b(u.authenticated) +
          ",\"state\":" + q(upstream::healthStateName(u.state)) + ",\"ok\":" + String(u.stats.ok) +
-         ",\"failed\":" + String(u.stats.failed) + ",\"latencyMs\":" + String(u.stats.lastLatencyMs) + "}";
+         ",\"failed\":" + String(u.stats.failed) + ",\"latencyMs\":" + String(u.stats.lastLatencyMs);
+    if (u.probe.result != upstream::ProbeResult::kNone) {
+      j += ",\"test\":{\"result\":" + q(upstream::probeResultName(u.probe.result)) +
+           ",\"ms\":" + String(u.probe.latencyMs) + ",\"rcode\":" + String(u.probe.rcode) +
+           ",\"tlsError\":" + String(u.probe.tlsError) + "}";
+    }
+    j += "}";
   }
   j += "],\"blocklist\":{\"entries\":" + String(bl.entries) + ",\"inMemory\":" + b(bl.inMemory) +
        ",\"built\":" + q(formatTime(bl.buildTime)) + ",\"lastAttempt\":" + q(formatTime(bl.lastAttempt)) +

@@ -134,9 +134,10 @@ details summary{cursor:pointer;color:var(--accent);font-size:12.5px;margin-top:8
 <div class=card><h3>Queries per minute</h3><div class=legend id=qLegend></div><div class=chart id=qChart tabindex=0 role=img aria-label="Queries per minute, allowed and blocked"><div id=tip></div></div>
 <div class=hint>Live, from this browser's view since the page opened (last 30 min). Counters restart when the device reboots.</div></div>
 <div class=card><h3>How queries were answered</h3><div class=hint>Since boot</div><div class=stack id=ansBar></div><div class=blist id=ansList></div></div></div>
-<h2>Upstream DNS</h2><div class=card><div class=tw><table id=ups><thead><tr><th>Upstream</th><th>Transport</th><th>State</th><th class=n>OK</th><th class=n>Failed</th><th class=n>Latency</th><th>Trend</th></tr></thead><tbody></tbody></table></div>
+<h2>Upstream DNS</h2><div class=card><div class=tw><table id=ups><thead><tr><th>Upstream</th><th>Transport</th><th>State</th><th class=n>OK</th><th class=n>Failed</th><th class=n>Latency</th><th>Trend</th><th>Last test</th></tr></thead><tbody></tbody></table></div>
 <details id=upsMore hidden><summary></summary><div class=tw><table id=ups2><tbody></tbody></table></div></details>
-<div class=hint style=margin-top:6px>Standby upstreams take over automatically when the active one fails.</div></div>
+<div class=hint style=margin-top:6px>Standby upstreams take over automatically when the active one fails.</div>
+<div class=row style=margin-top:10px><button id=upTest>Test all upstreams</button><span class=hint>Looks up example.com through every upstream once, standby and plain DNS included. A standby that passes goes back to standby, even if it showed down.</span></div></div>
 </section>
 
 <section id=lists><h2>Blocklist &amp; rules</h2><div class=grid>
@@ -306,6 +307,9 @@ let rz;window.addEventListener('resize',()=>{clearTimeout(rz);rz=setTimeout(draw
 function tile(label,value,sub,trend,color){const c=el('div',undefined,'card tile');c.append(el('div',label,'l'),el('div',value,'v'));if(sub)c.append(el('div',sub,'s'));
  if(trend){const s=sv('svg',{'aria-hidden':'true'});spark(s,trend,color);c.append(s)}return c}
 function transport(n,enc){return /doh/.test(n)?'DoH':/udp/.test(n)||!enc?'UDP (plain)':'DoT'}
+function testBadge(t){if(!t)return el('span','–','hint');const ok=t.result==='ok',wait=t.result==='pending';
+ const b=el('span',undefined,'badge '+(ok?'is-good':wait?'':'is-bad'));
+ b.append(el('i',undefined,'dot'),ok?'ok · '+t.ms+' ms'+(t.rcode?' (rcode '+t.rcode+')':''):wait?'testing…':t.result+(t.tlsError?' (TLS -0x'+(-t.tlsError).toString(16)+')':''));return b}
 function stateBadge(st){const m={up:['is-good','up'],down:['is-bad','down'],unknown:['','standby']}[st]||['',st];const b=el('span',undefined,'badge '+m[0]);b.append(el('i',undefined,'dot'),m[1]);return b}
 
 // Dropdown helpers. setVal() keeps a value the list doesn't offer (set by a script or an
@@ -427,13 +431,16 @@ function render(s){const d=s.dns,bl=s.blocklist;
  $('ansBar').replaceChildren(...parts.filter(p=>p[1]>0).map(p=>{const i=el('i');i.style.flexGrow=p[1];i.style.background='var('+p[2]+')';i.title=p[0]+': '+fmt(p[1])+' ('+pct(p[1],tot)+'%)';return i}));
  if(!d.queries){const i=el('i');i.style.flexGrow=1;i.style.background='var(--raised)';$('ansBar').replaceChildren(i)}
  $('ansList').replaceChildren(...parts.flatMap(p=>{const sw=el('i',undefined,'sw');sw.style.background='var('+p[2]+')';return [sw,el('span',p[0]),el('span',fmt(p[1]),'n'),el('span',pct(p[1],tot)+'%','p')]}));
- // Upstreams: active ones in the table, idle standby ones folded away
- const act=s.upstreams.filter(u=>u.state!=='unknown'||u.ok||u.failed),idle=s.upstreams.filter(u=>!act.includes(u));
+ // Upstreams: the ones in use (or failing) in the table, standby ones folded away
+ const act=s.upstreams.filter(u=>u.state!=='unknown'),idle=s.upstreams.filter(u=>!act.includes(u));
+ const tdT=u=>{const td=el('td');td.append(testBadge(u.test));return td};
  const urow=u=>{const tr=el('tr'),td=el('td');td.append(stateBadge(u.state));const tdS=el('td'),sp=sv('svg',{width:80,height:22,'aria-hidden':'true'});spark(sp,lat[u.name]||[],'var(--s-allowed)');tdS.append(sp);
-  tr.append(el('td',u.name,'mono'),el('td',transport(u.name,u.encrypted)),td,el('td',fmt(u.ok),'n'),el('td',fmt(u.failed),'n'),el('td',u.ok?u.latencyMs+' ms':'–','n'),tdS);return tr};
- $('ups').tBodies[0].replaceChildren(...act.map(urow));if(!act.length){const tr=el('tr'),td=el('td','No lookups forwarded yet','hint');td.colSpan=7;tr.append(td);$('ups').tBodies[0].append(tr)}
+  tr.append(el('td',u.name,'mono'),el('td',transport(u.name,u.encrypted)),td,el('td',fmt(u.ok),'n'),el('td',fmt(u.failed),'n'),el('td',u.ok?u.latencyMs+' ms':'–','n'),tdS,tdT(u));return tr};
+ $('ups').tBodies[0].replaceChildren(...act.map(urow));if(!act.length){const tr=el('tr'),td=el('td','No lookups forwarded yet','hint');td.colSpan=8;tr.append(td);$('ups').tBodies[0].append(tr)}
  $('upsMore').hidden=!idle.length;$('upsMore').firstChild.textContent=idle.length+' standby upstream'+(idle.length>1?'s':'');
- $('ups2').tBodies[0].replaceChildren(...idle.map(u=>{const tr=el('tr'),td=el('td');td.append(stateBadge(u.state));tr.append(el('td',u.name,'mono'),el('td',transport(u.name,u.encrypted)),td);return tr}));
+ $('ups2').tBodies[0].replaceChildren(...idle.map(u=>{const tr=el('tr'),td=el('td');td.append(stateBadge(u.state));tr.append(el('td',u.name,'mono'),el('td',transport(u.name,u.encrypted)),td,tdT(u));return tr}));
+ $('upTest').disabled=!!s.upstreamTest;$('upTest').textContent=s.upstreamTest?'Testing…':'Test all upstreams';
+ if(s.upstreamTest&&!upPoll)upPoll=setTimeout(()=>{upPoll=0;load()},1000);
  // Blocklist
  const st=el('div',undefined,'badge is-'+(bl.lastOk?'good':'warn'));st.append(el('i',undefined,'dot'),'Last update '+bl.lastAttempt+': '+bl.lastResult);
  const dl=el('dl',undefined,'kv');for(const [k,v] of [['Domains',fmt(bl.entries)+(bl.inMemory?' (in PSRAM)':' (from flash)')],['Built',bl.built],['Next update','daily at '+bl.time]])dl.append(el('dt',k),el('dd',v));
@@ -532,6 +539,7 @@ $('upFlash').onclick=async()=>{if(!upd)return;
  catch(e){toast('update failed: '+e.message,true);checkUpdate()}finally{btn.disabled=false}};
 $('fwUpload').onclick=()=>{if(confirm('Flash this firmware? The device reboots and rolls back if the new firmware is unhealthy.'))upload('/api/firmware','fwFile')};
 $('flush').onclick=()=>api('/api/cache/flush');
+let upPoll=0;$('upTest').onclick=async()=>{$('upsMore').open=true;$('upTest').disabled=true;await api('/api/upstreams/test')};
 $('reboot').onclick=()=>{if(confirm('Reboot the device?'))api('/api/reboot')};
 $('forget').onclick=()=>{if(confirm('Forget Wi-Fi and reboot into the setup access point?'))api('/api/wifi/forget')};
 $('cfg').onsubmit=e=>{e.preventDefault();$('cfg').elements.rb_time.value=tpGet('rbTime');const data={};for(const i of $('cfg').elements){if(!i.name)continue;data[i.name]=i.type==='checkbox'?(i.checked?'1':'0'):i.value}api('/api/config',data)};

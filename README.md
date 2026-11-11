@@ -191,7 +191,8 @@ and the _Overview_ should show a rising share of queries blocked.
   the device's time zone, never twice in a day and never right after a start.
 - **Privacy extras**: query padding, DNSSEC "validated" flag pass-through, local
   answers for private names, and Firefox's DoH canary so Firefox keeps using it.
-- **Dashboard** at `http://s3adblock.local`: live stats, upstream health, clients,
+- **Dashboard** at `http://s3adblock.local`: live stats, upstream health with a
+  one-click test of every upstream, clients,
   block/allow rules, DNS rewrites, pause blocking, settings (with dropdowns for time
   zones, times and TTLs), firmware and blocklist uploads, settings backup, and a
   one-click update check.
@@ -410,6 +411,7 @@ or doesn't get there within 5 minutes, the device rolls back to the previous ver
 | -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Ads still show on some devices         | They use another DNS (IPv6, private DNS, hard-coded). Check the client table and [ROUTER_SETUP.md §6](docs/ROUTER_SETUP.md#6-check-that-it-works). |
 | Dashboard shows **Plain DNS in use**   | Ports 853 and 443 to 1.1.1.1/9.9.9.9 fail from your network. Check with `kdig @1.1.1.1 +tls example.com` from a computer.                          |
+| A standby upstream shows **down**      | Usually left over from a short outage: standbys are only used when the active one fails. Click _Test all upstreams_ under Upstream DNS.            |
 | "clock not synced" stays               | NTP (UDP 123) to 162.159.200.1 / pool.ntp.org is blocked; the daily update waits for the clock.                                                    |
 | Blocklist "invalid list"               | The URL isn't a format-v2 file (`tools/build_blocklist.py` output), or the download was cut off. The old list stays active.                        |
 | Dashboard asks to log in again         | Normal after 24 h, 30 min after closing the tab, or after a password change. Right after updating from v0.2.5, reload the tab once.                |

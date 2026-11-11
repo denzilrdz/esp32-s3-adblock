@@ -471,6 +471,18 @@ static void test_fuzz_parsers_on_mutated_packets() {
   }
 }
 
+static void test_make_self_query_builds_a_recursive_in_query() {
+  Query q;
+  TEST_ASSERT_TRUE(dns::makeSelfQuery("Example.COM", dns::kTypeA, q));
+  TEST_ASSERT_TRUE(q.hasQuestion);
+  TEST_ASSERT_TRUE(q.rd());
+  TEST_ASSERT_EQUAL_STRING("example.com", q.qname);
+  TEST_ASSERT_EQUAL_UINT16(dns::kTypeA, q.qtype);
+  TEST_ASSERT_EQUAL_UINT16(dns::kClassIn, q.qclass);
+  TEST_ASSERT_FALSE(dns::makeSelfQuery("bad..name", dns::kTypeA, q));
+  TEST_ASSERT_FALSE(dns::makeSelfQuery(nullptr, dns::kTypeA, q));
+}
+
 int main(int, char**) {
   UNITY_BEGIN();
   RUN_TEST(test_parse_valid_query_lowercases_name);
@@ -503,5 +515,6 @@ int main(int, char**) {
   RUN_TEST(test_finalize_restores_id_and_applies_ad_policy);
   RUN_TEST(test_finalize_truncates_oversized_udp_answer);
   RUN_TEST(test_fuzz_parsers_on_mutated_packets);
+  RUN_TEST(test_make_self_query_builds_a_recursive_in_query);
   return UNITY_END();
 }

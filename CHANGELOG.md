@@ -6,6 +6,19 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- _Test all upstreams_ under Upstream DNS on the dashboard: looks up `example.com`
+  once through every upstream (Cloudflare and Quad9 DNS-over-TLS, DNS-over-HTTPS and
+  plain DNS, standby ones included) and shows the result and latency of each, or why
+  it failed (e.g. the TLS error code). Normal lookups keep working during the test.
+
+### Fixed
+
+- A standby upstream (e.g. Quad9) no longer shows "down" for days after a short
+  outage. It stayed that way because standbys are only used when the active upstream
+  fails; a passing test now puts it back to standby.
+
 ## [0.4.4] - 2026-11-09
 
 Makes the board's reconnect after a router reboot more reliable with slow routers.

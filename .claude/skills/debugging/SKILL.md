@@ -151,6 +151,12 @@ for i in $(seq 50); do dig @<ip> +short r$i.example.com & done; wait   # burst
   after 9 s; resumption should make reconnects cheap). The dashboard's upstream table
   shows each upstream's state, OK/fail counts and last latency; `[up]` log lines show
   state changes.
+- A standby upstream (Quad9, DoH, plain) shows **down/degraded with 0 OK** for days →
+  usually stale: a short outage made it fail, and a standby is only used again when
+  the active one fails. _Test all upstreams_ under Upstream DNS (`POST
+/api/upstreams/test`) sends `example.com` through every upstream once and shows the
+  result per upstream (`[up] test <name>: ...` in the log); a pass puts it back to standby. A
+  `connect failed (TLS -0x....)` there is real: decode the mbedTLS code.
 - Dashboard **Plain DNS in use** banner → ports 853 and 443 to 1.1.1.1/9.9.9.9 are blocked
   or failing. Test from the Mac: `kdig @1.1.1.1 +tls example.com` (knot) or
   `openssl s_client -connect 1.1.1.1:853 -servername cloudflare-dns.com`.

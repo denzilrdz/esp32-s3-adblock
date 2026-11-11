@@ -8,6 +8,20 @@ namespace {
 constexpr const char* kTag = "up";
 }
 
+const char* probeResultName(ProbeResult r) {
+  switch (r) {
+    case ProbeResult::kNone: return "none";
+    case ProbeResult::kPending: return "pending";
+    case ProbeResult::kOk: return "ok";
+    case ProbeResult::kConnectFailed: return "connect failed";
+    case ProbeResult::kSendFailed: return "send failed";
+    case ProbeResult::kClosed: return "connection closed";
+    case ProbeResult::kTimeout: return "timeout";
+    case ProbeResult::kBadReply: return "bad reply";
+  }
+  return "?";
+}
+
 Forwarder::Forwarder(const ForwarderConfig& cfg, ITransport* const* transports, size_t count,
                      const hal::IClock& clock, hal::IRandom& random, hal::ILogger& log, IForwarderSink& sink)
     : cfg_(cfg),
@@ -38,6 +52,7 @@ UpstreamStatus Forwarder::upstreamStatus(size_t i) const {
   st.state = health_[i].state();
   st.backoffMs = health_[i].backoffMs();
   st.stats = health_[i].stats();
+  st.probe = probe_[i];
   return st;
 }
 
@@ -163,7 +178,8 @@ uint16_t Forwarder::freshId(int u) {
 bool Forwarder::submit(uint32_t token, const dns::Query& q) {
   if (!q.hasQuestion) return false;
   callStartMs_ = clock_.monotonicMs();
-  for (Slot& s : slots_) {
+  for (size_t i = 0; i < kMaxInFlight; i++) {  // the last slot is the probe's
+    Slot& s = slots_[i];
     if (s.used) continue;
     const uint64_t now = clock_.monotonicMs();
     s = Slot{};
@@ -214,6 +230,12 @@ void Forwarder::trySend(Slot& s) {
       if (clock_.monotonicMs() - callStartMs_ + cfg_.connectTimeoutMs > cfg_.maxBlockingMs) return;
       if (!roomToConnect(u, true)) return;  // at the TLS limit: retry on the next poll()
       if (t->connect(cfg_.connectTimeoutMs) != IoStatus::kOk) {
+        if (s.probe) {
+          const int32_t err = t->lastError();
+          t->close();
+          finishProbe(s, ProbeResult::kConnectFailed, err);
+          return;
+        }
         // TCP failures (no route, blackhole) are routine during an outage; a TLS-stage
         // error (e.g. -0x7F00 out of memory, a bad certificate) is worth seeing.
         if (t->lastError() != 0)
@@ -233,6 +255,10 @@ void Forwarder::trySend(Slot& s) {
     }
     if (t->send(txBuf_, n) != IoStatus::kOk) {
       t->close();
+      if (s.probe) {
+        finishProbe(s, ProbeResult::kSendFailed);
+        return;
+      }
       recordFailure(u);
       reroute(s);
       continue;
@@ -248,12 +274,21 @@ void Forwarder::trySend(Slot& s) {
 
 void Forwarder::failTransport(int u) {
   transports_[u]->close();
-  recordFailure(u);
+  // A probe alone on the connection doesn't count against its health.
+  bool clientQueries = false;
+  for (const Slot& s : slots_)
+    if (s.used && s.upstream == u && !s.probe) clientQueries = true;
+  if (clientQueries) recordFailure(u);
   // Reroute everything assigned to it, including queries queued behind a busy DoH
   // connection (needsSend with upstream == u): left alone, each would reconnect to the
   // failed server on its own.
-  for (Slot& s : slots_)
-    if (s.used && s.upstream == u) reroute(s);
+  for (Slot& s : slots_) {
+    if (!s.used || s.upstream != u) continue;
+    if (s.probe)
+      finishProbe(s, ProbeResult::kClosed);
+    else
+      reroute(s);
+  }
   for (Slot& s : slots_)
     if (s.used && s.needsSend) trySend(s);
 }
@@ -282,6 +317,25 @@ void Forwarder::handleReply(int u, uint8_t* msg, size_t len) {
     ok = stripped != 0 && dns::inspectResponse(msg, stripped, info);
     len = stripped;
   }
+  if (match->probe) {
+    const uint32_t latency = static_cast<uint32_t>(clock_.monotonicMs() - match->sentMs);
+    if (!ok) {
+      finishProbe(*match, ProbeResult::kBadReply);
+      return;
+    }
+    // It works: a stale Down/Degraded goes back to Unknown (standby), so it is usable
+    // again and the dashboard folds it away with the other standbys. A test isn't
+    // traffic: OK count, latency and an Up state are left alone. Plain upstreams keep
+    // their state (only judged while plain fallback is in use).
+    const HealthState before = health_[u].state();
+    if (transports_[u]->authenticated() && before != HealthState::kUp && before != HealthState::kUnknown) {
+      health_[u].reset();
+      log_.log(LogLevel::kInfo, kTag, "%s: %s -> unknown (test passed)", transports_[u]->name(),
+               healthStateName(before));
+    }
+    finishProbe(*match, ProbeResult::kOk, 0, latency, static_cast<uint8_t>(info.rcode));
+    return;
+  }
   if (!ok) {
     log_.log(LogLevel::kWarn, kTag, "%s: malformed reply, trying next upstream", transports_[u]->name());
     recordFailure(u);
@@ -309,6 +363,7 @@ void Forwarder::poll(uint32_t waitMs) {
   }
 
   // 2. Send anything waiting (new, rerouted, or queued behind a busy DoH).
+  driveProbe();
   for (Slot& s : slots_)
     if (s.used && s.needsSend) trySend(s);
 
@@ -339,6 +394,10 @@ void Forwarder::poll(uint32_t waitMs) {
   now = clock_.monotonicMs();
   for (Slot& s : slots_) {
     if (!s.used) continue;
+    if (s.probe) {
+      if (now >= s.deadlineMs) finishProbe(s, ProbeResult::kTimeout);
+      continue;  // never hedged
+    }
     if (now >= s.deadlineMs) {
       // Blame the upstream only if it had a fair chance (hedgeAfterMs since this send).
       // A query that reached it late, e.g. after a blackholed upstream used up the
@@ -365,6 +424,50 @@ void Forwarder::poll(uint32_t waitMs) {
   // 5. Replies may have freed a non-pipelined (DoH) connection: send what queued behind it.
   for (Slot& s : slots_)
     if (s.used && s.needsSend) trySend(s);
+}
+
+bool Forwarder::startProbe(const dns::Query& q) {
+  if (probeActive_ || !q.hasQuestion) return false;
+  for (size_t i = 0; i < count_; i++) probe_[i] = ProbeStatus{ProbeResult::kPending, 0, 0, 0};
+  probeQ_ = q;
+  probeNext_ = 0;
+  probeActive_ = true;
+  log_.log(LogLevel::kInfo, kTag, "testing %u upstreams", static_cast<unsigned>(count_));
+  return true;
+}
+
+void Forwarder::driveProbe() {
+  if (!probeActive_) return;
+  Slot& s = slots_[kMaxInFlight];
+  if (s.used) return;          // one at a time
+  if (probeNext_ >= count_) {  // only with an empty chain; finishProbe() ends a run
+    probeActive_ = false;
+    return;
+  }
+  const uint64_t now = clock_.monotonicMs();
+  s = Slot{};
+  s.used = true;
+  s.needsSend = true;
+  s.probe = true;
+  s.q = probeQ_;
+  s.upstream = static_cast<int>(probeNext_++);
+  s.arrivalMs = now;
+  s.deadlineMs = now + cfg_.probeTimeoutMs;
+}
+
+void Forwarder::finishProbe(Slot& s, ProbeResult r, int32_t tlsError, uint32_t latencyMs, uint8_t rcode) {
+  const int u = s.upstream;
+  s.used = false;
+  probe_[u] = ProbeStatus{r, latencyMs, rcode, tlsError};
+  if (probeNext_ >= count_) probeActive_ = false;  // that was the last one
+  if (r == ProbeResult::kOk)
+    log_.log(LogLevel::kInfo, kTag, "test %s: ok (%u ms, rcode %u)", transports_[u]->name(),
+             static_cast<unsigned>(latencyMs), static_cast<unsigned>(rcode));
+  else if (tlsError != 0)
+    log_.log(LogLevel::kWarn, kTag, "test %s: %s (TLS error -0x%04x)", transports_[u]->name(),
+             probeResultName(r), static_cast<unsigned>(-tlsError));
+  else
+    log_.log(LogLevel::kWarn, kTag, "test %s: %s", transports_[u]->name(), probeResultName(r));
 }
 
 }  // namespace upstream

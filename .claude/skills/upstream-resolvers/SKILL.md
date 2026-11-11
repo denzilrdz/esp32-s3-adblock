@@ -66,6 +66,15 @@ created at boot in `startDnsService()`).
   encrypted upstreams merely failed gets SERVFAIL, never a plain-text retry.
 - Tests: `test/test_upstream/`, using `FakeTransport` + `FakeClock`. Assert every
   transition.
+- **Upstream test** (`Forwarder::startProbe`, dashboard _Test all upstreams_, `POST
+/api/upstreams/test`): one `example.com` A query per upstream in chain order, one at
+  a time, in a reserved 33rd slot (never a client's). Ignores health and the
+  plain-fallback rule, no hedge/reroute, `probeTimeoutMs` (5 s) each, stays within
+  `maxTlsConnections`. A test isn't traffic: a pass only puts a Down/Degraded
+  encrypted upstream back to Unknown (standby, usable again); an Up one stays Up, and
+  OK counts/latency never change. A failure changes nothing, it is only shown
+  (`probe` in `UpstreamStatus`, `test` per upstream in `/api/stats`). Plain upstreams
+  keep their state. The dashboard folds every `unknown` upstream under "standby".
 
 ## Timing
 

@@ -636,9 +636,23 @@ Connection setup (TCP + TLS handshake) belongs to the transport; a failed connec
 reported to the health machine as an ordinary failure.
 
 The chain always uses the **first** upstream in priority order that is `Up`,
-`Degraded`, or `Unknown`. A `Down` upstream is retried only by a probe (a real
-client query, or `.` NS if idle), so recovery to the preferred upstream happens
+`Degraded`, or `Unknown`. A `Down` upstream is retried only by a probe (the next real
+client query after its backoff), so recovery to the preferred upstream happens
 automatically. This is a circuit-breaker with exponential backoff.
+
+A standby upstream gets client queries only when the ones before it fail, so after a
+short outage its `Down`/`Degraded` state can stay on the dashboard for days. The
+**upstream test** (dashboard _Test all upstreams_, `POST /api/upstreams/test`,
+`Forwarder::startProbe`) checks them on demand: `dns_up` sends one `example.com` A
+query to each upstream in chain order, one at a time, in a slot reserved for it, so
+it never takes a client's. It ignores health and the plain-fallback rule, never
+hedges or reroutes, allows `probeTimeoutMs` (5 s) each and stays within
+`maxTlsConnections`. A test isn't traffic: a reply puts a `Down`/`Degraded`
+encrypted upstream back to `Unknown` (standby, usable again) and changes nothing else
+(an `Up` one stays `Up`; OK counts and latency only count client queries). A failure
+changes no health state or counter and is only reported (`test` per upstream in
+`/api/stats`, `[up] test ...` in the log). Plain upstreams keep their state (§7.3).
+The dashboard lists `Unknown` upstreams folded away as standby.
 
 ### 7.3 Plain fallback
 

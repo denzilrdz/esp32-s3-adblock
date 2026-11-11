@@ -74,6 +74,9 @@ downloads it itself).
 ## OTA
 
 - Dashboard: _Device → Install a firmware file manually → Flash firmware_ with `.pio/build/esp32s3/firmware.bin`.
+- API (session cookie from the browser, or `-u admin:<password>`):
+  `curl -b 'ab_session=<token>' -H 'X-Requested-With: adblock' -H 'Origin: http://s3adblock.local' -F 'f=@.pio/build/esp32s3/firmware.bin' http://s3adblock.local/api/firmware`.
+  Sessions live in RAM: the reboot after the upload logs every browser out.
 - Network: `pio run -e esp32s3 -t upload --upload-port s3adblock.local --upload-protocol espota --upload-flags="--auth=<OTA_PASS>"`.
 
 A new image must be healthy (Wi-Fi + DNS running 60 s) within 5 minutes or the

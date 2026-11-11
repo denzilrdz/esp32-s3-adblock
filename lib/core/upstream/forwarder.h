@@ -10,6 +10,9 @@
 //    at totalDeadlineMs the client gets SERVFAIL via the sink.
 //  - At most maxTlsConnections DoT/DoH connections are open at once: a new one first
 //    closes the longest-idle one, or waits until one is idle.
+//  - startProbe() tests every upstream in turn with one query each (dashboard "Test
+//    upstreams"): standby upstreams are otherwise only used when the active one fails,
+//    so their state can be hours old.
 //
 // Driven by the upstream task: submit() new queries, call poll() in a loop.
 // Not thread-safe; owned by one task.
@@ -47,6 +50,8 @@ struct ForwarderConfig {
   // out (failed handshakes, dropped packets) until a reboot. ARCHITECTURE.md §11.
   uint32_t maxTlsConnections = 2;
   bool allowPlainFallback = true;
+  // One upstream test query: connect (connectTimeoutMs) plus the reply.
+  uint32_t probeTimeoutMs = 5000;
   dns::UpstreamQueryOptions query;  // padding, AD request
   HealthConfig health;
 };
@@ -62,6 +67,27 @@ class IForwarderSink {
   virtual void onFailure(uint32_t token, const dns::Query& q) = 0;
 };
 
+// Result of the last startProbe() run for one upstream.
+enum class ProbeResult : uint8_t {
+  kNone,           // never tested
+  kPending,        // waiting for its turn, or in flight
+  kOk,             // a valid reply (any RCODE)
+  kConnectFailed,  // TCP connect or TLS handshake failed (see tlsError)
+  kSendFailed,
+  kClosed,    // connection closed or failed before the reply
+  kTimeout,   // no reply within probeTimeoutMs
+  kBadReply,  // malformed reply
+};
+
+const char* probeResultName(ProbeResult r);
+
+struct ProbeStatus {
+  ProbeResult result = ProbeResult::kNone;
+  uint32_t latencyMs = 0;  // query sent -> reply (kOk only)
+  uint8_t rcode = 0;       // kOk only
+  int32_t tlsError = 0;    // kConnectFailed: mbedTLS error, 0 = failed before TLS (TCP)
+};
+
 struct UpstreamStatus {
   const char* name = "";
   TransportKind kind = TransportKind::kUdp;
@@ -70,6 +96,7 @@ struct UpstreamStatus {
   HealthState state = HealthState::kUnknown;
   uint32_t backoffMs = 0;  // current retry delay while Down
   HealthStats stats;
+  ProbeStatus probe;
 };
 
 class Forwarder {
@@ -98,6 +125,15 @@ class Forwarder {
   size_t upstreamCount() const { return count_; }
   UpstreamStatus upstreamStatus(size_t i) const;
 
+  // Tests every upstream in chain order with one query each (`q`), one at a time,
+  // alongside normal traffic and within maxTlsConnections. Sent even to Down upstreams
+  // and to plain ones whatever the fallback setting; never rerouted or hedged, and the
+  // sink never sees it. A success puts a Down/Degraded encrypted upstream back to
+  // Unknown (standby); nothing else changes health state or counters, the result is
+  // only reported in upstreamStatus(i).probe. False if a test is already running.
+  bool startProbe(const dns::Query& q);
+  bool probing() const { return probeActive_; }
+
  private:
   struct Slot {
     bool used = false;
@@ -112,6 +148,7 @@ class Forwarder {
     uint64_t hedgeAtMs = 0;
     uint8_t attempts = 0;
     uint32_t tried = 0;  // bitmask of upstreams already used
+    bool probe = false;  // a startProbe() query: pinned to `upstream`, no sink
   };
 
   int selectUpstream(const Slot& s, uint64_t now);
@@ -129,6 +166,8 @@ class Forwarder {
   void recordSuccess(int u, uint32_t latencyMs);
   void recordFailure(int u);
   uint16_t freshId(int u);
+  void driveProbe();
+  void finishProbe(Slot& s, ProbeResult r, int32_t tlsError = 0, uint32_t latencyMs = 0, uint8_t rcode = 0);
 
   ForwarderConfig cfg_;
   ITransport* transports_[kMaxUpstreams] = {};
@@ -140,10 +179,14 @@ class Forwarder {
   hal::IRandom& random_;
   hal::ILogger& log_;
   IForwarderSink& sink_;
-  Slot slots_[kMaxInFlight];
+  Slot slots_[kMaxInFlight + 1];  // +1: a probe never takes a client's slot
   bool plainActive_ = false;
   bool outage_ = false;  // every upstream went down at once (see outageProbeMs)
   uint64_t callStartMs_ = 0;
+  bool probeActive_ = false;
+  size_t probeNext_ = 0;
+  dns::Query probeQ_;
+  ProbeStatus probe_[kMaxUpstreams];
   uint8_t txBuf_[512];
   uint8_t rxBuf_[kMaxAnswer];
 };

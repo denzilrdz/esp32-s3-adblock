@@ -453,4 +453,17 @@ size_t finalizeForClient(const uint8_t* answer, size_t len, const Query& q, cons
   return body;
 }
 
+bool makeSelfQuery(const char* name, uint16_t qtype, Query& out) {
+  if (!name) return false;
+  uint8_t pkt[kHeaderSize + kMaxNameWire + 4] = {0};
+  util::writeU16Be(pkt + 2, flag::kRd);
+  util::writeU16Be(pkt + 4, 1);  // QDCOUNT
+  const size_t n = encodeName(name, strlen(name), pkt + kHeaderSize, kMaxNameWire);
+  if (n == 0) return false;
+  util::writeU16Be(pkt + kHeaderSize + n, qtype);
+  util::writeU16Be(pkt + kHeaderSize + n + 2, kClassIn);
+  out = Query{};
+  return parseQuery(pkt, kHeaderSize + n + 4, out) == ParseStatus::kOk;
+}
+
 }  // namespace dns
