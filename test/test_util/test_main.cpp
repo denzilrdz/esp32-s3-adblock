@@ -12,6 +12,7 @@
 #include "util/bytes.h"
 #include "util/civil_time.h"
 #include "util/crc32.h"
+#include "util/net.h"
 #include "util/send_deadline.h"
 #include "util/sha256.h"
 #include "util/wifi_join.h"
@@ -389,11 +390,75 @@ static void test_send_with_deadline_stops_when_the_connection_goes() {
   TEST_ASSERT_TRUE(util::sendWithDeadline(0, 100, 1000, clock, [](size_t, size_t) { return true; }).complete);
 }
 
+static void test_send_all_handles_partial_sends() {
+  FakeClock clock;
+  std::string out;
+  const std::string msg(4098, 'm');
+  const util::SendResult r = util::sendAllWithDeadline(msg.size(), 1000, clock, [&](size_t off, size_t n) {
+    const size_t take = n < 1000 ? n : 1000;  // the socket queues at most 1000 bytes
+    out.append(msg, off, take);
+    return static_cast<long>(take);
+  });
+  TEST_ASSERT_TRUE(r.complete);
+  TEST_ASSERT_TRUE(out == msg);
+}
+
+static void test_send_all_gives_up_on_a_trickling_reader() {
+  // The TCP/53 attack: every send() queues a few bytes just before SO_SNDTIMEO (500 ms)
+  // fires. Without an overall budget this ran past the 5 s task watchdog.
+  FakeClock clock;
+  int calls = 0;
+  const util::SendResult r = util::sendAllWithDeadline(4098, 1000, clock, [&](size_t, size_t) {
+    clock.advanceMs(450);
+    calls++;
+    return 20L;
+  });
+  TEST_ASSERT_FALSE(r.complete);
+  TEST_ASSERT_EQUAL(3, calls);  // 0, 450, 900 ms; stopped before the call at 1350 ms
+  TEST_ASSERT_TRUE(clock.monotonicMs() < 5000);
+}
+
+static void test_send_all_stops_on_error_and_accepts_empty() {
+  FakeClock clock;
+  int calls = 0;
+  util::SendResult r =
+      util::sendAllWithDeadline(100, 1000, clock, [&](size_t, size_t) { return ++calls == 1 ? 10L : -1L; });
+  TEST_ASSERT_FALSE(r.complete);
+  TEST_ASSERT_EQUAL(10, r.sent);
+  r = util::sendAllWithDeadline(100, 1000, clock, [](size_t, size_t) { return 0L; });
+  TEST_ASSERT_FALSE(r.complete);
+  TEST_ASSERT_TRUE(util::sendAllWithDeadline(0, 1000, clock, [](size_t, size_t) { return -1L; }).complete);
+}
+
+static uint32_t hostIp(uint8_t a, uint8_t b, uint8_t c, uint8_t d) {
+  return static_cast<uint32_t>(a) << 24 | static_cast<uint32_t>(b) << 16 | static_cast<uint32_t>(c) << 8 | d;
+}
+
+static void test_private_ipv4_ranges() {
+  // Answered: RFC 1918, loopback, link-local, at both edges of each range.
+  for (uint32_t ip :
+       {hostIp(10, 0, 0, 0), hostIp(10, 255, 255, 255), hostIp(172, 16, 0, 0), hostIp(172, 31, 255, 255),
+        hostIp(192, 168, 0, 0), hostIp(192, 168, 68, 104), hostIp(192, 168, 255, 255), hostIp(127, 0, 0, 1),
+        hostIp(169, 254, 0, 1), hostIp(169, 254, 255, 255)})
+    TEST_ASSERT_TRUE(util::isPrivateIpv4(ip));
+  // Refused: everything else, including the neighbours of each range and CGNAT.
+  for (uint32_t ip :
+       {hostIp(9, 255, 255, 255), hostIp(11, 0, 0, 0), hostIp(172, 15, 255, 255), hostIp(172, 32, 0, 0),
+        hostIp(192, 167, 255, 255), hostIp(192, 169, 0, 0), hostIp(128, 0, 0, 1), hostIp(169, 253, 0, 1),
+        hostIp(169, 255, 0, 1), hostIp(100, 64, 0, 1), hostIp(8, 8, 8, 8), hostIp(1, 1, 1, 1),
+        hostIp(0, 0, 0, 0), hostIp(255, 255, 255, 255)})
+    TEST_ASSERT_FALSE(util::isPrivateIpv4(ip));
+}
+
 int main(int, char**) {
   UNITY_BEGIN();
   RUN_TEST(test_send_with_deadline_sends_everything_in_pieces);
   RUN_TEST(test_send_with_deadline_gives_up_on_a_trickling_reader);
   RUN_TEST(test_send_with_deadline_stops_when_the_connection_goes);
+  RUN_TEST(test_send_all_handles_partial_sends);
+  RUN_TEST(test_send_all_gives_up_on_a_trickling_reader);
+  RUN_TEST(test_send_all_stops_on_error_and_accepts_empty);
+  RUN_TEST(test_private_ipv4_ranges);
   RUN_TEST(test_crc32_matches_zlib_check_value);
   RUN_TEST(test_crc32_incremental_equals_one_shot);
   RUN_TEST(test_crc32_empty_is_zero);

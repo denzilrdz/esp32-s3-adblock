@@ -7,6 +7,7 @@
 #include <string>
 
 #include "clients/ban_list.h"
+#include "clients/inflight_limiter.h"
 #include "clients/pause_timer.h"
 
 using clients::BanList;
@@ -155,6 +156,34 @@ static void test_long_uptime_has_no_wraparound() {
   TEST_ASSERT_TRUE(p.blockingOn(t + 60000));
 }
 
+static void test_inflight_limiter_caps_each_client_separately() {
+  clients::InFlightLimiter lim(3);
+  const uint32_t noisy = ip(192, 168, 1, 50), quiet = ip(192, 168, 1, 51);
+  for (int i = 0; i < 3; i++) TEST_ASSERT_TRUE(lim.tryAcquire(noisy));
+  TEST_ASSERT_FALSE(lim.tryAcquire(noisy));  // at its share
+  TEST_ASSERT_TRUE(lim.tryAcquire(quiet));   // others are unaffected
+  TEST_ASSERT_EQUAL_UINT16(3, lim.heldBy(noisy));
+  lim.release(noisy);
+  TEST_ASSERT_TRUE(lim.tryAcquire(noisy));  // a reply frees one
+  TEST_ASSERT_FALSE(lim.tryAcquire(noisy));
+}
+
+static void test_inflight_limiter_forgets_idle_clients_and_ignores_unknown_releases() {
+  clients::InFlightLimiter lim(2);
+  lim.release(ip(10, 0, 0, 1));  // never acquired: no effect, no underflow
+  TEST_ASSERT_EQUAL_UINT16(0, lim.heldBy(ip(10, 0, 0, 1)));
+  // Many clients come and go: entries are reused once a client holds nothing.
+  for (int round = 0; round < 10; round++)
+    for (uint8_t host = 1; host <= 60; host++) {
+      TEST_ASSERT_TRUE(lim.tryAcquire(ip(10, 0, round, host)));
+      lim.release(ip(10, 0, round, host));
+    }
+  for (uint8_t host = 1; host <= clients::InFlightLimiter::kMaxTracked; host++)
+    TEST_ASSERT_TRUE(lim.tryAcquire(ip(10, 1, 0, host)));
+  TEST_ASSERT_FALSE(lim.tryAcquire(ip(10, 2, 0, 1)));  // table full: refused, not overwritten
+  TEST_ASSERT_EQUAL_UINT16(1, clients::InFlightLimiter(0).perClient());  // 0 means at least 1
+}
+
 int main(int, char**) {
   UNITY_BEGIN();
   RUN_TEST(test_add_remove_contains);
@@ -168,5 +197,7 @@ int main(int, char**) {
   RUN_TEST(test_pause_until_resumed);
   RUN_TEST(test_resume_early_and_pause_again);
   RUN_TEST(test_long_uptime_has_no_wraparound);
+  RUN_TEST(test_inflight_limiter_caps_each_client_separately);
+  RUN_TEST(test_inflight_limiter_forgets_idle_clients_and_ignores_unknown_releases);
   return UNITY_END();
 }

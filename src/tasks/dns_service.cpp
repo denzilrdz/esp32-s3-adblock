@@ -6,6 +6,8 @@
 #include <new>
 
 #include "util/bytes.h"
+#include "util/net.h"
+#include "util/send_deadline.h"
 
 namespace app {
 
@@ -22,9 +24,13 @@ constexpr uint32_t kTcpStack = 6144;
 constexpr uint32_t kUpstreamStack = 12288;  // TLS handshake needs headroom
 constexpr int kDnsCore = 1;
 constexpr int kTcpCore = 0;
+// After a full batch dns_io yields for one tick: under a steady flood it never
+// blocked in select(), so dns_up (prio 8) and everything below it on core 1 starved
+// until a watchdog reset the board (audit 2026-11).
 constexpr int kMaxDatagramsPerWake = 16;
 // TCP abuse limits (one LAN client must not be able to starve everyone else):
-constexpr uint32_t kTcpWriteTimeoutMs = 500;   // a client that doesn't read is dropped
+constexpr uint32_t kTcpWriteTimeoutMs = 500;   // per send(): a client that doesn't read is dropped
+constexpr uint32_t kTcpWriteBudgetMs = 1000;   // per reply: one that reads a trickle is too
 constexpr uint32_t kTcpPartialFrameMs = 2000;  // slow-loris: a frame must arrive quickly
 constexpr uint8_t kTcpMaxInFlightPerConn = 4;  // pipelined queries awaiting upstream
 constexpr uint8_t kTcpMaxInFlightTotal = 8;    // share of the pending pool for all TCP
@@ -32,12 +38,9 @@ constexpr uint8_t kTcpMaxInFlightTotal = 8;    // share of the pending pool for 
 // always resolves and is never on a blocklist.
 constexpr const char* kUpstreamTestName = "example.com";
 
-// Only answer the LAN: RFC 1918, loopback and link-local sources. Prevents the
-// device from becoming an open resolver if port 53 is ever exposed.
+// Only answer the LAN (util::isPrivateIpv4): never an open resolver.
 bool isPrivateSource(const struct sockaddr_in& a) {
-  const uint32_t ip = ntohl(a.sin_addr.s_addr);
-  return (ip >> 24) == 10 || (ip >> 20) == (172u << 4 | 1) || (ip >> 16) == (192u << 8 | 168) ||
-         (ip >> 24) == 127 || (ip >> 16) == (169u << 8 | 254);
+  return util::isPrivateIpv4(ntohl(a.sin_addr.s_addr));
 }
 
 void drainSocket(int fd) {
@@ -60,6 +63,8 @@ DnsService::DnsService(const DnsServiceConfig& cfg, dns::IQueryPolicy& policy, c
       transportCount_(transportCount) {
   if (cfg_.pendingSlots > upstream::Forwarder::kMaxInFlight)
     cfg_.pendingSlots = upstream::Forwarder::kMaxInFlight;
+  udpInFlight_ =
+      clients::InFlightLimiter(cfg_.pendingPerClient ? cfg_.pendingPerClient : cfg_.pendingSlots / 2);
   if (cfg_.tcpMaxConns > sizeof(tcp_) / sizeof(tcp_[0])) cfg_.tcpMaxConns = sizeof(tcp_) / sizeof(tcp_[0]);
   if (cfg_.replyCap < dns::kMaxUdpPayload) cfg_.replyCap = dns::kMaxUdpPayload;
   if (cfg_.replyCap > upstream::Forwarder::kMaxAnswer) cfg_.replyCap = upstream::Forwarder::kMaxAnswer;
@@ -262,8 +267,15 @@ size_t DnsService::processRewrite(const dns::Query& q, const ClientRef& client, 
 size_t DnsService::forward(const dns::Query& q, const ClientRef& client, const dns::Query* rewriteOf,
                            const dns::RewriteAnswer* rewrite, uint8_t* out, size_t outCap, bool* forwarded) {
   const dns::Query& replyTo = rewriteOf ? *rewriteOf : q;  // what the client asked
+  // UDP clients get at most their share of the pool (TCP has per-connection limits).
+  const bool udp = client.origin == Origin::kUdp;
+  if (udp && !udpInFlight_.tryAcquire(client.addr.sin_addr.s_addr)) {
+    stats_.servfail++;
+    return dns::buildErrorReply(replyTo, dns::Rcode::kServFail, out, outCap);
+  }
   uint16_t idx;
   if (xQueueReceive(freeQ_, &idx, 0) != pdTRUE) {
+    if (udp) udpInFlight_.release(client.addr.sin_addr.s_addr);
     stats_.servfail++;
     return dns::buildErrorReply(replyTo, dns::Rcode::kServFail, out, outCap);
   }
@@ -278,6 +290,7 @@ size_t DnsService::forward(const dns::Query& q, const ClientRef& client, const d
   }
   if (xQueueSend(upQ_, &idx, 0) != pdTRUE) {
     xQueueSend(freeQ_, &idx, 0);
+    if (udp) udpInFlight_.release(client.addr.sin_addr.s_addr);
     stats_.servfail++;
     return dns::buildErrorReply(replyTo, dns::Rcode::kServFail, out, outCap);
   }
@@ -309,11 +322,13 @@ void DnsService::ioLoop() {
       if (p.replyLen)
         sendto(udpFd_, p.reply, p.replyLen, 0, reinterpret_cast<const struct sockaddr*>(&p.client.addr),
                sizeof(p.client.addr));
+      udpInFlight_.release(p.client.addr.sin_addr.s_addr);
       xQueueSend(freeQ_, &idx, 0);
     }
 
     if (!FD_ISSET(udpFd_, &rfds)) continue;
-    for (int i = 0; i < kMaxDatagramsPerWake; i++) {
+    int handled = 0;
+    for (; handled < kMaxDatagramsPerWake; handled++) {
       ClientRef c;
       socklen_t fromLen = sizeof(c.addr);
       const int n = recvfrom(udpFd_, udpRx_, sizeof(udpRx_), MSG_DONTWAIT,
@@ -322,6 +337,7 @@ void DnsService::ioLoop() {
       const size_t r = processQuery(udpRx_, static_cast<size_t>(n), c, udpWork_, udpOut_, sizeof(udpOut_));
       if (r) sendto(udpFd_, udpOut_, r, 0, reinterpret_cast<const struct sockaddr*>(&c.addr), sizeof(c.addr));
     }
+    if (handled == kMaxDatagramsPerWake) vTaskDelay(1);  // more waiting: let core 1's other tasks run
   }
 }
 
@@ -341,14 +357,17 @@ bool DnsService::tcpWrite(uint8_t i, const uint8_t* msg, size_t len) {
   if (tcp_[i].fd < 0 || len + 2 > sizeof(tcpOut_)) return false;
   util::writeU16Be(tcpOut_, static_cast<uint16_t>(len));
   if (msg != tcpOut_ + 2) memmove(tcpOut_ + 2, msg, len);
-  size_t done = 0;
-  while (done < len + 2) {
-    const int n = send(tcp_[i].fd, tcpOut_ + done, len + 2 - done, 0);  // SO_SNDTIMEO bounds this
-    if (n <= 0) {
-      tcpClose(i);
-      return false;
-    }
-    done += static_cast<size_t>(n);
+  // Each send() is bounded by SO_SNDTIMEO, the whole reply by kTcpWriteBudgetMs, so
+  // one reply holds dns_tcp for at most ~1.5 s; feeding first keeps several in a row
+  // (pipelined queries, a drained reply queue) inside the 5 s watchdog.
+  esp_task_wdt_reset();
+  const int fd = tcp_[i].fd;
+  const util::SendResult r = util::sendAllWithDeadline(
+      len + 2, kTcpWriteBudgetMs, clock_,
+      [&](size_t off, size_t n) { return static_cast<long>(send(fd, tcpOut_ + off, n, 0)); });
+  if (!r.complete) {
+    tcpClose(i);
+    return false;
   }
   tcp_[i].lastMs = clock_.monotonicMs();
   return true;

@@ -23,6 +23,14 @@ All notable changes to this project are documented here. The format follows
   counts as one failure, an upstream that is still answering other lookups is never
   marked down, and while every encrypted upstream is down they are retried every
   10 s so plain DNS ends quickly.
+- Any device on the network could restart the board by asking a DNS question over
+  TCP and then reading the answer a few bytes at a time. Each TCP answer now has to
+  go out within 1 second, or the connection is closed.
+- One device sending lots of lookups for names that aren't cached could use up all
+  32 waiting slots, so every other device got errors. A single device can now hold at
+  most half of them.
+- A flood of DNS queries from one device could starve the board's other work until
+  it restarted itself; the DNS task now pauses briefly between batches.
 
 ## [0.5.0] - 2026-11-11
 

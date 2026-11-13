@@ -334,7 +334,11 @@ DO bit echoed, and the extended RCODE recomputed. Upstream queries carry our own
   and empty sections (RFC 2181 §9, RFC 6891 §7). The client retries over TCP.
 - `dns_tcp` serves TCP/53 (RFC 7766 says resolvers MUST support TCP) with 2-byte
   length framing, at most 2 concurrent connections (socket budget, §11) and a 10 s
-  idle timeout. It uses the same pipeline, cache and upstream queue as UDP.
+  idle timeout. It uses the same pipeline, cache and upstream queue as UDP. Abuse
+  limits: a frame must arrive within 2 s (slow-loris), at most 4 queries in flight per
+  connection and 8 for all of TCP, each `send()` times out after 500 ms and a whole
+  reply after 1 s (`util::sendAllWithDeadline`; a client opening its window a few
+  bytes at a time used to hold `dns_tcp` past the 5 s watchdog and reboot the board).
 - Upstream DoT/DoH answers are never truncated (stream transports), so we always
   hold the full answer to cache.
 
@@ -865,7 +869,13 @@ in RTC memory like every deliberate restart.
     malformed cases in the native tests.
   - Upstream replies must match the in-flight ID and question.
   - The UDP/53 server answers only private, link-local and loopback source
-    addresses (no open resolver if the device is ever exposed).
+    addresses (`util::isPrivateIpv4`; no open resolver if the device is ever exposed).
+  - One UDP client may hold at most half of the 32-slot pending pool
+    (`clients::InFlightLimiter`): a noisy device asking for random names during an
+    upstream slowdown no longer gets everyone else SERVFAIL. Half, not less, because
+    a router relaying DNS for the LAN is a single client.
+  - After 16 datagrams in a row `dns_io` yields one tick, so a UDP flood can't starve
+    `dns_up` and the maintenance task on core 1 into a watchdog reset.
 - **Secrets:**
   - `secrets.h` is gitignored, and CI uses `secrets.example.h`.
   - Passwords are never logged or returned by the API.

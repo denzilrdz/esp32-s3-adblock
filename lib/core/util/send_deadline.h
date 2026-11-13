@@ -38,4 +38,25 @@ SendResult sendWithDeadline(size_t len, size_t piece, uint32_t budgetMs, const h
   return r;
 }
 
+// For a socket whose send() may queue only part of the data (TCP/53 replies):
+// sendSome(offset, n) returns how many bytes it took (> 0) or <= 0 on error/timeout.
+// Keeps calling until `len` bytes are taken, it fails, or `budgetMs` has passed since
+// the start (checked before each call, so one slow call overruns it by at most its own
+// timeout). Found by the 2026-11 audit: with only a per-call timeout (SO_SNDTIMEO), a
+// client that opened its receive window a few bytes at a time kept dns_tcp inside one
+// reply for longer than the 5 s task watchdog, and any LAN host could reboot the board.
+template <typename SendSome>
+SendResult sendAllWithDeadline(size_t len, uint32_t budgetMs, const hal::IClock& clock, SendSome sendSome) {
+  SendResult r;
+  const uint64_t start = clock.monotonicMs();
+  while (r.sent < len) {
+    if (clock.monotonicMs() - start > budgetMs) return r;
+    const long n = sendSome(r.sent, len - r.sent);
+    if (n <= 0) return r;
+    r.sent += static_cast<size_t>(n) < len - r.sent ? static_cast<size_t>(n) : len - r.sent;
+  }
+  r.complete = true;
+  return r;
+}
+
 }  // namespace util

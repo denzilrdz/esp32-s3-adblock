@@ -22,6 +22,7 @@
 #include <cstdint>
 
 #include "cache/response_cache.h"
+#include "clients/inflight_limiter.h"
 #include "diag/liveness.h"
 #include "dns/local_zones.h"
 #include "dns/message.h"
@@ -44,6 +45,9 @@ struct DnsServiceConfig {
   uint32_t localTtl = 60;
   bool passAd = true;          // pass the DNSSEC AD bit from authenticated upstreams
   uint16_t pendingSlots = 32;  // <= Forwarder::kMaxInFlight
+  // Most of those one UDP client may hold at once (0 = half the pool). A router relaying
+  // DNS for the whole LAN is one client, so keep this a share, not a small number.
+  uint16_t pendingPerClient = 0;
   uint16_t port = 53;
   bool tcpEnabled = true;
   uint8_t tcpMaxConns = 2;  // lwIP has 16 sockets in total; see ARCHITECTURE.md §11
@@ -160,6 +164,7 @@ class DnsService : private upstream::IForwarderSink {
   // Pool slots held by TCP queries until their reply is dequeued, including queries
   // from connections that have since closed (dns_tcp task only).
   uint8_t tcpPending_ = 0;
+  clients::InFlightLimiter udpInFlight_;  // pool slots held per UDP client (dns_io only)
   bool createWakePair(int& rxFd, struct sockaddr_in& addr);
   void tcpAccept();
   void tcpRead(uint8_t i);
