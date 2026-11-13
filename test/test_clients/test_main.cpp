@@ -7,6 +7,7 @@
 #include <string>
 
 #include "clients/ban_list.h"
+#include "clients/client_directory.h"
 #include "clients/inflight_limiter.h"
 #include "clients/pause_timer.h"
 
@@ -184,6 +185,51 @@ static void test_inflight_limiter_forgets_idle_clients_and_ignores_unknown_relea
   TEST_ASSERT_EQUAL_UINT16(1, clients::InFlightLimiter(0).perClient());  // 0 means at least 1
 }
 
+static void test_directory_adds_and_finds_clients() {
+  clients::ClientDirectory dir;
+  bool created = false;
+  clients::ClientEntry& a = dir.obtain(ip(192, 168, 1, 2), 1000, &created);
+  TEST_ASSERT_TRUE(created);
+  TEST_ASSERT_TRUE(a.macPending);
+  TEST_ASSERT_EQUAL_UINT32(1000, a.info.lastSeenMs);
+  a.info.blocked = 5;
+  clients::ClientEntry& again = dir.obtain(ip(192, 168, 1, 2), 2000, &created);
+  TEST_ASSERT_FALSE(created);
+  TEST_ASSERT_EQUAL_UINT32(5, again.info.blocked);
+  TEST_ASSERT_EQUAL(1, dir.count());
+  TEST_ASSERT_NULL(dir.find(ip(192, 168, 1, 3)));
+}
+
+static void test_full_directory_replaces_the_client_not_seen_for_longest() {
+  // Audit 2026-11: the table never freed entries, so after 96 source IPs (private MAC
+  // addresses, a spoofing host) new devices were invisible until a reboot.
+  clients::ClientDirectory dir;
+  for (int i = 0; i < clients::ClientDirectory::kMax; i++)
+    dir.obtain(ip(10, 0, 0, static_cast<uint8_t>(i + 1)), 1000 + i);
+  dir.obtain(ip(10, 0, 0, 1), 5000).info.lastSeenMs = 5000;  // the oldest is active again
+  bool created = false;
+  dir.obtain(ip(10, 0, 1, 1), 6000, &created);
+  TEST_ASSERT_TRUE(created);
+  TEST_ASSERT_EQUAL(clients::ClientDirectory::kMax, dir.count());
+  TEST_ASSERT_EQUAL_UINT32(1, dir.evictions());
+  TEST_ASSERT_NOT_NULL(dir.find(ip(10, 0, 0, 1)));  // kept: seen recently
+  TEST_ASSERT_NULL(dir.find(ip(10, 0, 0, 2)));      // replaced: seen longest ago
+  TEST_ASSERT_NOT_NULL(dir.find(ip(10, 0, 1, 1)));
+  TEST_ASSERT_EQUAL_UINT32(0, dir.find(ip(10, 0, 1, 1))->info.blocked);  // a fresh entry
+}
+
+static void test_directory_eviction_survives_the_millis_wrap() {
+  // lastSeenMs is 32-bit (wraps after 49.7 days): choose by age, not by value.
+  clients::ClientDirectory dir;
+  const uint32_t beforeWrap = 0xFFFFF000u;
+  for (int i = 0; i < clients::ClientDirectory::kMax; i++)
+    dir.obtain(ip(10, 0, 0, static_cast<uint8_t>(i + 1)), beforeWrap + static_cast<uint32_t>(i));
+  dir.find(ip(10, 0, 0, 7))->info.lastSeenMs = 0x00000100u;  // seen just after the wrap
+  dir.obtain(ip(10, 0, 1, 1), 0x00000200u);
+  TEST_ASSERT_NOT_NULL(dir.find(ip(10, 0, 0, 7)));  // newest despite the smallest value
+  TEST_ASSERT_NULL(dir.find(ip(10, 0, 0, 1)));      // oldest
+}
+
 int main(int, char**) {
   UNITY_BEGIN();
   RUN_TEST(test_add_remove_contains);
@@ -198,6 +244,9 @@ int main(int, char**) {
   RUN_TEST(test_resume_early_and_pause_again);
   RUN_TEST(test_long_uptime_has_no_wraparound);
   RUN_TEST(test_inflight_limiter_caps_each_client_separately);
+  RUN_TEST(test_directory_adds_and_finds_clients);
+  RUN_TEST(test_full_directory_replaces_the_client_not_seen_for_longest);
+  RUN_TEST(test_directory_eviction_survives_the_millis_wrap);
   RUN_TEST(test_inflight_limiter_forgets_idle_clients_and_ignores_unknown_releases);
   return UNITY_END();
 }

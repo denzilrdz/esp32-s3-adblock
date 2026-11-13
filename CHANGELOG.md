@@ -31,6 +31,12 @@ All notable changes to this project are documented here. The format follows
   most half of them.
 - A flood of DNS queries from one device could starve the board's other work until
   it restarted itself; the DNS task now pauses briefly between batches.
+- Banning a client or importing settings paused every DNS lookup on the network
+  while the ban list was written to flash; adding a DNS rewrite paused them while
+  a log line was printed. Both now happen without holding up lookups.
+- The _Clients_ list stopped adding devices after the first 96 it had seen (phones
+  with private Wi-Fi addresses get new ones over time) until the board restarted.
+  The device not seen for longest now makes room.
 
 ## [0.5.0] - 2026-11-11
 

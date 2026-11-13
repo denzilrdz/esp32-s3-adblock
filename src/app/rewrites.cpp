@@ -43,9 +43,12 @@ bool RewriteManager::begin() {
   std::unique_ptr<char[]> buf(new (std::nothrow) char[size + 1]);
   if (!buf) return true;
   const size_t got = f->read(reinterpret_cast<uint8_t*>(buf.get()), size);
-  platform::LockGuard g(mutex_);
-  const size_t n = table_->parse(buf.get(), got);
-  count_ = table_->size();
+  size_t n;
+  {
+    platform::LockGuard g(mutex_);
+    n = table_->parse(buf.get(), got);
+    count_ = table_->size();
+  }
   if (n) log_.log(LogLevel::kInfo, kTag, "%u saved rewrite(s) wait for the clock", static_cast<unsigned>(n));
   return true;
 }
@@ -60,22 +63,18 @@ rules::RewriteStatus RewriteManager::add(const String& domain, const String& tar
   if (!table_) return rules::RewriteStatus::kFull;
   rules::RewriteStatus st;
   {
+    // resolve() takes mutex_ for every query once a rewrite exists: no logging (a
+    // blocking UART write, ~9 ms a line) or file I/O while holding it (audit 2026-11).
     platform::LockGuard g(mutex_);
-    st = addLocked(domain, target, minutes);
+    st = table_->add(domain.c_str(), target.c_str(), minutes, clock_.monotonicMs());
+    count_ = table_->size();
+    if (rules::rewriteOk(st)) changes_++;
     retryAtMs_ = 0;  // a fresh change retries a failed save at once
   }
-  save();
-  return st;
-}
-
-rules::RewriteStatus RewriteManager::addLocked(const String& domain, const String& target, uint32_t minutes) {
-  const rules::RewriteStatus st = table_->add(domain.c_str(), target.c_str(), minutes, clock_.monotonicMs());
-  count_ = table_->size();
-  if (rules::rewriteOk(st)) {
+  if (rules::rewriteOk(st))
     log_.log(LogLevel::kInfo, kTag, "%s -> %s for %u min", domain.c_str(), target.c_str(),
              static_cast<unsigned>(minutes));
-    changes_++;
-  }
+  save();
   return st;
 }
 
@@ -104,18 +103,23 @@ std::vector<rules::RewriteView> RewriteManager::list() {
 
 void RewriteManager::tick() {
   if (!table_) return;
+  bool activated = false;
+  size_t active = 0, dropped = 0;
   {
     platform::LockGuard g(mutex_);
     const uint64_t now = clock_.monotonicMs();
     table_->purgeExpired(now);  // the file keeps them until the next save: dropped at load
     if (clock_.wallClockSynced() && table_->hasPending()) {
-      const size_t dropped = table_->activate(now, clock_.unixTime());
-      log_.log(LogLevel::kInfo, kTag, "clock synced: %u saved rewrite(s) active, %u expired",
-               static_cast<unsigned>(table_->size()), static_cast<unsigned>(dropped));
+      activated = true;
+      dropped = table_->activate(now, clock_.unixTime());
+      active = table_->size();
       if (dropped) changes_++;
     }
     count_ = table_->size();
   }
+  if (activated)
+    log_.log(LogLevel::kInfo, kTag, "clock synced: %u saved rewrite(s) active, %u expired",
+             static_cast<unsigned>(active), static_cast<unsigned>(dropped));
   save();
 }
 
@@ -127,10 +131,13 @@ bool RewriteManager::save() {
   {
     platform::LockGuard g(mutex_);
     if (changes_ == saved_) return true;
+    if (retryAtMs_ && clock_.monotonicMs() < retryAtMs_) return false;
+  }
+  buf.reset(new (std::nothrow) char[rules::RewriteTable::kMaxTextBytes]);  // not under mutex_
+  if (!buf) return false;
+  {
+    platform::LockGuard g(mutex_);
     const uint64_t now = clock_.monotonicMs();
-    if (retryAtMs_ && now < retryAtMs_) return false;
-    buf.reset(new (std::nothrow) char[rules::RewriteTable::kMaxTextBytes]);
-    if (!buf) return false;
     const bool synced = clock_.wallClockSynced();
     if (!table_->serialize(buf.get(), rules::RewriteTable::kMaxTextBytes, n, now, synced,
                            synced ? clock_.unixTime() : 0))
@@ -148,15 +155,17 @@ bool RewriteManager::save() {
   } else {
     fs_.remove(kTmpPath);
   }
-  platform::LockGuard g(mutex_);
-  if (!ok) {
-    log_.log(LogLevel::kError, kTag, "cannot save %s (retrying in a minute)", kPath);
-    retryAtMs_ = clock_.monotonicMs() + 60000;
-    return false;
+  {
+    platform::LockGuard g(mutex_);
+    if (ok) {
+      retryAtMs_ = 0;
+      saved_ = gen;  // a change made meanwhile keeps changes_ != saved_: saved next time
+    } else {
+      retryAtMs_ = clock_.monotonicMs() + 60000;
+    }
   }
-  retryAtMs_ = 0;
-  saved_ = gen;  // a change made meanwhile keeps changes_ != saved_: saved next time
-  return true;
+  if (!ok) log_.log(LogLevel::kError, kTag, "cannot save %s (retrying in a minute)", kPath);
+  return ok;
 }
 
 }  // namespace app

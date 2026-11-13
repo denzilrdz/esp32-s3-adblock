@@ -42,7 +42,6 @@ class RewriteManager {
   // and writes the file outside it, so DNS lookups never wait for flash. False while
   // the clock is unknown (tick() retries) or on a write error (retried after a minute).
   bool save();
-  rules::RewriteStatus addLocked(const String& domain, const String& target, uint32_t minutes);
 
   hal::IFileSystem& fs_;
   const hal::IClock& clock_;

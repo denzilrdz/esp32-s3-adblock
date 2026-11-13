@@ -47,60 +47,63 @@ void macJobInLwip(void* ctx) {
 
 }  // namespace
 
-ClientTable::Entry* ClientTable::find(uint32_t ip, bool create) {
-  for (int i = 0; i < count_; i++)
-    if (entries_[i].info.ip == ip) return &entries_[i];
-  if (!create || count_ >= kMaxClients) return nullptr;
-  Entry& e = entries_[count_++];
-  e = Entry{};
-  e.info.ip = ip;
-  e.info.banned = bans_.contains(ip);
-  e.macPending = true;
-  return &e;
+clients::ClientEntry& ClientTable::obtain(uint32_t ip) {
+  bool created = false;
+  clients::ClientEntry& e = dir_.obtain(ip, millis(), &created);
+  if (created) e.info.banned = bans_.contains(ip);
+  return e;
 }
 
 void ClientTable::loadBans() {
-  platform::LockGuard g(mutex_);
-  File f = LittleFS.open(kBanFile, "r");
-  if (!f) return;
+  platform::LockGuard f(fileMutex_);
   char buf[clients::BanList::kMaxTextBytes + 64];  // a little slack for CR/spaces
-  const size_t n = f.read(reinterpret_cast<uint8_t*>(buf), sizeof(buf));
-  f.close();
+  File file = LittleFS.open(kBanFile, "r");
+  if (!file) return;
+  const size_t n = file.read(reinterpret_cast<uint8_t*>(buf), sizeof(buf));
+  file.close();
+  platform::LockGuard g(mutex_);
   bans_.parse(buf, n);
-  for (int i = 0; i < count_; i++) entries_[i].info.banned = bans_.contains(entries_[i].info.ip);
+  for (int i = 0; i < dir_.count(); i++) dir_.at(i).info.banned = bans_.contains(dir_.at(i).info.ip);
 }
 
 void ClientTable::saveBans() {
+  // Serialise under mutex_ (brief), write with only fileMutex_ held: a LittleFS write
+  // can take tens of ms (much longer on a nearly full filesystem), and both DNS tasks
+  // take mutex_ for every query; holding it here dropped queries (audit 2026-11).
   char buf[clients::BanList::kMaxTextBytes];
-  const size_t n = bans_.serialize(buf, sizeof(buf));
-  File f = LittleFS.open(kBanFile, "w");
-  if (!f) return;
-  f.write(reinterpret_cast<const uint8_t*>(buf), n);
-  f.close();
+  size_t n;
+  {
+    platform::LockGuard g(mutex_);
+    n = bans_.serialize(buf, sizeof(buf));
+  }
+  File file = LittleFS.open(kBanFile, "w");
+  if (!file) return;
+  file.write(reinterpret_cast<const uint8_t*>(buf), n);
+  file.close();
 }
 
 bool ClientTable::checkBanned(uint32_t ip) {
   platform::LockGuard g(mutex_);
-  const bool banned = bans_.contains(ip);  // also when the client table is full
-  Entry* e = find(ip, true);
-  if (e) {
-    e->info.lastSeenMs = millis();
-    e->info.banned = banned;
-    if (banned) e->info.blocked++;
+  const bool banned = bans_.contains(ip);
+  clients::ClientEntry& e = obtain(ip);
+  e.info.lastSeenMs = millis();
+  e.info.banned = banned;
+  if (banned) {
+    e.info.blocked++;
+    totalBlocked_++;
   }
-  if (banned) totalBlocked_++;
   return banned;
 }
 
 void ClientTable::record(uint32_t ip, bool blocked) {
   platform::LockGuard g(mutex_);
-  Entry* e = find(ip, true);
+  clients::ClientEntry& e = obtain(ip);
   if (blocked) {
     totalBlocked_++;
-    if (e) e->info.blocked++;
+    e.info.blocked++;
   } else {
     totalAllowed_++;
-    if (e) e->info.allowed++;
+    e.info.allowed++;
   }
 }
 
@@ -110,11 +113,15 @@ bool ClientTable::blockingOn() {
 }
 
 ClientTable::BanResult ClientTable::toggleBan(uint32_t ip) {
-  platform::LockGuard g(mutex_);
-  const bool ban = !bans_.contains(ip);
-  if (ban && !bans_.add(ip)) return BanResult::kListFull;
-  if (!ban) bans_.remove(ip);
-  if (Entry* e = find(ip, false)) e->info.banned = ban;
+  platform::LockGuard f(fileMutex_);  // keeps saves in the order of the changes
+  bool ban;
+  {
+    platform::LockGuard g(mutex_);
+    ban = !bans_.contains(ip);
+    if (ban && !bans_.add(ip)) return BanResult::kListFull;
+    if (!ban) bans_.remove(ip);
+    if (clients::ClientEntry* e = dir_.find(ip)) e->info.banned = ban;
+  }
   saveBans();
   return ban ? BanResult::kBanned : BanResult::kUnbanned;
 }
@@ -125,9 +132,12 @@ clients::BanList ClientTable::bans() {
 }
 
 void ClientTable::replaceBans(const clients::BanList& list) {
-  platform::LockGuard g(mutex_);
-  bans_ = list;
-  for (int i = 0; i < count_; i++) entries_[i].info.banned = bans_.contains(entries_[i].info.ip);
+  platform::LockGuard f(fileMutex_);
+  {
+    platform::LockGuard g(mutex_);
+    bans_ = list;
+    for (int i = 0; i < dir_.count(); i++) dir_.at(i).info.banned = bans_.contains(dir_.at(i).info.ip);
+  }
   saveBans();
 }
 
@@ -160,9 +170,9 @@ void ClientTable::resolvePendingMacs() {
   job.n = 0;
   {
     platform::LockGuard g(mutex_);
-    for (int i = 0; i < count_ && job.n < 8; i++)
-      if (entries_[i].macPending && (ntohl(entries_[i].info.ip) >> 24) != 127)
-        job.ip[job.n++] = entries_[i].info.ip;
+    for (int i = 0; i < dir_.count() && job.n < 8; i++)
+      if (dir_.at(i).macPending && (ntohl(dir_.at(i).info.ip) >> 24) != 127)
+        job.ip[job.n++] = dir_.at(i).info.ip;
   }
   if (!job.n || tcpip_callback(macJobInLwip, &job) != ERR_OK) return;
   inFlight = true;
@@ -170,7 +180,7 @@ void ClientTable::resolvePendingMacs() {
   inFlight = false;
   platform::LockGuard g(mutex_);
   for (int k = 0; k < job.n; k++) {
-    Entry* e = find(job.ip[k], false);
+    clients::ClientEntry* e = dir_.find(job.ip[k]);
     if (!e || !e->macPending) continue;
     if (job.found[k]) {
       memcpy(e->info.mac, job.mac[k], 6);
@@ -184,8 +194,8 @@ void ClientTable::resolvePendingMacs() {
 std::vector<ClientInfo> ClientTable::snapshot() {
   platform::LockGuard g(mutex_);
   std::vector<ClientInfo> v;
-  v.reserve(count_);
-  for (int i = 0; i < count_; i++) v.push_back(entries_[i].info);
+  v.reserve(dir_.count());
+  for (int i = 0; i < dir_.count(); i++) v.push_back(dir_.at(i).info);
   return v;
 }
 

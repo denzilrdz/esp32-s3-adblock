@@ -1,6 +1,8 @@
 #pragma once
 // Per-client statistics, bans and the global blocking pause. Read from the DNS tasks
 // (through AppPolicy) and changed from the web task, so every method locks briefly.
+// mutex_ is on the DNS hot path: never hold it across file I/O or logging. The ban
+// file has its own lock (fileMutex_, always taken before mutex_).
 
 #include <Arduino.h>
 
@@ -8,23 +10,17 @@
 #include <vector>
 
 #include "clients/ban_list.h"
+#include "clients/client_directory.h"
 #include "clients/pause_timer.h"
 #include "platform/rtos.h"
 
 namespace app {
 
-struct ClientInfo {
-  uint32_t ip = 0;  // network byte order
-  uint8_t mac[6] = {0};
-  uint32_t blocked = 0;
-  uint32_t allowed = 0;
-  uint32_t lastSeenMs = 0;
-  bool banned = false;
-};
+using ClientInfo = clients::ClientInfo;
 
 class ClientTable {
  public:
-  static constexpr int kMaxClients = 96;
+  static constexpr int kMaxClients = clients::ClientDirectory::kMax;
   static constexpr int kMaxBans = clients::BanList::kMax;
 
   enum class BanResult { kBanned, kUnbanned, kListFull };
@@ -51,17 +47,13 @@ class ClientTable {
   uint32_t totalAllowed();
 
  private:
-  struct Entry {
-    ClientInfo info;
-    bool macPending = false;
-    uint8_t macTries = 0;
-  };
-  Entry* find(uint32_t ip, bool create);  // caller holds mutex_
-  void saveBans();                        // caller holds mutex_
+  clients::ClientEntry& obtain(uint32_t ip);  // caller holds mutex_
+  // Writes the current ban list to flash. Caller holds fileMutex_, not mutex_.
+  void saveBans();
 
+  platform::Mutex fileMutex_;
   platform::Mutex mutex_;
-  Entry entries_[kMaxClients];
-  int count_ = 0;
+  clients::ClientDirectory dir_;
   clients::BanList bans_;  // the only source of truth for bans (persisted)
   clients::PauseTimer pause_;
   uint32_t totalBlocked_ = 0;
