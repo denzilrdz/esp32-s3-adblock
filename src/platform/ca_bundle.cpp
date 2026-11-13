@@ -14,6 +14,21 @@ namespace platform {
 
 namespace {
 constexpr const char* kTag = "tls";
+const uint8_t* gTrusted = nullptr;  // the filtered bundle (PSRAM, lives for the uptime)
+size_t gTrustedLen = 0;
+}  // namespace
+
+void reinstallTrustedBundle() {
+  if (gTrusted) esp_crt_bundle_set(gTrusted, gTrustedLen);
+}
+
+esp_err_t attachTrustedBundle(void* conf) {
+  reinstallTrustedBundle();
+  const esp_err_t r = esp_crt_bundle_attach(conf);
+  // Again: another task's detach between the two calls makes attach load the built-in
+  // bundle; this puts the filtered one straight back.
+  reinstallTrustedBundle();
+  return r;
 }
 
 bool installTrustedCaBundle(hal::ILogger& log) {
@@ -34,6 +49,8 @@ bool installTrustedCaBundle(hal::ILogger& log) {
             static_cast<unsigned>(len));
     return false;
   }
+  gTrusted = copy;
+  gTrustedLen = n;
   log.log(hal::LogLevel::kInfo, kTag, "CA bundle: %u roots, %u distrusted removed",
           static_cast<unsigned>(util::caBundleCount(copy, n)), static_cast<unsigned>(removed));
   return true;

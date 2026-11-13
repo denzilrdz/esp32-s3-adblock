@@ -578,7 +578,12 @@ timeout)`, `close()`, plus `pipelined()`. Implementations:
     `util::kDistrustedRoots` (exact common names; `util::filterCaBundle` keeps the
     subject order ESP-IDF binary-searches) and installs the copy with
     `esp_crt_bundle_set()`, which keeps a pointer (the copy stays in PSRAM). It covers
-    DoT/DoH and the blocklist download. First entry: `emSign ECC Root CA - G3`
+    DoT/DoH and the blocklist download. ESP-IDF keeps the bundle in one global that
+    `esp_crt_bundle_detach()` clears (esp-tls calls it when an `esp_http_client`
+    connection closes), and a plain attach then reloads the built-in bundle: every
+    attach goes through `platform::attachTrustedBundle()` (sets the filtered bundle
+    before and after attaching) and the download path reinstalls it on exit, so the
+    global holds the filtered bundle or nothing (nothing fails verification). First entry: `emSign ECC Root CA - G3`
     (GHSA-6q48-6c7w-9gw2, compromised intermediates), 150 → 149 roots. If the format
     isn't understood (a future ESP-IDF), the built-in bundle stays and an error is
     logged. TLS 1.2 minimum;

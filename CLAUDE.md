@@ -162,7 +162,11 @@ native tests; pre-push = clang-tidy + esp32s3 firmware build.
 - **CA bundle:** `#include <esp_crt_bundle.h>` (ESP-IDF's; core 3 has no Arduino copy).
   Roots are distrusted by exact common name in `util::kDistrustedRoots`, filtered out
   at boot (`platform::installTrustedCaBundle()`, before any TLS); the bundle buffer
-  must outlive every TLS session (`esp_crt_bundle_set()` keeps the pointer).
+  must outlive every TLS session (`esp_crt_bundle_set()` keeps the pointer). **Never
+  call `esp_crt_bundle_attach` directly**: ESP-IDF's detach (esp-tls runs it when an
+  `esp_http_client` connection closes) clears the global and the next plain attach
+  reloads the built-in bundle, distrusted roots included. Use
+  `platform::attachTrustedBundle` (also as `crt_bundle_attach`); a tools test checks.
 - **lwIP core locking is on** (`CONFIG_LWIP_TCPIP_CORE_LOCKING`): socket calls are fine
   from any task, raw lwIP core calls still go through `tcpip_callback`.
 - **Platform tools:** pioarduino keeps esptool 5 (`esptool`, dashed subcommands like

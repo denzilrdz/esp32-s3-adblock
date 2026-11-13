@@ -1,8 +1,8 @@
 #include "platform/tls_stream.h"
 
-#include "platform/watchdog.h"
+#include "platform/ca_bundle.h"
 
-#include <esp_crt_bundle.h>
+#include "platform/watchdog.h"
 
 #include <esp_err.h>
 #include <esp_system.h>
@@ -87,7 +87,7 @@ bool TlsStream::setupConfig() {
   mbedtls_ssl_conf_min_tls_version(&conf_, MBEDTLS_SSL_VERSION_TLS1_2);
   mbedtls_ssl_conf_rng(&conf_, hardwareRng, nullptr);
   mbedtls_ssl_conf_session_tickets(&conf_, MBEDTLS_SSL_SESSION_TICKETS_ENABLED);
-  if (esp_crt_bundle_attach(&conf_) != ESP_OK) {
+  if (attachTrustedBundle(&conf_) != ESP_OK) {  // not ESP-IDF's own attach: ca_bundle.h
     lastError_ = -1;
     return false;
   }

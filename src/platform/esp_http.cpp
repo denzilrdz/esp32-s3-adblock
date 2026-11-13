@@ -1,5 +1,7 @@
 #include "platform/esp_http.h"
 
+#include "platform/ca_bundle.h"
+
 #include "platform/watchdog.h"
 
 #include <esp_err.h>
@@ -13,8 +15,6 @@
 #include <cstdlib>
 #include <cstring>
 #include <memory>
-
-#include <esp_crt_bundle.h>
 
 namespace platform {
 
@@ -78,6 +78,11 @@ hal::HttpGetResult EspHttpClient::get(const hal::HttpGetRequest& req, hal::IHttp
   } armed{liveness_, livenessId_};
   if (liveness_) liveness_->arm(livenessId_);
   const int64_t startUs = esp_timer_get_time();
+  // esp-tls detaches the bundle whenever a connection closes (each redirect hop, the
+  // cleanup): put the filtered one back on every way out of this function.
+  struct ReinstallBundle {
+    ~ReinstallBundle() { reinstallTrustedBundle(); }
+  } reinstallBundle;
   hal::HttpGetResult result;
   if (!req.url || strncmp(req.url, "https://", 8) != 0) {  // HTTPS only, by design
     result.error = hal::HttpError::kConnect;
@@ -89,8 +94,8 @@ hal::HttpGetResult EspHttpClient::get(const hal::HttpGetRequest& req, hal::IHttp
   cfg.url = req.url;
   cfg.method = HTTP_METHOD_GET;
   cfg.timeout_ms = static_cast<int>(req.timeoutMs);
-  cfg.crt_bundle_attach = esp_crt_bundle_attach;  // verify server certificates
-  cfg.disable_auto_redirect = true;               // handled below, so we see each status
+  cfg.crt_bundle_attach = attachTrustedBundle;  // verify server certificates (ca_bundle.h)
+  cfg.disable_auto_redirect = true;             // handled below, so we see each status
   cfg.event_handler = onEvent;
   cfg.user_data = &ctx;
   cfg.buffer_size = 2048;

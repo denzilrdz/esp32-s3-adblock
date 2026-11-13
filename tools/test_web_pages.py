@@ -176,6 +176,27 @@ class DashboardServerTest(unittest.TestCase):
             self.assertIn(d, self.src)
 
 
+class FirmwareTlsTest(unittest.TestCase):
+    """The distrusted-root filter (src/platform/ca_bundle.*) must not be bypassed."""
+
+    def test_no_direct_bundle_attach(self):
+        # esp_crt_bundle_detach() clears ESP-IDF's global bundle and a direct
+        # esp_crt_bundle_attach() then reloads the built-in one, distrusted roots and
+        # all (found in review, 2026-11). Only ca_bundle.cpp may call it.
+        for path in sorted((ROOT / "src").rglob("*.cpp")) + sorted(
+            (ROOT / "src").rglob("*.h")
+        ):
+            if path.name.startswith("ca_bundle."):
+                continue
+            text = path.read_text(encoding="utf-8")
+            self.assertNotRegex(
+                text, r"(?<![\w.])esp_crt_bundle_(attach|set)\b", str(path)
+            )
+        http = (ROOT / "src/platform/esp_http.cpp").read_text(encoding="utf-8")
+        self.assertIn("cfg.crt_bundle_attach = attachTrustedBundle", http)
+        self.assertIn("reinstallTrustedBundle()", http)
+
+
 class PortalPageTest(unittest.TestCase):
     def test_works_offline_without_script(self):
         head = portal_head()
