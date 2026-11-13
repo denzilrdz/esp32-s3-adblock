@@ -59,9 +59,21 @@ FormatError parseHeader(const uint8_t* data, size_t len, Header& out);
 // Writes a header (used by tests and the dashboard upload path).
 void writeHeader(uint8_t out[kHeaderSize], uint32_t count, uint32_t crc, int64_t buildTime);
 
+// Flash for lists: the LittleFS ("spiffs") partition in partitions_16MB.csv
+// (tools/test_blocklist_tool.py checks they match). The live list and a download's
+// temp file must fit side by side, with the 64 KB LittleFsFileSystem::freeBytes()
+// margin and room for the small settings files.
+constexpr size_t kListPartitionBytes = 0x7E0000;
+constexpr size_t kOtherFilesBytes = 192 * 1024;  // rules, rewrites, bans, LittleFS metadata
+
+// The most names a list may have. Was 1M until the 2026-11 audit: two 4.26 MB files
+// don't fit in 8.26 MB, so a 1M-name list installed once and every later update then
+// failed with "not enough flash". 900k: 2 x 3.86 MB + margins fit (test_blocklist).
+constexpr uint32_t kMaxListEntries = 900000;
+
 struct Limits {
   uint32_t minEntries = 1000;
-  uint32_t maxEntries = 1000000;
+  uint32_t maxEntries = kMaxListEntries;
 };
 
 // Incremental validator for a download: checks the header, the total size and the

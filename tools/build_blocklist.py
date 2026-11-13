@@ -6,7 +6,7 @@ version 2, 48-bit FNV-1a hashes, 16-bit bucket prefix, entry count, CRC-32, buil
 time), a 65537-entry bucket table and the sorted 32-bit suffixes. MUST match
 lib/core/blocklist/{hash,format}.h.
 
-Usage: build_blocklist.py [--allow-missing] [out.bin] [src ...]
+Usage: build_blocklist.py [--allow-missing] [--previous old.bin] [out.bin] [src ...]
   src = local file or URL. With none given, downloads a balanced daily-driver set
   (StevenBlack base + Hagezi Light) ~= 100k entries: blocks ads/trackers/malware
   but leaves WhatsApp/Instagram/social/messaging working.
@@ -15,6 +15,15 @@ Usage: build_blocklist.py [--allow-missing] [out.bin] [src ...]
     build_blocklist.py blocklist.bin \\
       https://raw.githubusercontent.com/StevenBlack/hosts/master/alternates/fakenews-gambling-porn-social/hosts \\
       https://raw.githubusercontent.com/hagezi/dns-blocklists/main/wildcard/ultimate-onlydomains.txt
+
+Safety checks (audit 2026-11: the daily build trusted its third-party sources
+completely, and the firmware blocks every subdomain of a listed name):
+  - entries that would block a PROTECTED name (the update site, GitHub, the upstream
+    DNS and NTP servers, big shared hosting) are dropped with a warning;
+  - bare TLDs and second-level public suffixes (co.uk, com.au) are dropped;
+  - more than MAX_ENTRIES names fails (the firmware refuses such a list);
+  - with --previous, a count below half or above double the old list fails, so a
+    truncated or bloated source can't replace a good list.
 """
 
 import re
@@ -34,7 +43,7 @@ V2_BUCKETS = 1 << V2_PREFIX_BITS
 # Default daily-driver list: ads + trackers + malware, WhatsApp/social keep working.
 # ~100k entries (~0.65 MB in format v2). Hagezi's wildcard lists drop subdomains the
 # firmware's parent matching already covers. Want more? pro-onlydomains.txt (~370k)
-# fits easily (the firmware accepts up to 1M entries).
+# fits easily (the firmware accepts up to 900k entries).
 DEFAULT_SOURCES = [
     "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts",  # base: ads + malware
     "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/wildcard/light-onlydomains.txt",  # Hagezi Light (wildcard = domain + subdomains)
@@ -44,6 +53,137 @@ DEFAULT_SOURCES = [
 ADG = re.compile(r"^(@@)?\|\|([a-z0-9._-]+)\^?(\$.*)?$", re.I)
 
 ALLOW_MISSING = False
+
+# lib/core/blocklist/format.h kMaxListEntries: two lists must fit in LittleFS.
+MAX_ENTRIES = 900_000
+
+# Never blocked, nor any parent of them (the firmware's parent matching would block
+# them through it): the board's update path and installer, the upstream resolvers and
+# NTP, and shared hosting whose parent would take out large parts of the web.
+PROTECTED = {
+    "github.com",
+    "api.github.com",
+    "denzilrdz.github.io",
+    "raw.githubusercontent.com",
+    "objects.githubusercontent.com",
+    "release-assets.githubusercontent.com",
+    "registry.npmjs.org",
+    "cloudflare-dns.com",
+    "one.one.one.one",
+    "dns.quad9.net",
+    "pool.ntp.org",
+    "time.cloudflare.com",
+    "a.cloudfront.net",
+    "a.amazonaws.com",
+    "a.azureedge.net",
+    "a.akamaized.net",
+    "a.fastly.net",
+    "a.appspot.com",
+    "a.herokuapp.com",
+    "a.pages.dev",
+    "a.workers.dev",
+    "a.googleusercontent.com",
+    "www.google.com",
+    "www.apple.com",
+    "www.microsoft.com",
+}
+
+# Widely used second-level public suffixes: listing one would block a whole country's
+# companies. An explicit set, not a pattern: lists deliberately block abused
+# free-subdomain hosts that look alike (co.cc, co.nf).
+PUBLIC_SUFFIXES = {
+    "co.uk",
+    "org.uk",
+    "ac.uk",
+    "gov.uk",
+    "me.uk",
+    "ltd.uk",
+    "plc.uk",
+    "net.uk",
+    "nhs.uk",
+    "com.au",
+    "net.au",
+    "org.au",
+    "edu.au",
+    "gov.au",
+    "co.nz",
+    "org.nz",
+    "govt.nz",
+    "co.jp",
+    "ne.jp",
+    "or.jp",
+    "ac.jp",
+    "go.jp",
+    "co.kr",
+    "or.kr",
+    "go.kr",
+    "co.in",
+    "net.in",
+    "org.in",
+    "gov.in",
+    "ac.in",
+    "nic.in",
+    "co.za",
+    "org.za",
+    "gov.za",
+    "com.br",
+    "net.br",
+    "org.br",
+    "gov.br",
+    "com.mx",
+    "gob.mx",
+    "com.ar",
+    "gob.ar",
+    "com.cn",
+    "net.cn",
+    "org.cn",
+    "gov.cn",
+    "com.hk",
+    "com.tw",
+    "com.sg",
+    "gov.sg",
+    "com.my",
+    "com.ph",
+    "com.tr",
+    "gov.tr",
+    "co.id",
+    "go.id",
+    "co.il",
+    "gov.il",
+    "com.sa",
+    "com.eg",
+    "com.pk",
+    "com.ng",
+    "co.ke",
+    "com.vn",
+    "co.th",
+    "com.ua",
+}
+
+
+def is_public_suffix(d: str) -> bool:
+    return "." not in d or d in PUBLIC_SUFFIXES
+
+
+def blocks_protected(d: str) -> bool:
+    """True if listing d would block a protected name (d is it, or a parent of it)."""
+    return any(p == d or p.endswith("." + d) for p in PROTECTED)
+
+
+def warn(msg: str) -> None:
+    # A GitHub Actions annotation shows on the workflow run's summary page.
+    print(
+        ("::warning::" if os.environ.get("GITHUB_ACTIONS") else "warning: ") + msg,
+        file=sys.stderr,
+    )
+
+
+def count_of(path: str) -> int:
+    with open(path, "rb") as f:
+        head = f.read(12)
+    if len(head) < 12 or head[:4] != b"ADBL":
+        raise ValueError(f"{path} is not a format v2 blocklist")
+    return struct.unpack_from("<I", head, 8)[0]
 
 
 def fnv64(b: bytes) -> int:
@@ -96,6 +236,11 @@ def read_source(src: str) -> str:
 def main():
     global ALLOW_MISSING
     argv = sys.argv[1:]
+    previous = None
+    if "--previous" in argv:
+        i = argv.index("--previous")
+        previous = argv[i + 1]
+        del argv[i : i + 2]
     args = [a for a in argv if a != "--allow-missing"]
     ALLOW_MISSING = "--allow-missing" in argv
     out = args[0] if args else "blocklist.bin"
@@ -155,14 +300,38 @@ def main():
             f"skipped rules    : {skipped:,} (adblock syntax that a DNS hash list cannot express)",
             file=sys.stderr,
         )
+    suffixes = sorted(d for d in domains if is_public_suffix(d))
+    unsafe = sorted(d for d in domains if blocks_protected(d))
+    for d in suffixes:
+        warn(f"dropped {d}: a TLD or public suffix would block every site under it")
+    for d in unsafe:
+        warn(
+            f"dropped {d}: it would block a protected name (update site, DNS, NTP, hosting)"
+        )
+    domains -= set(suffixes) | set(unsafe)
 
     hashes = [hash48(d) for d in domains]
+    n = len(set(hashes))
+    if n > MAX_ENTRIES:
+        print(
+            f"  !! {n:,} entries: more than the firmware accepts ({MAX_ENTRIES:,})",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    if previous:
+        old = count_of(previous)
+        if old and not (old / 2 <= n <= old * 2):
+            print(
+                f"  !! {n:,} entries vs {old:,} in {previous}: a change that large looks like a "
+                "broken or tampered source; not replacing the list",
+                file=sys.stderr,
+            )
+            sys.exit(1)
     blob = encode_v2(domains)
     collisions = len(hashes) - len(set(hashes))
     with open(out, "wb") as f:
         f.write(blob)
 
-    n = len(set(hashes))
     print(f"source domains   : {len(domains):,}")
     print(f"hash entries     : {n:,}  ({V2_HASH_BITS}-bit)")
     print(f"collisions       : {collisions}  (domains sharing a hash -> over-block)")

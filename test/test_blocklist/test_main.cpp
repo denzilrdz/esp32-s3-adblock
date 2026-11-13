@@ -269,8 +269,18 @@ static void test_publish_while_readers_run_never_uses_freed_index() {
   TEST_ASSERT_EQUAL_UINT32(0, misses.load());  // never a moment without a list
 }
 
+static void test_two_largest_lists_fit_in_flash() {
+  // The live list and a download's temp file coexist during an update (audit 2026-11:
+  // at the old 1M cap they didn't, so updates failed forever after one big list).
+  const size_t largest = blocklist::fileSizeFor(blocklist::Limits{}.maxEntries);
+  const size_t margin = 64 * 1024;  // LittleFsFileSystem::freeBytes()
+  TEST_ASSERT_TRUE(2 * largest + margin + blocklist::kOtherFilesBytes <= blocklist::kListPartitionBytes);
+  TEST_ASSERT_FALSE(2 * blocklist::fileSizeFor(1000000) + margin <= blocklist::kListPartitionBytes);
+}
+
 int main(int, char**) {
   UNITY_BEGIN();
+  RUN_TEST(test_two_largest_lists_fit_in_flash);
   RUN_TEST(test_hash_matches_python_golden_values);
   RUN_TEST(test_valid_file_passes_full_validation);
   RUN_TEST(test_validation_reports_progress_for_large_files);

@@ -101,5 +101,7 @@ list + immediate download.
   file (e.g. an HTML error page or an old 40-bit list).
 - `0 domains` after boot → no valid list and no `.old` file; it downloads as soon as
   the clock syncs. Or _Update now_ / upload a file on the dashboard.
-- `too many entries` → the limit is 1M entries, set in
-  `BlocklistManager`'s constructor; raise only if the budget (ARCHITECTURE §11) allows.
+- `too many entries` → the limit is 900k entries (`blocklist::kMaxListEntries`,
+  `MAX_ENTRIES` in `tools/build_blocklist.py`): the live list and a download's temp
+  file must both fit in LittleFS (`test_two_largest_lists_fit_in_flash`). At the old
+  1M cap a big list installed once and every later update failed "not enough flash".

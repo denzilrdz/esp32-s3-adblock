@@ -47,7 +47,7 @@ BlocklistManager::BlocklistManager(hal::IFileSystem& fs, hal::IHttpClient& http,
       tick_(tick),
       limits_([] {
         blocklist::Limits l;
-        l.maxEntries = 1000000;  // ~4.3 MB in PSRAM; live + temp copies fit the 7.9 MB LittleFS
+        l.maxEntries = blocklist::kMaxListEntries;  // ~3.9 MB; live + temp copies fit LittleFS
         return l;
       }()),
       holder_(yieldBriefly),

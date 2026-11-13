@@ -56,6 +56,14 @@ All notable changes to this project are documented here. The format follows
 - A browser opening several connections to the dashboard could use up the board's
   network sockets and make encrypted DNS reconnects or the blocklist download fail.
 
+- A blocklist of close to 1 million names installed once and then every later update
+  failed with "not enough flash" (two copies of it don't fit). The limit is now
+  900,000 names, which leaves room for the update's copy.
+- The daily default blocklist no longer lets its source lists block the board's
+  update site, GitHub, its DNS and time servers or big shared hosting (they are
+  dropped with a warning), nor whole suffixes like `co.uk`. A list that shrinks to
+  less than half or grows to more than double is not published.
+
 ### Security
 
 - The one-time setup code shown on the serial console at first boot is now made

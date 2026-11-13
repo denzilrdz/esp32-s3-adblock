@@ -36,7 +36,7 @@ blocklist every day on its own**. No Raspberry Pi, no SD card, no OS to patch.
 | Feature                                | What you get                                                                                                  |
 | -------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
 | **Quick setup**                        | Flash from Chrome/Edge with one click, pick your Wi-Fi on your phone, set a password, point the router at it. |
-| **Blocks for the whole network**       | Up to **1 million domains** in PSRAM; one entry blocks a domain and all its subdomains.                       |
+| **Blocks for the whole network**       | Up to **900,000 domains** in PSRAM; one entry blocks a domain and all its subdomains.                         |
 | **Your ISP stops seeing your lookups** | Allowed queries leave encrypted (DNS-over-TLS, with DNS-over-HTTPS fallback), unlike a plain sinkhole.        |
 | **Maintenance-free**                   | The blocklist updates itself daily; firmware updates are one button on the dashboard, with rollback.          |
 | **Fast**                               | Blocklist and answer cache live in RAM: repeat lookups are answered in milliseconds.                          |
@@ -75,7 +75,7 @@ blocklist every day on its own**. No Raspberry Pi, no SD card, no OS to patch.
 | Hardware              | ESP32-S3 board, USB-powered                        | Pi + SD card + power supply | ESP32-C3 board                                                             |
 | Upkeep                | no OS or SD card; one-click firmware updates       | OS updates, SD card wear    | no OS or SD card                                                           |
 | Upstream DNS          | **encrypted** (DoT, DoH fallback)                  | plain by default            | plain UDP to 9.9.9.9                                                       |
-| Blocklist             | up to 1M domains, in PSRAM                         | millions, on disk           | read from flash                                                            |
+| Blocklist             | up to 900k domains, in PSRAM                       | millions, on disk           | read from flash                                                            |
 | Failed list update    | old list stays active                              | old list stays active       | can leave no list loaded                                                   |
 | Dashboard login       | login screen, hashed password, setup code, lockout | password                    | Basic Auth                                                                 |
 | Answer cache          | yes (PSRAM)                                        | yes                         | no                                                                         |
@@ -170,7 +170,7 @@ and the _Overview_ should show a rising share of queries blocked.
 
 ## Features
 
-- **Network-wide blocking**: up to 1 million domains held in PSRAM (lookups are served
+- **Network-wide blocking**: up to 900,000 domains held in PSRAM (lookups are served
   from RAM); a listed domain also blocks its subdomains; your own block and allow rules.
 - **Temporary DNS rewrites**: answer a name (or every subdomain with `*.example.com`)
   with an IPv4/IPv6 address or alias it to another domain (CNAME) for 15 minutes to
