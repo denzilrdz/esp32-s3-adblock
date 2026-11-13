@@ -877,11 +877,14 @@ in RTC memory like every deliberate restart.
     that serves its page to a local request for 60 s (`diag::otaVerdict()`); only
     then is `esp_ota_mark_app_valid_cancel_rollback()` called. Upstream
     reachability is deliberately not required (an ISP outage must not roll back
-    good firmware). A crash loop, or no health within 5 minutes, rolls back. An
-    `esp_timer` armed at the start of `setup()` also rolls back after 10 minutes
-    if the image is still pending: `setup()` retries a known Wi-Fi network forever,
-    and a new image stuck there would otherwise leave the LAN without DNS until a
-    power cycle.
+    good firmware). A crash loop, or no Wi-Fi/DNS within 5 minutes, rolls back. A
+    dashboard that doesn't answer only delays the verdict: any LAN host can keep
+    the single web task busy, and must not be able to force a downgrade that way;
+    an image whose dashboard really is broken stays pending and the bootloader
+    rolls it back at the next restart. An `esp_timer` armed at the start of
+    `setup()` (and stopped at its end) rolls back after 10 minutes: `setup()`
+    retries a known Wi-Fi network forever, and a new image stuck there would
+    otherwise leave the LAN without DNS until a power cycle.
 - **Blocklist and upstream integrity:** HTTPS/DoT/DoH with certificate verification.
   The blocklist also has a CRC check (integrity only; authenticity comes from TLS).
 - **Network input hardening:**

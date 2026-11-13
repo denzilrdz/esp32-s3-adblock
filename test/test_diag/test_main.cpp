@@ -267,8 +267,13 @@ static void test_ota_verdict_needs_the_dashboard_too() {
   in.webAnswers = false;
   in.uptimeMs = 120000;
   TEST_ASSERT_EQUAL(static_cast<int>(diag::OtaVerdict::kWait), static_cast<int>(diag::otaVerdict(in)));
-  in.uptimeMs = diag::kOtaGiveUpMs + 1;
-  TEST_ASSERT_EQUAL(static_cast<int>(diag::OtaVerdict::kRollback), static_cast<int>(diag::otaVerdict(in)));
+  // ...but a busy dashboard never forces a rollback: a LAN host holding the web task
+  // with a slow request must not be able to downgrade the firmware. It stays pending
+  // (rolled back by the bootloader at the next restart if it never answers).
+  in.uptimeMs = diag::kOtaGiveUpMs * 10;
+  TEST_ASSERT_EQUAL(static_cast<int>(diag::OtaVerdict::kWait), static_cast<int>(diag::otaVerdict(in)));
+  in.webAnswers = true;  // the slow client went away
+  TEST_ASSERT_EQUAL(static_cast<int>(diag::OtaVerdict::kMarkValid), static_cast<int>(diag::otaVerdict(in)));
 }
 
 static void test_ota_verdict_rolls_back_without_wifi_or_dns() {

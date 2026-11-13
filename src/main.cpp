@@ -315,7 +315,9 @@ void maintainOtaHealth() {
       gLog.log(hal::LogLevel::kInfo, "ota", "new firmware marked valid");
       done = true;
       break;
-    case diag::OtaVerdict::kRollback: rollBack("rollback: new firmware unhealthy after 5 min"); break;
+    case diag::OtaVerdict::kRollback:
+      rollBack("rollback: new firmware without Wi-Fi or DNS after 5 min");
+      break;
     case diag::OtaVerdict::kWait: break;
   }
 }
@@ -323,16 +325,23 @@ void maintainOtaHealth() {
 // maintainOtaHealth() only runs once setup() is done; setup() can wait for Wi-Fi
 // forever (known networks are retried). A new image stuck there would leave the LAN
 // without DNS until someone power-cycled the board, so a timer rolls it back.
+esp_timer_handle_t gBootGuard = nullptr;
+
 void armBootRollbackGuard() {
   if (!pendingVerify()) return;
-  static esp_timer_handle_t timer = nullptr;
   esp_timer_create_args_t args = {};
   args.callback = [](void*) {
     if (pendingVerify()) rollBack("rollback: new firmware never finished booting");
   };
   args.name = "ota_guard";
-  if (esp_timer_create(&args, &timer) == ESP_OK)
-    esp_timer_start_once(timer, static_cast<uint64_t>(diag::kOtaBootGuardMs) * 1000);
+  if (esp_timer_create(&args, &gBootGuard) == ESP_OK)
+    esp_timer_start_once(gBootGuard, static_cast<uint64_t>(diag::kOtaBootGuardMs) * 1000);
+}
+
+// setup() finished: from here maintainOtaHealth() decides (rollback only without
+// Wi-Fi or DNS, never because the dashboard is busy).
+void disarmBootRollbackGuard() {
+  if (gBootGuard) esp_timer_stop(gBootGuard);
 }
 
 // Wi-Fi events, recorded by the Arduino event task and reported by superviseWifi().
@@ -560,6 +569,7 @@ void setup() {
   startOta();
   xTaskCreatePinnedToCore(webTask, "web", 8192, nullptr, tskIDLE_PRIORITY, nullptr, 0);
   startLivenessChecks();
+  disarmBootRollbackGuard();
   gLog.log(hal::LogLevel::kInfo, "boot", "ready: DNS :53, dashboard http://%s.local", kHostname);
 }
 

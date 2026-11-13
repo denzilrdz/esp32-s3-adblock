@@ -22,11 +22,15 @@ constexpr uint32_t kOtaGiveUpMs = 5 * 60000;      // still not healthy: roll bac
 constexpr uint32_t kOtaBootGuardMs = 10 * 60000;  // setup() never finished: roll back
 
 // Upstream reachability is deliberately not required: an ISP outage must not roll
-// back good firmware.
+// back good firmware. A dashboard that doesn't answer only delays the verdict, it
+// never rolls back by itself: any LAN host can keep the single web task busy with a
+// slow request, and must not be able to force a downgrade to an older (possibly
+// vulnerable) image that way. An image whose dashboard really is broken stays
+// "pending verify", and the bootloader rolls it back at the next restart.
 inline OtaVerdict otaVerdict(const OtaHealthInput& in) {
-  if (in.wifi && in.dnsRunning && in.webAnswers && in.uptimeMs > kOtaHealthyAfterMs)
-    return OtaVerdict::kMarkValid;
-  if (in.uptimeMs > kOtaGiveUpMs) return OtaVerdict::kRollback;
+  const bool running = in.wifi && in.dnsRunning;
+  if (running && in.webAnswers && in.uptimeMs > kOtaHealthyAfterMs) return OtaVerdict::kMarkValid;
+  if (!running && in.uptimeMs > kOtaGiveUpMs) return OtaVerdict::kRollback;
   return OtaVerdict::kWait;
 }
 
