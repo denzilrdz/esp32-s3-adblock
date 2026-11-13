@@ -64,7 +64,15 @@ All notable changes to this project are documented here. The format follows
   dropped with a warning), nor whole suffixes like `co.uk`. A list that shrinks to
   less than half or grows to more than double is not published.
 
+- Replies now repeat the question exactly as it was asked (upper/lower case
+  included). A router or resolver that forwards to the board and randomises letter
+  case as an anti-spoofing measure (DNS 0x20) rejected every answer before.
+
 ### Security
+
+- One device asking with DNSSEC checking disabled (`dig +cd`) could make the cache
+  hand an unvalidated answer to every other device. Such answers are no longer
+  cached.
 
 - The one-time setup code shown on the serial console at first boot is now made
   from the hardware random number generator with its entropy source switched on

@@ -76,6 +76,10 @@ struct Query {
   uint16_t qclass = 0;
   uint8_t qnameWire[kMaxNameWire] = {0};  // lowercased, uncompressed
   uint8_t qnameWireLen = 0;
+  // Bit i: qnameWire[i] was upper case in the client's query. Replies echo the name
+  // exactly (writeQuestionName): resolvers using DNS 0x20 case randomisation reject a
+  // reply whose question differs in case. Matching and cache keys stay lowercase.
+  uint8_t qnameCase[kMaxNameWire / 8 + 1] = {0};
   char qname[kMaxNameText + 1] = {0};  // lowercased dotted text, no trailing dot
   uint8_t qnameLen = 0;
   Edns edns;
@@ -88,6 +92,9 @@ struct Query {
   // Largest UDP reply this client accepts.
   size_t udpReplyLimit() const;
 };
+
+// Writes q's question name (qnameWireLen bytes) as the client spelled it.
+void writeQuestionName(const Query& q, uint8_t* dst);
 
 enum class ParseStatus {
   kOk,

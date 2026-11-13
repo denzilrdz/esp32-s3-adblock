@@ -210,7 +210,9 @@ size_t buildRewriteReply(const Query& q, const RewriteAnswer& rw, const uint8_t*
   o.put16(0);  // ANCOUNT, NSCOUNT, ARCOUNT: filled in below
   o.put16(0);
   o.put16(0);
-  o.put(q.qnameWire, q.qnameWireLen);
+  uint8_t name[kMaxNameWire];
+  writeQuestionName(q, name);  // as the client spelled it
+  o.put(name, q.qnameWireLen);
   o.put16(q.qtype);
   o.put16(q.qclass);
   if (o.failed()) return servfail(q, out, cap);

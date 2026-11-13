@@ -4,6 +4,7 @@
 #include <unity.h>
 
 #include <cstring>
+#include <string>
 
 #include "dns/message.h"
 #include "dns/name.h"
@@ -483,8 +484,47 @@ static void test_make_self_query_builds_a_recursive_in_query() {
   TEST_ASSERT_FALSE(dns::makeSelfQuery(nullptr, dns::kTypeA, q));
 }
 
+// The question section of a reply, exactly as written (case included).
+static std::string questionName(const uint8_t* pkt) {
+  std::string s;
+  for (size_t i = dns::kHeaderSize; pkt[i]; i += pkt[i] + 1) {
+    if (!s.empty()) s += '.';
+    s.append(reinterpret_cast<const char*>(pkt + i + 1), pkt[i]);
+  }
+  return s;
+}
+
+static void test_replies_echo_the_question_case_exactly() {
+  // Audit 2026-11: replies carried the lowercased name, so a resolver forwarding to the
+  // board with DNS 0x20 case randomisation (Unbound use-caps-for-id) saw a mismatch and
+  // treated every answer as spoofed. Matching stays case-insensitive.
+  const Query q = parseOk(makeQuery("wWw.ExAmPle.COM", dns::kTypeA));
+  TEST_ASSERT_EQUAL_STRING("www.example.com", q.qname);
+  size_t n = dns::buildBlockedReply(q, {}, out, sizeof(out));
+  TEST_ASSERT_TRUE(n > 0);
+  TEST_ASSERT_EQUAL_STRING("wWw.ExAmPle.COM", questionName(out).c_str());
+  n = dns::buildErrorReply(q, Rcode::kServFail, out, sizeof(out));
+  TEST_ASSERT_EQUAL_STRING("wWw.ExAmPle.COM", questionName(out).c_str());
+  // A forwarded or cached answer carries the upstream's (lowercase) question.
+  const Bytes up = ResponseBuilder(0x4444, "www.example.com", dns::kTypeA).answerA(60, 1, 2, 3, 4).build();
+  dns::ClientReplyOptions co;
+  co.sizeLimit = 512;
+  n = dns::finalizeForClient(up.data(), up.size(), q, co, out, sizeof(out));
+  TEST_ASSERT_TRUE(n > 0);
+  TEST_ASSERT_EQUAL_STRING("wWw.ExAmPle.COM", questionName(out).c_str());
+  // Truncated (TC=1) replies too.
+  co.sizeLimit = 20;
+  n = dns::finalizeForClient(up.data(), up.size(), q, co, out, sizeof(out));
+  TEST_ASSERT_TRUE(n > 0);
+  TEST_ASSERT_EQUAL_STRING("wWw.ExAmPle.COM", questionName(out).c_str());
+  // The upstream still gets the lowercase name (cache keys and matching rely on it).
+  n = dns::buildUpstreamQuery(q, 7, {}, out, sizeof(out));
+  TEST_ASSERT_EQUAL_STRING("www.example.com", questionName(out).c_str());
+}
+
 int main(int, char**) {
   UNITY_BEGIN();
+  RUN_TEST(test_replies_echo_the_question_case_exactly);
   RUN_TEST(test_parse_valid_query_lowercases_name);
   RUN_TEST(test_parse_root_name);
   RUN_TEST(test_parse_edns_fields_and_udp_limit_clamping);

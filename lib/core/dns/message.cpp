@@ -86,7 +86,8 @@ ParseStatus parseQuery(const uint8_t* pkt, size_t len, Query& out) {
   const uint16_t ar = readU16Be(pkt + 10);
   if (qd != 1) return ParseStatus::kFormErr;
 
-  const NameParse np = parseUncompressedName(pkt, len, kHeaderSize, out.qnameWire, out.qname);
+  memset(out.qnameCase, 0, sizeof(out.qnameCase));
+  const NameParse np = parseUncompressedName(pkt, len, kHeaderSize, out.qnameWire, out.qname, out.qnameCase);
   if (!np.ok || np.end + 4 > len) return ParseStatus::kFormErr;
   out.qnameWireLen = np.wireLen;
   out.qnameLen = np.textLen;
@@ -162,7 +163,7 @@ bool ReplyWriter::begin(const Query& q, Rcode rc) {
   memset(buf_ + 6, 0, 6);
   pos_ = kHeaderSize;
   if (q.hasQuestion) {
-    memcpy(buf_ + pos_, q.qnameWire, q.qnameWireLen);
+    writeQuestionName(q, buf_ + pos_);
     pos_ += q.qnameWireLen;
     writeU16Be(buf_ + pos_, q.qtype);
     writeU16Be(buf_ + pos_ + 2, q.qclass);
@@ -415,6 +416,13 @@ bool ageTtls(uint8_t* msg, size_t len, uint32_t elapsed) {
   return true;
 }
 
+void writeQuestionName(const Query& q, uint8_t* dst) {
+  for (size_t i = 0; i < q.qnameWireLen; i++) {
+    const uint8_t c = q.qnameWire[i];
+    dst[i] = (q.qnameCase[i / 8] >> (i % 8)) & 1u ? static_cast<uint8_t>(c - ('a' - 'A')) : c;
+  }
+}
+
 size_t finalizeForClient(const uint8_t* answer, size_t len, const Query& q, const ClientReplyOptions& opt,
                          uint8_t* out, size_t cap) {
   if (len < kHeaderSize) return 0;
@@ -441,6 +449,14 @@ size_t finalizeForClient(const uint8_t* answer, size_t len, const Query& q, cons
   uint16_t flags = upFlags & ~(flag::kRd | flag::kCd | flag::kAd | flag::kTc);
   flags |= flag::kRa | (q.flags & (flag::kRd | flag::kCd));
   if ((upFlags & flag::kAd) && opt.authenticatedUpstream && q.wantsAd()) flags |= flag::kAd;
+  // The answer's question is the upstream's (lowercase); echo the client's spelling.
+  // Only over an uncompressed name of the same length (a pointer there would differ).
+  if (q.hasQuestion) {
+    const NameParse np = parseUncompressedName(out, body, kHeaderSize, nullptr, nullptr);
+    if (np.ok && np.wireLen == q.qnameWireLen &&
+        nameEquals(out, body, kHeaderSize, q.qnameWire, q.qnameWireLen))
+      writeQuestionName(q, out + kHeaderSize);
+  }
   if (truncated || (upFlags & flag::kTc)) flags |= flag::kTc;
   writeU16Be(out, q.id);
   writeU16Be(out + 2, flags);

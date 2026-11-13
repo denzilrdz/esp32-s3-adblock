@@ -169,6 +169,9 @@ uint32_t ResponseCache::ttlFor(const dns::ResponseInfo& info, bool& cacheable) c
 bool ResponseCache::insert(const dns::Query& q, const uint8_t* answer, size_t len,
                            const dns::ResponseInfo& info) {
   if (!q.hasQuestion || len < dns::kHeaderSize || len > cfg_.maxPayload || info.hasOpt) return false;
+  // CD=1 (checking disabled): the upstream didn't validate, so this may be data a
+  // validating resolver refuses. Never serve it to other clients (RFC 6840 §5.9).
+  if (q.cd()) return false;
   // Defence in depth against poisoning: only store an answer whose own question is
   // exactly the query it is filed under (the forwarder already checks this too).
   if (!dns::responseMatches(answer, len, util::readU16Be(answer), q)) return false;

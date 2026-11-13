@@ -693,8 +693,9 @@ The dashboard lists `Unknown` upstreams folded away as standby.
     86 400 s).
 - **Negative caching** (RFC 2308): NXDOMAIN and NODATA are cached for
   min(SOA TTL, SOA MINIMUM), capped at 3 h, or 30 s if there is no SOA.
-- **Never cached:** SERVFAIL, REFUSED, truncated answers, and answers from plain
-  fallback if strict caching is enabled.
+- **Never cached:** SERVFAIL, REFUSED, truncated answers, answers from plain
+  fallback, and answers to CD=1 (checking disabled) queries: the upstream didn't
+  validate those, so they must not reach clients that rely on its validation.
 - Evicts the least-recently-used entry when the pool or arena is full.
 - Flushed when upstreams change, and from the dashboard.
 

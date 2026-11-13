@@ -625,7 +625,7 @@ static void test_address_replies_by_type() {
   TEST_ASSERT_EQUAL_HEX16(0xBEEF, r.id);
   TEST_ASSERT_EQUAL_HEX16(0x8190, r.flags);  // QR RD RA CD; AA/AD/TC clear; NOERROR
   TEST_ASSERT_EQUAL(1, r.qd);
-  TEST_ASSERT_EQUAL_STRING("nas.home", r.qname.c_str());
+  TEST_ASSERT_EQUAL_STRING("NAS.home", r.qname.c_str());  // echoed as asked (DNS 0x20)
   TEST_ASSERT_EQUAL(1, r.an);
   TEST_ASSERT_EQUAL(0, r.ns);
   TEST_ASSERT_EQUAL(0, r.ar);
@@ -980,8 +980,19 @@ static void test_encode_and_read_name() {
   TEST_ASSERT_EQUAL(0, dns::readName(longChain.data(), longChain.size(), 0, w, wl));
 }
 
+static void test_rewrite_replies_echo_the_question_case() {
+  auto t = table();
+  t->add("nas.home", "192.168.1.20", 60, kNow);
+  const dns::Query q = query("NAS.Home", dns::kTypeA);
+  uint8_t out[512];
+  const size_t n = dns::buildRewriteReply(q, resolved(*t, "nas.home"), nullptr, 0, 512, out, sizeof(out));
+  TEST_ASSERT_TRUE(n > 0);
+  TEST_ASSERT_EQUAL_MEMORY("\x03NAS\x04Home", out + dns::kHeaderSize, 9);
+}
+
 int main(int, char**) {
   UNITY_BEGIN();
+  RUN_TEST(test_rewrite_replies_echo_the_question_case);
   RUN_TEST(test_domain_validation);
   RUN_TEST(test_ipv4_parsing);
   RUN_TEST(test_ipv6_parsing_and_canonical_text);

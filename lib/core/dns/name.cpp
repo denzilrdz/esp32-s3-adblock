@@ -14,7 +14,8 @@ bool isLabelByte(uint8_t c) {
 
 }  // namespace
 
-NameParse parseUncompressedName(const uint8_t* pkt, size_t len, size_t off, uint8_t* wireOut, char* textOut) {
+NameParse parseUncompressedName(const uint8_t* pkt, size_t len, size_t off, uint8_t* wireOut, char* textOut,
+                                uint8_t* caseMask) {
   NameParse r;
   size_t i = off;
   size_t wire = 0;
@@ -35,6 +36,7 @@ NameParse parseUncompressedName(const uint8_t* pkt, size_t len, size_t off, uint
     for (uint8_t k = 0; k < l; k++) {
       const uint8_t c = asciiLower(pkt[i + k]);
       if (!isLabelByte(c)) return r;
+      if (caseMask && c != pkt[i + k]) caseMask[wire / 8] |= static_cast<uint8_t>(1u << (wire % 8));
       if (wireOut) wireOut[wire] = c;
       if (textOut) textOut[text] = static_cast<char>(c);
       wire++;

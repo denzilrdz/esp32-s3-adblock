@@ -23,7 +23,10 @@ struct NameParse {
 // Writes the lowercased wire form into wireOut (>= kMaxNameWire bytes) and the
 // lowercased dotted text into textOut (>= kMaxNameText + 1 bytes); either may be null.
 // The root name yields wireLen 1 and an empty text.
-NameParse parseUncompressedName(const uint8_t* pkt, size_t len, size_t off, uint8_t* wireOut, char* textOut);
+// `caseMask` (optional, kMaxNameWire / 8 + 1 bytes, zeroed by the caller): bit i is
+// set when wire byte i was an upper-case letter, so a reply can echo the name exactly.
+NameParse parseUncompressedName(const uint8_t* pkt, size_t len, size_t off, uint8_t* wireOut, char* textOut,
+                                uint8_t* caseMask = nullptr);
 
 // Skips a possibly compressed name at pkt[off]. Returns the offset just past it in
 // the original byte stream, or 0 if the name is malformed or runs past len.

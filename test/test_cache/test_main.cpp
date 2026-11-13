@@ -225,8 +225,29 @@ static void test_many_inserts_keep_accounting_consistent() {
   TEST_ASSERT_TRUE(c->lookup(query("n499.example"), out, sizeof(out)) > 0);
 }
 
+static void test_checking_disabled_answers_are_not_cached() {
+  // Audit 2026-11: CD=1 tells the upstream not to validate DNSSEC, so its answer may be
+  // bogus data a validating upstream would have refused. The key ignored CD, so one
+  // `dig +cd dnssec-failed.org` served that answer to every client for its TTL.
+  QueryOpts o;
+  o.flags = 0x0110;  // RD + CD
+  Bytes pkt = makeQuery("dnssec-failed.org", dns::kTypeA, o);
+  dns::Query cdQuery;
+  TEST_ASSERT_EQUAL(static_cast<int>(dns::ParseStatus::kOk),
+                    static_cast<int>(dns::parseQuery(pkt.data(), pkt.size(), cdQuery)));
+  TEST_ASSERT_TRUE(cdQuery.cd());
+  TEST_ASSERT_FALSE(put(cdQuery, answerA("dnssec-failed.org", 300)));
+  TEST_ASSERT_EQUAL(0, c->lookup(query("dnssec-failed.org"), out, sizeof(out)));
+  // A validated answer (CD=0) is cached, and may serve a CD=1 client too.
+  TEST_ASSERT_TRUE(put(query("ok.example"), answerA("ok.example", 300)));
+  pkt = makeQuery("ok.example", dns::kTypeA, o);
+  dns::parseQuery(pkt.data(), pkt.size(), cdQuery);
+  TEST_ASSERT_TRUE(c->lookup(cdQuery, out, sizeof(out)) > 0);
+}
+
 int main(int, char**) {
   UNITY_BEGIN();
+  RUN_TEST(test_checking_disabled_answers_are_not_cached);
   RUN_TEST(test_hit_returns_answer_with_aged_ttl);
   RUN_TEST(test_entry_expires_exactly_at_ttl);
   RUN_TEST(test_ttl_is_clamped_to_configured_bounds);
