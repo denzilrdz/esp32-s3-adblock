@@ -68,6 +68,10 @@ All notable changes to this project are documented here. The format follows
   included). A router or resolver that forwards to the board and randomises letter
   case as an anti-spoofing measure (DNS 0x20) rejected every answer before.
 
+- A DNS answer larger than 4 KB made the client wait 2.5 s for an error and counted
+  against a healthy upstream (over DNS-over-HTTPS it also dropped the connection).
+  Such a lookup now fails at once and nothing is marked down.
+
 ### Security
 
 - One device asking with DNSSEC checking disabled (`dig +cd`) could make the cache

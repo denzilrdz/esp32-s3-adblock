@@ -372,6 +372,27 @@ void Forwarder::handleReply(int u, uint8_t* msg, size_t len) {
   sink_.onAnswer(token, q, msg, len, info, transports_[u]->authenticated());
 }
 
+void Forwarder::handleTooBig(int u, const uint8_t* msg, size_t len) {
+  // The upstream answered (so it is alive), but the answer exceeds kMaxAnswer: no other
+  // upstream will do better, so that one client gets SERVFAIL now instead of at the
+  // deadline, and nobody is blamed (audit 2026-11).
+  lastReplyMs_[u] = clock_.monotonicMs();
+  lastActivityMs_[u] = lastReplyMs_[u];
+  const bool haveId = len >= 2;
+  const uint16_t id = haveId ? static_cast<uint16_t>((msg[0] << 8) | msg[1]) : 0;
+  for (Slot& s : slots_) {
+    if (!s.used || s.needsSend || s.upstream != u) continue;
+    if (haveId ? s.wireId != id : transports_[u]->pipelined()) continue;  // no ID: only one in flight
+    log_.log(LogLevel::kInfo, kTag, "%s: answer for %s larger than %u bytes, answering SERVFAIL",
+             transports_[u]->name(), s.q.qname, static_cast<unsigned>(kMaxAnswer));
+    if (s.probe)
+      finishProbe(s, ProbeResult::kBadReply);
+    else
+      finishFailed(s);
+    return;
+  }
+}
+
 void Forwarder::poll(uint32_t waitMs) {
   uint64_t now = clock_.monotonicMs();
   callStartMs_ = now;
@@ -401,6 +422,10 @@ void Forwarder::poll(uint32_t waitMs) {
       wait = 0;
       if (st == IoStatus::kOk) {
         handleReply(u, rxBuf_, len);
+        continue;
+      }
+      if (st == IoStatus::kTooBig) {
+        handleTooBig(u, rxBuf_, len);
         continue;
       }
       if (st == IoStatus::kClosed || st == IoStatus::kError) {

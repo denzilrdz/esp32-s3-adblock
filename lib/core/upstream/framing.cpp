@@ -56,6 +56,11 @@ void StreamDeframer::dropOversizedHead() {
   while (skip_ == 0 && len_ >= 2) {
     const size_t frame = static_cast<size_t>(util::readU16Be(buf_)) + 2;
     if (frame <= cap_) return;
+    if (len_ < 4 && cap_ >= 4) return;  // wait for its DNS ID (the frame can't fit anyway)
+    if (len_ >= 4) {
+      if (droppedCount_ < sizeof(droppedIds_) / sizeof(droppedIds_[0]))
+        droppedIds_[droppedCount_++] = util::readU16Be(buf_ + 2);
+    }
     const size_t have = len_ < frame ? len_ : frame;
     memmove(buf_, buf_ + have, len_ - have);
     len_ -= have;
@@ -86,6 +91,14 @@ bool StreamDeframer::feed(const uint8_t* data, size_t len) {
     len -= n;
     dropOversizedHead();
   }
+  return true;
+}
+
+bool StreamDeframer::takeDropped(uint16_t& id) {
+  if (!droppedCount_) return false;
+  id = droppedIds_[0];
+  memmove(droppedIds_, droppedIds_ + 1, (droppedCount_ - 1) * sizeof(droppedIds_[0]));
+  droppedCount_--;
   return true;
 }
 
@@ -126,6 +139,17 @@ void HttpResponseParser::reset() {
   dnsType_ = false;
   bodyStart_ = 0;
   contentLength_ = 0;
+  tooBig_ = false;
+  skipLeft_ = 0;
+  tooBigId_ = 0;
+  tooBigSeen_ = 0;
+}
+
+void HttpResponseParser::skipBody(const uint8_t* data, size_t len) {
+  for (size_t i = 0; i < len && tooBigSeen_ < 2; i++, tooBigSeen_++)
+    tooBigId_ = static_cast<uint16_t>(tooBigId_ << 8 | data[i]);
+  skipLeft_ -= len;
+  if (skipLeft_ == 0) state_ = State::kComplete;
 }
 
 bool HttpResponseParser::parseHead(size_t headEnd) {
@@ -181,6 +205,11 @@ HttpResponseParser::State HttpResponseParser::feed(const uint8_t* data, size_t l
     if (len) state_ = State::kError;  // unexpected extra bytes
     return state_;
   }
+  if (tooBig_) {                                         // discarding a body that can't fit
+    if (len > skipLeft_) return state_ = State::kError;  // pipelined junk
+    skipBody(data, len);
+    return state_;
+  }
   if (len > cap_ - len_) return state_ = State::kError;
   memcpy(buf_ + len_, data, len);
   len_ += len;
@@ -197,8 +226,19 @@ HttpResponseParser::State HttpResponseParser::feed(const uint8_t* data, size_t l
     if (!headEnd) return state_;
     if (!parseHead(headEnd)) return state_ = State::kError;
     bodyStart_ = headEnd + 2;
-    if (bodyStart_ + contentLength_ > cap_) return state_ = State::kError;
     state_ = State::kBody;
+    if (bodyStart_ + contentLength_ > cap_) {
+      // An answer bigger than our buffer: skip its body and keep the connection
+      // (closing it and blaming the upstream let one big TXT answer push a DoH
+      // upstream towards Down; audit 2026-11).
+      const size_t have = len_ - bodyStart_;
+      if (have > contentLength_) return state_ = State::kError;
+      tooBig_ = true;
+      skipLeft_ = contentLength_;
+      len_ = bodyStart_;
+      skipBody(buf_ + bodyStart_, have);
+      return state_;
+    }
   }
   if (len_ > bodyStart_ + contentLength_) return state_ = State::kError;  // pipelined junk
   if (len_ == bodyStart_ + contentLength_) state_ = State::kComplete;

@@ -5,6 +5,8 @@
 
 #include <cstring>
 
+#include "util/bytes.h"
+
 namespace platform {
 
 using upstream::IoStatus;
@@ -51,6 +53,12 @@ IoStatus DotTransport::receive(uint8_t* buf, size_t cap, size_t& len, uint32_t t
     len = deframer_.next(buf, cap);
     if (len) return IoStatus::kOk;
     if (deframer_.failed()) return IoStatus::kError;
+    uint16_t id;
+    if (cap >= 2 && deframer_.takeDropped(id)) {  // an answer too big for the buffer
+      util::writeU16Be(buf, id);
+      len = 2;
+      return IoStatus::kTooBig;
+    }
     const uint64_t now = nowMs();
     const uint32_t remaining = now >= deadline ? 0 : static_cast<uint32_t>(deadline - now);
     uint8_t chunk[512];
@@ -96,6 +104,19 @@ IoStatus DohTransport::receive(uint8_t* buf, size_t cap, size_t& len, uint32_t t
     const StreamStatus st = tls_.read(chunk, sizeof(chunk), got, remaining);
     if (st != StreamStatus::kOk) return fromStream(st);
     parser_.feed(chunk, got);
+  }
+  if (parser_.state() == State::kComplete && parser_.status() == 200 && parser_.dnsMessageType() &&
+      parser_.tooBig()) {
+    uint16_t id;
+    len = 0;
+    if (cap >= 2 && parser_.tooBigId(id)) {
+      util::writeU16Be(buf, id);
+      len = 2;
+    }
+    const bool keep = parser_.keepAlive();
+    parser_.reset();
+    if (!keep) tls_.close();
+    return IoStatus::kTooBig;
   }
   if (parser_.state() != State::kComplete || parser_.status() != 200 || !parser_.dnsMessageType() ||
       parser_.bodyLen() > cap) {

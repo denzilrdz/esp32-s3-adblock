@@ -14,6 +14,10 @@ enum class IoStatus {
   kTimeout,  // nothing arrived within the timeout (not an error)
   kClosed,   // peer closed the connection
   kError,    // connect/TLS/IO failure
+  // A complete answer arrived but was larger than the receive buffer; it was skipped
+  // and the connection stays usable. `len` is 2 and buf[0..1] holds its DNS ID when
+  // known, else 0. Not the upstream's fault: fail that one query, don't blame it.
+  kTooBig,
 };
 
 class ITransport {

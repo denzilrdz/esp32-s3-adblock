@@ -57,7 +57,14 @@ class FakeTransport final : public upstream::ITransport {
     if (inbox.empty()) return upstream::IoStatus::kTimeout;
     testdns::Bytes r = inbox.front();
     inbox.pop_front();
-    if (r.size() > cap) return upstream::IoStatus::kError;
+    if (r.size() > cap) {  // like the real transports: skipped, its ID reported
+      len = 0;
+      if (r.size() >= 2 && cap >= 2) {
+        memcpy(buf, r.data(), 2);
+        len = 2;
+      }
+      return upstream::IoStatus::kTooBig;
+    }
     memcpy(buf, r.data(), r.size());
     len = r.size();
     return upstream::IoStatus::kOk;

@@ -96,6 +96,10 @@ created at boot in `startDnsService()`).
   answered anything since the send, and at most one per upstream per `hedgeAfterMs`,
   so a burst of queries stuck on a slow authoritative server is one failure, not N.
   A failure while already Down changes nothing; only a failed probe doubles backoff.
+- An answer larger than `kMaxAnswer` (4 KB) is skipped by the transport, which
+  reports `IoStatus::kTooBig` with its DNS ID (DoT deframer, DoH parser): that one
+  query gets SERVFAIL at once, the upstream counts as alive and is not blamed, and
+  a DoH connection stays open.
 - Every encrypted upstream Down (plain fallback in use): their retries are capped at
   `outageProbeMs` as well, so plaintext DNS ends soon after one recovers.
 - Outage (every upstream Down): retries capped at `outageProbeMs` (10 s); the first

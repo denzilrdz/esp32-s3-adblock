@@ -3,6 +3,7 @@
 
 #include <unity.h>
 
+#include <algorithm>
 #include <cstring>
 #include <memory>
 #include <string>
@@ -198,6 +199,50 @@ static void test_stream_deframer_skips_oversized_frames() {
   TEST_ASSERT_EQUAL(0, upstream::frameForStream(out, 1, small, sizeof(small)));
 }
 
+static void test_stream_deframer_reports_dropped_frame_ids() {
+  // Audit 2026-11: a skipped oversized answer left its query waiting for the deadline,
+  // which then blamed a healthy upstream. Its ID lets the forwarder fail just that one.
+  uint8_t buf[16], out[16], framed[64];
+  upstream::StreamDeframer d(buf, sizeof(buf));
+  size_t n = 0;
+  framed[n++] = 0;
+  framed[n++] = 30;  // can never fit 16
+  framed[n++] = 0xAB;
+  framed[n++] = 0xCD;  // its DNS ID
+  for (int i = 0; i < 28; i++) framed[n++] = 0xEE;
+  for (size_t i = 0; i < n; i++) TEST_ASSERT_TRUE(d.feed(framed + i, 1));  // byte by byte
+  TEST_ASSERT_EQUAL(0, d.next(out, sizeof(out)));
+  uint16_t id = 0;
+  TEST_ASSERT_TRUE(d.takeDropped(id));
+  TEST_ASSERT_EQUAL_HEX16(0xABCD, id);
+  TEST_ASSERT_FALSE(d.takeDropped(id));
+}
+
+static void test_http_parser_skips_a_body_too_big_for_the_buffer() {
+  uint8_t buf[256];
+  upstream::HttpResponseParser p(buf, sizeof(buf));
+  std::string head =
+      "HTTP/1.1 200 OK\r\nContent-Type: application/dns-message\r\nContent-Length: 1000\r\n\r\n";
+  std::string body(1000, 'x');
+  body[0] = '\x12';
+  body[1] = '\x34';
+  const std::string all = head + body;
+  upstream::HttpResponseParser::State st = upstream::HttpResponseParser::State::kHead;
+  for (size_t i = 0; i < all.size(); i += 100)
+    st = p.feed(reinterpret_cast<const uint8_t*>(all.data()) + i, std::min<size_t>(100, all.size() - i));
+  TEST_ASSERT_EQUAL(static_cast<int>(upstream::HttpResponseParser::State::kComplete), static_cast<int>(st));
+  TEST_ASSERT_TRUE(p.tooBig());
+  uint16_t id = 0;
+  TEST_ASSERT_TRUE(p.tooBigId(id));
+  TEST_ASSERT_EQUAL_HEX16(0x1234, id);
+  TEST_ASSERT_EQUAL(200, p.status());
+  // Bytes after it are still refused (no HTTP pipelining).
+  TEST_ASSERT_EQUAL(static_cast<int>(upstream::HttpResponseParser::State::kError),
+                    static_cast<int>(p.feed(reinterpret_cast<const uint8_t*>("H"), 1)));
+  p.reset();
+  TEST_ASSERT_FALSE(p.tooBig());
+}
+
 static void test_stream_deframer_fails_only_when_full_of_untaken_frames() {
   uint8_t buf[8], framed[16];
   upstream::StreamDeframer d(buf, sizeof(buf));
@@ -270,9 +315,11 @@ static void test_http_parser_rejects_bad_input() {
                               static_cast<int>(feedAll(p, b, 3)), b);
   }
   p.reset();
-  std::string big = "HTTP/1.1 200 OK\r\nContent-Length: 300\r\n\r\n";  // body > buffer
-  TEST_ASSERT_EQUAL(static_cast<int>(upstream::HttpResponseParser::State::kError),
+  // A body bigger than the buffer is skipped, not an error (the connection stays usable).
+  std::string big = "HTTP/1.1 200 OK\r\nContent-Length: 300\r\n\r\n";
+  TEST_ASSERT_EQUAL(static_cast<int>(upstream::HttpResponseParser::State::kBody),
                     static_cast<int>(feedAll(p, big, 50)));
+  TEST_ASSERT_TRUE(p.tooBig());
 }
 
 // --- forwarder ----------------------------------------------------------------------
@@ -793,6 +840,28 @@ static void test_encrypted_upstreams_are_retried_often_while_plain_dns_is_used()
   TEST_ASSERT_FALSE(fwd->plainFallbackActive());
 }
 
+static void test_an_answer_too_big_fails_only_that_query_and_blames_nobody() {
+  // Audit 2026-11: an answer over 4 KB (big TXT/DNSKEY sets with DO) was skipped, its
+  // query hit the deadline and the healthy upstream was blamed; over DoH the
+  // connection was also closed. Now the client gets SERVFAIL at once.
+  dot1->responder = [](const Bytes& q) -> Bytes {
+    Bytes r = FakeTransport::defaultAnswer(q);
+    dns::Query parsed;
+    dns::parseQuery(q.data(), q.size(), parsed);
+    if (std::string(parsed.qname) == "big.example") r.resize(Forwarder::kMaxAnswer + 100, 0);
+    return r;
+  };
+  fwd->submit(1, query("big.example"));
+  fwd->submit(2, query("small.example"));
+  fwd->poll(0);
+  TEST_ASSERT_EQUAL(2, sink.results.size());
+  for (const Result& r : sink.results) TEST_ASSERT_EQUAL(r.token == 2, r.ok);
+  TEST_ASSERT_EQUAL_UINT32(0, fwd->upstreamStatus(0).stats.failed);
+  TEST_ASSERT_EQUAL(0, dot2->sent.size());  // not rerouted: no upstream would do better
+  TEST_ASSERT_TRUE(dot1->connected());
+  TEST_ASSERT_EQUAL(0, fwd->inFlight());
+}
+
 // --- after a power cut: slow internet, many queries, scarce internal RAM -------------
 
 static int tlsConnected() {
@@ -1042,6 +1111,8 @@ int main(int, char**) {
   RUN_TEST(test_health_failures_while_down_dont_extend_the_backoff);
   RUN_TEST(test_stream_deframer_handles_split_and_coalesced_frames);
   RUN_TEST(test_stream_deframer_skips_oversized_frames);
+  RUN_TEST(test_stream_deframer_reports_dropped_frame_ids);
+  RUN_TEST(test_http_parser_skips_a_body_too_big_for_the_buffer);
   RUN_TEST(test_stream_deframer_fails_only_when_full_of_untaken_frames);
   RUN_TEST(test_doh_request_head);
   RUN_TEST(test_http_parser_complete_response_byte_by_byte);
@@ -1072,6 +1143,7 @@ int main(int, char**) {
   RUN_TEST(test_a_burst_of_stuck_queries_counts_as_one_failure);
   RUN_TEST(test_deadline_does_not_blame_an_upstream_that_answered_meanwhile);
   RUN_TEST(test_encrypted_upstreams_are_retried_often_while_plain_dns_is_used);
+  RUN_TEST(test_an_answer_too_big_fails_only_that_query_and_blames_nobody);
   RUN_TEST(test_hedges_dont_mark_a_slow_but_answering_upstream_down);
   RUN_TEST(test_tls_connections_are_capped_closing_the_idlest);
   RUN_TEST(test_no_new_tls_connection_while_every_open_one_is_busy);

@@ -32,10 +32,13 @@ class StreamDeframer {
   bool failed() const { return failed_; }
   size_t buffered() const { return len_; }
   uint32_t skipped() const { return skipped_; }  // oversized frames dropped so far
+  // The DNS ID of an oversized frame dropped since the last call, oldest first.
+  bool takeDropped(uint16_t& id);
   void reset() {
     len_ = 0;
     skip_ = 0;
     failed_ = false;
+    droppedCount_ = 0;
   }
 
  private:
@@ -47,6 +50,8 @@ class StreamDeframer {
   size_t skip_ = 0;  // bytes of an oversized frame still to discard
   uint32_t skipped_ = 0;
   bool failed_ = false;
+  uint16_t droppedIds_[4] = {};  // IDs of dropped frames not yet taken (newest lost if full)
+  uint8_t droppedCount_ = 0;
 };
 
 // Builds the HTTP/1.1 request head for a DoH POST. The DNS message follows as the body.
@@ -64,6 +69,13 @@ class HttpResponseParser {
   State feed(const uint8_t* data, size_t len);
 
   State state() const { return state_; }
+  // kComplete, but the body was larger than the buffer and was skipped: bodyLen() is
+  // 0 and tooBigId() holds the answer's DNS ID if it had at least 2 bytes.
+  bool tooBig() const { return tooBig_; }
+  bool tooBigId(uint16_t& id) const {
+    id = tooBigId_;
+    return tooBigSeen_ >= 2;
+  }
   int status() const { return status_; }
   bool keepAlive() const { return keepAlive_; }
   bool dnsMessageType() const { return dnsType_; }
@@ -83,6 +95,11 @@ class HttpResponseParser {
   bool dnsType_ = false;
   size_t bodyStart_ = 0;
   size_t contentLength_ = 0;
+  bool tooBig_ = false;
+  size_t skipLeft_ = 0;  // body bytes still to discard while tooBig_
+  uint16_t tooBigId_ = 0;
+  uint8_t tooBigSeen_ = 0;
+  void skipBody(const uint8_t* data, size_t len);
 };
 
 }  // namespace upstream

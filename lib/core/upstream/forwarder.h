@@ -165,6 +165,7 @@ class Forwarder {
   bool roomToConnect(int u, bool makeRoom);
   void trySend(Slot& s);
   void handleReply(int u, uint8_t* msg, size_t len);
+  void handleTooBig(int u, const uint8_t* msg, size_t len);
   void failTransport(int u);
   void reroute(Slot& s);
   void finishFailed(Slot& s);
