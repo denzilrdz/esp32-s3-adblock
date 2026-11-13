@@ -193,10 +193,8 @@ class Parser {
         char url[kMaxBlocklistUrl + 1];
         size_t n = 0;
         if (!r_.readString(url, sizeof(url), &n)) return false;
-        if (n && strncmp(url, "https://", 8) != 0) return say("blocklist.url must start with https://");
-        for (size_t i = 0; i < n; i++)
-          if (static_cast<unsigned char>(url[i]) <= 0x20 || static_cast<unsigned char>(url[i]) >= 0x7f)
-            return say("blocklist.url: spaces or special characters are not allowed");
+        const char* bad = nullptr;
+        if (!validBlocklistUrl(url, n, &bad)) return say("%s", bad);
         b.blocklistUrl.assign(url, n);
       } else if (!strcmp(key, "time")) {
         char t[8];
@@ -351,6 +349,19 @@ void writeBackup(const Backup& b, const BackupMeta& meta, std::string& out) {
   w.endArray();
   w.endObject();
   out += '\n';
+}
+
+bool validBlocklistUrl(const char* url, size_t len, const char** why) {
+  const char* reason = nullptr;
+  if (len > kMaxBlocklistUrl)
+    reason = "blocklist.url is too long (max 199 characters)";
+  else if (len && (len < 9 || strncmp(url, "https://", 8) != 0))
+    reason = "blocklist.url must start with https://";
+  for (size_t i = 0; !reason && i < len; i++)
+    if (static_cast<unsigned char>(url[i]) <= 0x20 || static_cast<unsigned char>(url[i]) >= 0x7f)
+      reason = "blocklist.url: spaces or special characters are not allowed";
+  if (why) *why = reason;
+  return !reason;
 }
 
 bool parseBackup(const char* text, size_t len, const AppConfig& current, Backup& out, char* why,

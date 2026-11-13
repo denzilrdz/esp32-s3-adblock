@@ -130,6 +130,37 @@ class DashboardPageTest(unittest.TestCase):
         self.assertEqual(sorted(p["t"] for p in later), [p["t"] for p in later])
 
 
+class DashboardServerTest(unittest.TestCase):
+    """src/web/dashboard.cpp: rules from the 2026-11 audit."""
+
+    src = (ROOT / "src/web/dashboard.cpp").read_text(encoding="utf-8")
+
+    def test_every_route_bounds_the_request_body(self):
+        # WebServer buffers a plain POST body of any size before a handler runs (also
+        # for unknown URLs); BoundedRoute refuses that with 413. s.on()/onNotFound()
+        # would register a route without the limit.
+        self.assertNotRegex(self.src, r"\bs\.on\(|\.onNotFound\(")
+        self.assertIn("route(nullptr, HTTP_ANY", self.src)
+
+    def test_upload_done_handlers_check_their_own_request(self):
+        for fn in (
+            "handleListUploadDone",
+            "handleFirmwareUploadDone",
+            "handleImportDone",
+        ):
+            body = self.src[self.src.index(f"void Dashboard::{fn}()") :][:200]
+            self.assertIn("uploadDoneAllowed()", body, fn)
+
+    def test_page_csp(self):
+        for d in (
+            "frame-ancestors 'none'",
+            "base-uri 'none'",
+            "form-action 'self'",
+            "object-src 'none'",
+        ):
+            self.assertIn(d, self.src)
+
+
 class PortalPageTest(unittest.TestCase):
     def test_works_offline_without_script(self):
         head = portal_head()

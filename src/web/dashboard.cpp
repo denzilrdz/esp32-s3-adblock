@@ -11,6 +11,7 @@
 #include "platform/watchdog.h"
 #include "util/civil_time.h"
 #include "util/send_deadline.h"
+#include "web/bounded_route.h"
 #include "web/page.h"
 #include "web/portal.h"
 
@@ -44,7 +45,7 @@ String pageCsp() {
     csp += ' ';
     csp += origin;
   }
-  csp += "; frame-ancestors 'none'";
+  csp += "; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'";
   return csp;
 }
 
@@ -204,7 +205,10 @@ Dashboard::Check Dashboard::check(Access access) {
 }
 
 bool Dashboard::guard(Access access) {
-  const Check c = check(access);
+  return reply(check(access));
+}
+
+bool Dashboard::reply(const Check& c) {
   if (c.ok) return true;
   if (c.code == 429) {
     const uint32_t client = static_cast<uint32_t>(ctx_.server->client().remoteIP());
@@ -214,54 +218,59 @@ bool Dashboard::guard(Access access) {
   return false;
 }
 
+void Dashboard::route(const char* uri, HTTPMethod method, std::function<void()> fn,
+                      std::function<void()> upload) {
+  ctx_.server->addHandler(new BoundedRoute(uri, method, std::move(fn), std::move(upload)));
+}
+
 void Dashboard::begin() {
   WebServer& s = *ctx_.server;
   const char* headers[] = {"Host", "Origin", "Referer", "Cookie", kCsrfHeader};
   s.collectHeaders(headers, sizeof(headers) / sizeof(headers[0]));  // Authorization is always kept
 
-  s.on("/", HTTP_GET, [this]() {
+  route("/", HTTP_GET, [this]() {
     if (!guard(Access::kPublic)) return;
     static const String csp = pageCsp();
     ctx_.server->sendHeader("Content-Security-Policy", csp);
     ctx_.server->sendHeader("X-Frame-Options", "DENY");
     sendBody(kPage, sizeof(kPage) - 1, "text/html", true);
   });
-  s.on("/api/stats", HTTP_GET, [this]() { handleStats(); });
-  s.on("/api/config", HTTP_GET, [this]() { handleGetConfig(); });
-  s.on("/api/config", HTTP_POST, [this]() { handleSetConfig(); });
-  s.on("/api/login", HTTP_POST, [this]() { handleLogin(); });
-  s.on("/api/logout", HTTP_POST, [this]() { handleLogout(); });
-  s.on("/api/password", HTTP_POST, [this]() { handlePassword(); });
-  s.on("/api/rules/add", HTTP_POST, [this]() { handleRule(true); });
-  s.on("/api/rules/remove", HTTP_POST, [this]() { handleRule(false); });
-  s.on("/api/rewrites/add", HTTP_POST, [this]() { handleRewrite(true); });
-  s.on("/api/rewrites/remove", HTTP_POST, [this]() { handleRewrite(false); });
-  s.on("/api/clients/ban", HTTP_POST, [this]() { handleBan(); });
-  s.on("/api/blocking/pause", HTTP_POST, [this]() { handlePause(); });
-  s.on("/api/blocking/resume", HTTP_POST, [this]() {
+  route("/api/stats", HTTP_GET, [this]() { handleStats(); });
+  route("/api/config", HTTP_GET, [this]() { handleGetConfig(); });
+  route("/api/config", HTTP_POST, [this]() { handleSetConfig(); });
+  route("/api/login", HTTP_POST, [this]() { handleLogin(); });
+  route("/api/logout", HTTP_POST, [this]() { handleLogout(); });
+  route("/api/password", HTTP_POST, [this]() { handlePassword(); });
+  route("/api/rules/add", HTTP_POST, [this]() { handleRule(true); });
+  route("/api/rules/remove", HTTP_POST, [this]() { handleRule(false); });
+  route("/api/rewrites/add", HTTP_POST, [this]() { handleRewrite(true); });
+  route("/api/rewrites/remove", HTTP_POST, [this]() { handleRewrite(false); });
+  route("/api/clients/ban", HTTP_POST, [this]() { handleBan(); });
+  route("/api/blocking/pause", HTTP_POST, [this]() { handlePause(); });
+  route("/api/blocking/resume", HTTP_POST, [this]() {
     if (!guard(Access::kAuth)) return;
     ctx_.clients->resume();
     sendText(200, "blocking resumed");
   });
-  s.on("/api/blocklist/settings", HTTP_POST, [this]() { handleBlocklistSettings(); });
-  s.on("/api/blocklist/update", HTTP_POST, [this]() {
+  route("/api/blocklist/settings", HTTP_POST, [this]() { handleBlocklistSettings(); });
+  route("/api/blocklist/update", HTTP_POST, [this]() {
     if (!guard(Access::kAuth)) return;
     ctx_.blocklist->requestUpdate();
     sendText(200, "update queued; result appears under Blocklist");
   });
-  s.on("/api/cache/flush", HTTP_POST, [this]() {
+  route("/api/cache/flush", HTTP_POST, [this]() {
     if (!guard(Access::kAuth)) return;
     ctx_.dns->flushCache();
     sendText(200, "cache flushed");
   });
-  s.on("/api/upstreams/test", HTTP_POST, [this]() {
+  route("/api/upstreams/test", HTTP_POST, [this]() {
     if (!guard(Access::kAuth)) return;
     if (ctx_.dns->startUpstreamTest())
       sendText(200, "testing every upstream; results appear under Upstream DNS");
     else
       sendText(409, "an upstream test is already running");
   });
-  s.on("/api/wifi/forget", HTTP_POST, [this]() {
+  route("/api/wifi/forget", HTTP_POST, [this]() {
     if (!guard(Access::kAuth)) return;
     sendText(200, "Wi-Fi forgotten; rebooting into the setup portal");
     forgetWifi();
@@ -269,7 +278,7 @@ void Dashboard::begin() {
     platform::restart("Wi-Fi forgotten (dashboard)");
   });
 #ifdef ADBLOCK_SELFTEST
-  s.on("/api/selftest", HTTP_POST, [this]() {
+  route("/api/selftest", HTTP_POST, [this]() {
     if (!guard(Access::kAuth)) return;
     const String what = ctx_.server->arg("hang");
     sendText(200, "self-test: hanging " + what);
@@ -277,23 +286,23 @@ void Dashboard::begin() {
     if (ctx_.selftest) ctx_.selftest(what);
   });
 #endif
-  s.on("/api/reboot", HTTP_POST, [this]() {
+  route("/api/reboot", HTTP_POST, [this]() {
     if (!guard(Access::kAuth)) return;
     sendText(200, "rebooting");
     delay(500);
     platform::restart("Reboot button (dashboard)");
   });
-  s.on("/api/settings/export", HTTP_GET, [this]() { handleExport(); });
-  s.on(
+  route("/api/settings/export", HTTP_GET, [this]() { handleExport(); });
+  route(
       "/api/settings/import", HTTP_POST, [this]() { handleImportDone(); },
       [this]() { handleImportUpload(); });
-  s.on(
+  route(
       "/api/blocklist/upload", HTTP_POST, [this]() { handleListUploadDone(); },
       [this]() { handleListUpload(); });
-  s.on(
+  route(
       "/api/firmware", HTTP_POST, [this]() { handleFirmwareUploadDone(); },
       [this]() { handleFirmwareUpload(); });
-  s.onNotFound([this]() {
+  route(nullptr, HTTP_ANY, [this]() {  // anything else, with the same body limit
     if (guard(Access::kPublic)) sendText(404, "not found");
   });
 }
@@ -496,6 +505,17 @@ void Dashboard::handleLogout() {
 
 void Dashboard::handlePassword() {
   if (!guard(Access::kAuthDuringSetup)) return;
+  // The current password (or the setup code) goes through the same lockout and delay
+  // as a login: a stolen session cookie must not allow unlimited guesses.
+  const Check cur = verifyPassword(ctx_.passwords->user(), ctx_.server->arg("current"));
+  if (!cur.ok) {
+    // 400, not 401: the page treats any 401 as "session ended" and logs out.
+    if (cur.code == 401)
+      sendText(400, "current password is wrong");
+    else
+      reply(cur);  // 429 + Retry-After while locked out
+    return;
+  }
   const char* why = nullptr;
   if (!ctx_.passwords->change(ctx_.server->arg("current").c_str(), ctx_.server->arg("next").c_str(), &why)) {
     sendText(400, why ? why : "rejected");
@@ -577,7 +597,9 @@ void Dashboard::handleBlocklistSettings() {
   if (!guard(Access::kAuth)) return;
   WebServer& s = *ctx_.server;
   if (s.hasArg("u") && !ctx_.blocklist->setUrl(s.arg("u"))) {
-    sendText(400, "URL must start with https://");
+    const char* why = "invalid URL";
+    config::validBlocklistUrl(s.arg("u").c_str(), s.arg("u").length(), &why);
+    sendText(400, why);
     return;
   }
   if (s.hasArg("t")) {
@@ -629,11 +651,19 @@ void Dashboard::handleListUpload() {
   }
 }
 
-void Dashboard::handleListUploadDone() {
-  if (!uploadAuthorized_) {
-    guard(Access::kAuth);  // sends the proper 401/403/429
-    return;
+bool Dashboard::uploadDoneAllowed() {
+  const bool started = uploadAuthorized_;
+  uploadAuthorized_ = false;
+  if (!guard(Access::kAuth)) return false;  // sends the proper 401/403/429
+  if (!started) {
+    sendText(400, "no file received");
+    return false;
   }
+  return true;
+}
+
+void Dashboard::handleListUploadDone() {
+  if (!uploadDoneAllowed()) return;
   sendText(uploadResult_.startsWith("updated") ? 200 : 400, uploadResult_);
 }
 
@@ -664,10 +694,7 @@ void Dashboard::handleFirmwareUpload() {
 }
 
 void Dashboard::handleFirmwareUploadDone() {
-  if (!uploadAuthorized_) {
-    guard(Access::kAuth);
-    return;
-  }
+  if (!uploadDoneAllowed()) return;
   const bool ok = !Update.hasError() && Update.isFinished();
   sendText(ok ? 200 : 500,
            ok ? "firmware accepted; rebooting (rolls back if unhealthy)" : "firmware update failed");
@@ -761,11 +788,11 @@ void Dashboard::handleImportUpload() {
 }
 
 void Dashboard::handleImportDone() {
-  if (!uploadAuthorized_) {
-    guard(Access::kAuth);  // sends the proper 401/403/429
+  if (!uploadDoneAllowed()) {
+    importBuf_.reset();
+    importLen_ = importCap_ = 0;
     return;
   }
-  uploadAuthorized_ = false;
   platform::LargeBuffer buf = std::move(importBuf_);
   const size_t len = importLen_;
   importLen_ = importCap_ = 0;

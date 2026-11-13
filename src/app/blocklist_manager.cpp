@@ -5,6 +5,7 @@
 
 #include <memory>
 
+#include "config/backup.h"
 #include "platform/psram.h"
 #include "rules/rule_domain.h"
 
@@ -177,9 +178,13 @@ const char* BlocklistManager::defaultUrl() {
 }
 
 bool BlocklistManager::setUrl(const String& url) {
-  if (url.length() && !url.startsWith("https://")) return false;
+  // Same rules as a settings import: an unchecked long URL worked until the next boot
+  // (begin() reads it into 200 bytes) and made exports that imports refuse.
+  if (!config::validBlocklistUrl(url.c_str(), url.length(), nullptr)) return false;
   platform::LockGuard g(stateMutex_);
-  url_ = url.length() ? url : String(DEFAULT_BLOCKLIST_URL);
+  const String next = url.length() ? url : String(DEFAULT_BLOCKLIST_URL);
+  if (next != url_) kv_.erase(update::BlocklistUpdater::kEtagKey);  // that ETag is for the old list
+  url_ = next;
   kv_.setString(kKeyUrl, url_.c_str());
   return true;
 }

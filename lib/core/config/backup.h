@@ -58,6 +58,11 @@ struct BackupMeta {
 // Appends one rule (normalised by the caller) to a Backup list.
 void addRule(std::string& list, size_t& count, const char* domain);
 
+// A blocklist URL as the dashboard and a settings file may set it: "" (the built-in
+// default) or https:// with no spaces, control or non-ASCII characters, at most
+// kMaxBlocklistUrl bytes. Otherwise false and *why says what is wrong.
+bool validBlocklistUrl(const char* url, size_t len, const char** why);
+
 // Writes every section of `b` (has* flags are ignored: export is always complete).
 void writeBackup(const Backup& b, const BackupMeta& meta, std::string& out);
 

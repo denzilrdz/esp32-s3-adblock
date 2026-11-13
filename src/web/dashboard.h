@@ -72,7 +72,15 @@ class Dashboard {
   Check postChecks();                                            // POST, CSRF header, Origin/Referer
   Check verifyPassword(const String& user, const String& pass);  // lockout + PBKDF2
   bool hasSession();
-  bool guard(Access access);  // sends the error response itself
+  bool guard(Access access);   // sends the error response itself
+  bool reply(const Check& c);  // false: sent c's error response (with Retry-After on 429)
+  // A multipart "done" handler: the upload callback checked auth at UPLOAD_FILE_START,
+  // but only runs for requests that carry a file part, so a stale flag from an earlier
+  // upload must never stand in for this request's own check. Consumes the flag.
+  bool uploadDoneAllowed();
+  // Registers a route that refuses oversized bodies (web/bounded_route.h).
+  void route(const char* uri, HTTPMethod method, std::function<void()> fn,
+             std::function<void()> upload = nullptr);
   void sendText(int code, const String& text);
   void uploadProgress();  // feeds both watchdogs while one upload runs in handleClient()
   // Sends a body in TCP-sized pieces under one deadline (slow clients can't hold the task).

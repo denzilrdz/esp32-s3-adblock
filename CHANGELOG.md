@@ -37,6 +37,22 @@ All notable changes to this project are documented here. The format follows
 - The _Clients_ list stopped adding devices after the first 96 it had seen (phones
   with private Wi-Fi addresses get new ones over time) until the board restarted.
   The device not seen for longest now makes room.
+- Any device on the network could fill the board's memory without logging in by
+  sending one huge (or endless) web request. Requests to the dashboard larger than
+  8 KB, other than file uploads, are now refused straight away.
+- Someone holding a dashboard session could guess the current password without
+  limit on the password-change form; it now has the same lockout and delay as the
+  login.
+- A blocklist URL longer than 199 characters was accepted, then lost at the next
+  restart, and made settings exports that couldn't be imported. It is now refused
+  with a clear message, and changing the URL forgets the old list's download tag.
+- The upload endpoints could answer a later request using an earlier upload's
+  login check. Each request is now checked on its own.
+
+### Security
+
+- The dashboard's Content-Security-Policy also sets `base-uri 'none'`,
+  `form-action 'self'` and `object-src 'none'`.
 
 ## [0.5.0] - 2026-11-11
 

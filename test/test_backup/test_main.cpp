@@ -362,9 +362,31 @@ static void test_escaped_strings_are_validated_after_decoding() {
   expectError(wrap("\"blocklist\":{\"url\":\"https://x/\\r\\n\"}"), "special characters");
 }
 
+static void test_blocklist_url_rules_are_shared_with_the_dashboard() {
+  // Audit 2026-11: the dashboard only checked the https:// prefix, so a longer URL was
+  // saved, silently dropped at the next boot (200-byte buffer) and exported into
+  // settings files that imports refused. Both now use config::validBlocklistUrl().
+  const char* why = nullptr;
+  TEST_ASSERT_TRUE(config::validBlocklistUrl("", 0, &why));  // the built-in default
+  TEST_ASSERT_NULL(why);
+  const std::string ok = "https://example.com/list.bin";
+  TEST_ASSERT_TRUE(config::validBlocklistUrl(ok.c_str(), ok.size(), &why));
+  const std::string longest = "https://" + std::string(config::kMaxBlocklistUrl - 8, 'a');
+  TEST_ASSERT_TRUE(config::validBlocklistUrl(longest.c_str(), longest.size(), nullptr));
+  const std::string tooLong = longest + "a";
+  TEST_ASSERT_FALSE(config::validBlocklistUrl(tooLong.c_str(), tooLong.size(), &why));
+  TEST_ASSERT_NOT_NULL(strstr(why, "too long"));
+  for (const char* bad : {"http://example.com/x", "https://", "ftp://x", "https://a b/", "https://a\tb/",
+                          "https://\x7f/", "https://\xc3\xa9/"}) {
+    TEST_ASSERT_FALSE_MESSAGE(config::validBlocklistUrl(bad, strlen(bad), &why), bad);
+    TEST_ASSERT_NOT_NULL(why);
+  }
+}
+
 int main(int, char**) {
   UNITY_BEGIN();
   RUN_TEST(test_reboot_settings_keys);
+  RUN_TEST(test_blocklist_url_rules_are_shared_with_the_dashboard);
   RUN_TEST(test_reboot_settings_survive_nvs_round_trip);
   RUN_TEST(test_every_key_is_settable);
   RUN_TEST(test_rule_domain_normalisation);

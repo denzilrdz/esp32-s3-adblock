@@ -824,6 +824,21 @@ in RTC memory like every deliberate restart.
     or the 60-bit setup code that is infeasible; the worst case is a slower dashboard.
   - Until a real password is set, a random one-time setup code printed on the
     serial console is required; a placeholder/weak `secrets.h` password never works.
+  - Changing the password checks the current one (or the setup code) through the
+    same lockout and 1 s delay as a login, so a stolen session cookie can't be used
+    to guess it.
+  - Multipart "done" handlers (blocklist, firmware, settings upload) re-check their
+    own request (`uploadDoneAllowed()`): the upload callback that checks auth only
+    runs for requests carrying a file part, so a flag left by an earlier upload
+    must never authorize a later request.
+- **Request bodies:** every route is a `BoundedRoute` (`src/web/bounded_route.h`),
+  including the catch-all 404. Arduino's WebServer reads a plain POST body into one
+  heap buffer sized by the client's Content-Length (`-1` = unlimited) before any
+  handler runs, so any LAN host could fill PSRAM. `canRaw()` sees the length once
+  the headers are in and answers 413 for anything over 8 KB or negative, before the
+  body is read. Known gap: non-file fields of a _multipart_ request are still
+  accumulated by the library without a total limit (each line ≤ 16 KB, 5 s);
+  closing it needs a patched copy of the library.
 - **CSRF:**
   - We keep upstream's custom `X-Requested-With` header check, which a plain
     `<img>` or `<form>` cannot set.
