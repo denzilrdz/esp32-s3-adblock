@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-11-13
+
+Security fix: the board stops trusting a certificate authority whose keys were
+compromised. Update from the dashboard (_Device → Check for updates_); settings are
+kept.
+
 ### Security
 
 - The board no longer trusts the `emSign ECC Root CA - G3` certificate authority:
@@ -583,7 +589,8 @@ password setup.
   flash are required), upstream's 40-bit blocklist format, the Japanese README,
   the C3 web-installer binaries and the C3 SuperMini enclosure.
 
-[Unreleased]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.4.4...v0.5.0
 [0.4.4]: https://github.com/denzilrdz/esp32-s3-adblock/compare/v0.4.3...v0.4.4
