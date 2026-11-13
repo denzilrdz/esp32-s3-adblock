@@ -166,6 +166,21 @@ def check_upload_noauth():
             " 401 " in status + " " or " 403 " in status + " ",
             f"{path}: {status!r}",
         )
+    # With a file part and a huge declared length: refused at once, not read to the end.
+    head = b'--b\r\nContent-Disposition: form-data; name="f"; filename="x.bin"\r\n\r\n'
+    for path in ("/api/firmware", "/api/blocklist/upload", "/api/settings/import"):
+        req = (
+            f"POST {path} HTTP/1.1\r\nHost: {IP}\r\nX-Requested-With: adblock\r\n".encode()
+            + b"Content-Type: multipart/form-data; boundary=b\r\n"
+            + b"Content-Length: 5000000\r\n\r\n"
+            + head
+            + b"\0" * 2000
+        )
+        status, took = http_raw(req)
+        ok = (" 401 " in status + " " or " 403 " in status + " ") and took < 3
+        report(
+            "upload-noauth", ok, f"{path} with a file part: {status!r} in {took:.1f}s"
+        )
 
 
 def check_tcp_trickle():

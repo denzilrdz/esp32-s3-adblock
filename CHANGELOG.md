@@ -48,6 +48,9 @@ All notable changes to this project are documented here. The format follows
   with a clear message, and changing the URL forgets the old list's download tag.
 - The upload endpoints could answer a later request using an earlier upload's
   login check. Each request is now checked on its own.
+- A file upload from someone who isn't logged in was still read to the end (as
+  slowly as the sender liked), keeping the dashboard busy. It is now refused at
+  once.
 
 - A firmware update that got stuck while starting up (for example unable to join
   Wi-Fi) left the network without DNS until someone unplugged the board. It now
