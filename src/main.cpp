@@ -332,7 +332,13 @@ void armBootRollbackGuard() {
   if (!pendingVerify()) return;
   esp_timer_create_args_t args = {};
   args.callback = [](void*) {
-    if (pendingVerify()) rollBack("rollback: new firmware never finished booting");
+    if (!pendingVerify()) return;
+    // esp_timer task: ROM printf, not gLog (as livenessCheck: a stuck setup() may hold
+    // the logger's mutex). The reason survives in RTC memory.
+    const char* why = "rollback: new firmware never finished booting";
+    esp_rom_printf("[E][ota] %s\n", why);
+    platform::noteRestart(why);
+    esp_ota_mark_app_invalid_rollback_and_reboot();
   };
   args.name = "ota_guard";
   if (esp_timer_create(&args, &gBootGuard) == ESP_OK)
