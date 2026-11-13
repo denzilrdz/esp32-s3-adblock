@@ -37,6 +37,7 @@
 #include "platform/psram.h"
 #include "platform/restart_info.h"
 #include "platform/serial_logger.h"
+#include "platform/tls_stream.h"
 #include "platform/transports.h"
 #include "platform/watchdog.h"
 #include "sched/reboot_schedule.h"
@@ -483,6 +484,7 @@ void setup() {
   Serial.printf("\n[adblock] v%s booting (%s, PSRAM %u KB)\n", FW_VERSION, kHostname,
                 static_cast<unsigned>(ESP.getPsramSize() / 1024));
   gRestart = platform::readRestartInfo();
+  platform::TlsStream::setWallClock(&gClock);  // certificate dates, once NTP has synced
   armBootRollbackGuard();
   // Armed only once each task runs: setup() may wait minutes for Wi-Fi first.
   gWebAlive = gLiveness.add("web task", kWebStuckMs, false);

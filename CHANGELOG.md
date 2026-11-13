@@ -74,6 +74,8 @@ All notable changes to this project are documented here. The format follows
 
 ### Security
 
+- Encrypted DNS connections now refuse an expired or not-yet-valid server
+  certificate once the board's clock is set (the TLS library never checked dates).
 - Plain (unencrypted) fallback DNS now uses a random source port that changes after
   every burst of lookups, which makes forged answers much harder to slip in.
 - One device asking with DNSSEC checking disabled (`dig +cd`) could make the cache

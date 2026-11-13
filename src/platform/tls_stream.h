@@ -5,10 +5,13 @@
 // ECDHE + certificate-chain cost of a full one.
 //
 // The server certificate is verified against the ESP-IDF CA bundle, and the name is
-// always checked (mbedTLS 2.28 does not match IP SANs, so we connect to an IP but
-// verify the provider's hostname).
+// always checked (we connect to an IP but verify the provider's hostname). The prebuilt
+// mbedTLS 3.6 doesn't check certificate dates (no MBEDTLS_HAVE_TIME_DATE): once the
+// wall clock is synced, connect() checks the peer chain's validity itself.
 
 #include <mbedtls/ssl.h>
+
+#include "hal/clock.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -34,6 +37,8 @@ class TlsStream {
   StreamStatus read(uint8_t* buf, size_t cap, size_t& got, uint32_t timeoutMs);
   // Sends close_notify (best effort) and frees the connection; keeps the session.
   void close();
+  // The wall clock for certificate date checks (set once at boot; null = no checks).
+  static void setWallClock(const hal::IClock* clock) { wallClock_ = clock; }
   // mbedTLS error of the last failed step (negative), 0 if none since connect().
   int lastError() const { return lastError_; }
 
@@ -43,6 +48,9 @@ class TlsStream {
   bool openSocket(uint32_t timeoutMs);
   bool setupConfig();
   void closeSocket();
+  bool peerDatesValid();  // false: a certificate in the chain is expired / not yet valid
+
+  static const hal::IClock* wallClock_;
 
   char ip_[16];
   uint16_t port_;

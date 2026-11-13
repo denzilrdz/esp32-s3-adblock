@@ -10,6 +10,7 @@
 #include <vector>
 #include "fakes/fake_clock.h"
 #include "util/bytes.h"
+#include "util/cert_time.h"
 #include "util/civil_time.h"
 #include "util/crc32.h"
 #include "util/net.h"
@@ -450,8 +451,30 @@ static void test_private_ipv4_ranges() {
     TEST_ASSERT_FALSE(util::isPrivateIpv4(ip));
 }
 
+static void test_certificate_dates_against_the_clock() {
+  util::CertTime from{2026, 1, 1, 0, 0, 0}, to{2026, 12, 31, 23, 59, 59};
+  util::CivilTime now;
+  now.year = 2026;
+  now.month = 11;
+  now.day = 13;
+  const int64_t mid = util::unixFromCivil(now, 0);
+  TEST_ASSERT_EQUAL(static_cast<int>(util::CertValidity::kValid),
+                    static_cast<int>(util::certValidity(from, to, mid)));
+  const int64_t end = util::unixFromCivil(util::CivilTime{2026, 12, 31, 23, 59, 59}, 0);
+  TEST_ASSERT_EQUAL(static_cast<int>(util::CertValidity::kValid),
+                    static_cast<int>(util::certValidity(from, to, end + 3600)));  // within the slack
+  TEST_ASSERT_EQUAL(static_cast<int>(util::CertValidity::kExpired),
+                    static_cast<int>(util::certValidity(from, to, end + 3601)));
+  const int64_t start = util::unixFromCivil(util::CivilTime{2026, 1, 1, 0, 0, 0}, 0);
+  TEST_ASSERT_EQUAL(static_cast<int>(util::CertValidity::kNotYetValid),
+                    static_cast<int>(util::certValidity(from, to, start - 3601)));
+  TEST_ASSERT_EQUAL(static_cast<int>(util::CertValidity::kExpired),
+                    static_cast<int>(util::certValidity(from, to, mid + 365LL * 86400, 0)));
+}
+
 int main(int, char**) {
   UNITY_BEGIN();
+  RUN_TEST(test_certificate_dates_against_the_clock);
   RUN_TEST(test_send_with_deadline_sends_everything_in_pieces);
   RUN_TEST(test_send_with_deadline_gives_up_on_a_trickling_reader);
   RUN_TEST(test_send_with_deadline_stops_when_the_connection_goes);

@@ -16,6 +16,8 @@
 #include <cerrno>
 #include <cstring>
 
+#include "util/cert_time.h"
+
 namespace platform {
 
 namespace {
@@ -164,6 +166,23 @@ int TlsStream::bioRecv(void* ctx, unsigned char* buf, size_t len) {
   return MBEDTLS_ERR_NET_RECV_FAILED;
 }
 
+const hal::IClock* TlsStream::wallClock_ = nullptr;
+
+bool TlsStream::peerDatesValid() {
+  // Before NTP has synced the board doesn't know the date (no RTC): skip, as the
+  // prebuilt mbedTLS always does. The CA bundle check and the name check still apply.
+  if (!wallClock_ || !wallClock_->wallClockSynced()) return true;
+  const int64_t now = wallClock_->unixTime();
+  for (const mbedtls_x509_crt* c = mbedtls_ssl_get_peer_cert(&ssl_); c; c = c->next) {
+    const util::CertTime from{c->valid_from.year, c->valid_from.mon, c->valid_from.day,
+                              c->valid_from.hour, c->valid_from.min, c->valid_from.sec};
+    const util::CertTime to{c->valid_to.year, c->valid_to.mon, c->valid_to.day,
+                            c->valid_to.hour, c->valid_to.min, c->valid_to.sec};
+    if (util::certValidity(from, to, now) != util::CertValidity::kValid) return false;
+  }
+  return true;
+}
+
 bool TlsStream::connect(uint32_t timeoutMs) {
   close();
   lastError_ = 0;
@@ -194,6 +213,16 @@ bool TlsStream::connect(uint32_t timeoutMs) {
   if (rc != 0) {
     lastError_ = rc;
     // A rejected resumption must not poison later attempts.
+    if (haveSession_) {
+      mbedtls_ssl_session_free(&session_);
+      mbedtls_ssl_session_init(&session_);
+      haveSession_ = false;
+    }
+    close();
+    return false;
+  }
+  if (!peerDatesValid()) {
+    lastError_ = MBEDTLS_ERR_X509_CERT_VERIFY_FAILED;  // logged by the forwarder with its code
     if (haveSession_) {
       mbedtls_ssl_session_free(&session_);
       mbedtls_ssl_session_init(&session_);

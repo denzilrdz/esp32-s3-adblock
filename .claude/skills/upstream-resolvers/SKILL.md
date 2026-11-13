@@ -48,8 +48,10 @@ created at boot in `startDnsService()`).
   `mbedtls_ssl_set_session`.
 - **Memory:** mbedTLS buffers are internal RAM only, about 45 KB per session. At
   most 2 sessions (one DNS + one transient for failover or the blocklist download).
-- **Certificate dates aren't checked** (`MBEDTLS_HAVE_TIME_DATE` off), so DoT
-  works before NTP sync.
+- **Certificate dates:** mbedTLS doesn't check them (`MBEDTLS_HAVE_TIME_DATE` off),
+  so DoT works before NTP sync. After sync, `TlsStream::peerDatesValid()` checks the
+  peer chain (`util::certValidity`, ±1 h); a bad date fails the connect with
+  `-0x2700`. Never make a date check apply before the clock is synced.
 - **Idle close:** Cloudflare and Quad9 close idle DoT connections after about 10 s.
   Reconnect lazily with resumption; don't send keep-warm queries.
 - **Quad9 DoH needs HTTP/2** (HTTP/1.1 gets 505), so it's not usable here.
