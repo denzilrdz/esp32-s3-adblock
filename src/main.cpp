@@ -28,6 +28,7 @@
 #include "config/config.h"
 #include "diag/liveness.h"
 #include "diag/ota_health.h"
+#include "platform/ca_bundle.h"
 #include "platform/esp_clock.h"
 #include "platform/esp_http.h"
 #include "platform/esp_random.h"
@@ -539,6 +540,7 @@ void setup() {
   if (!LittleFS.begin(true)) Serial.println("[ERROR] LittleFS failed");
   if (!gKv.begin()) Serial.println("[ERROR] NVS failed");
   config::load(gKv, gConfig);
+  platform::installTrustedCaBundle(gLog);  // before any TLS (DoT/DoH, blocklist download)
   gReboots = new sched::RebootScheduler(gClock, gKv);
   applyLiveConfig(gConfig);
 

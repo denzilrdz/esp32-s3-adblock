@@ -160,6 +160,9 @@ native tests; pre-push = clang-tidy + esp32s3 firmware build.
 - **ARP/lwIP core calls** (e.g. `etharp_find_addr`) only via `tcpip_callback`.
 - **C hooks from Arduino** (`verifyRollbackLater`, …) need `extern "C"` to override.
 - **CA bundle:** `#include <esp_crt_bundle.h>` (ESP-IDF's; core 3 has no Arduino copy).
+  Roots are distrusted by exact common name in `util::kDistrustedRoots`, filtered out
+  at boot (`platform::installTrustedCaBundle()`, before any TLS); the bundle buffer
+  must outlive every TLS session (`esp_crt_bundle_set()` keeps the pointer).
 - **lwIP core locking is on** (`CONFIG_LWIP_TCPIP_CORE_LOCKING`): socket calls are fine
   from any task, raw lwIP core calls still go through `tcpip_callback`.
 - **Platform tools:** pioarduino keeps esptool 5 (`esptool`, dashed subcommands like

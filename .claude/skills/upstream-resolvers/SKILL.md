@@ -48,6 +48,9 @@ created at boot in `startDnsService()`).
   `mbedtls_ssl_set_session`.
 - **Memory:** mbedTLS buffers are internal RAM only, about 45 KB per session. At
   most 2 sessions (one DNS + one transient for failover or the blocklist download).
+- **Trusted roots:** ESP-IDF's full bundle (150 roots), minus
+  `util::kDistrustedRoots` removed at boot (`platform::installTrustedCaBundle`, log
+  `[tls] CA bundle: 149 roots, 1 distrusted removed`).
 - **Certificate dates:** mbedTLS doesn't check them (`MBEDTLS_HAVE_TIME_DATE` off),
   so DoT works before NTP sync. After sync, `TlsStream::peerDatesValid()` checks the
   peer chain (`util::certValidity`, ±1 h); a bad date fails the connect with

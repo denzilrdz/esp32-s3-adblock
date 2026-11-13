@@ -6,6 +6,17 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Security
+
+- The board no longer trusts the `emSign ECC Root CA - G3` certificate authority:
+  eight of its intermediate certificates had their private keys stolen
+  ([GHSA-6q48-6c7w-9gw2](https://github.com/advisories/GHSA-6q48-6c7w-9gw2)), so
+  someone holding one could have impersonated Cloudflare, Quad9 or GitHub to the
+  board on a path they control. The board removes it from its built-in certificate
+  list at startup (the other emSign roots are unaffected and stay).
+- Development tools: patched `certifi`, `filelock` and `virtualenv` (Dependabot
+  alerts; nothing in the firmware).
+
 ## [0.6.0] - 2026-11-13
 
 Fixes from a full security and robustness audit, all tested on a board: no device on

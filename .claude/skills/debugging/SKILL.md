@@ -198,6 +198,9 @@ for i in $(seq 50); do dig @<ip> +short r$i.example.com & done; wait   # burst
   level **debug**; `microsoft.com`/`amazon.com` TXT do it) → a
   huge answer (big TXT/DNSKEY sets with DO). Expected for that name; the upstream is
   not marked down for it.
+- `[E][tls] CA bundle format not understood: using the built-in one` → a framework
+  update changed the bundle layout (`util::filterCaBundle`): distrusted roots are
+  trusted again until the filter is fixed.
 - `[up] <name>: TLS connect failed (error -0x2700)` after the clock synced, with the
   CA bundle unchanged → a certificate in the upstream's chain is outside its validity
   dates by more than an hour (or the board's clock is wrong: check _time_ on the

@@ -74,6 +74,12 @@ network as hostile.
 
 - [ ] No `setInsecure()`, no `skip_common_name`, and no `MBEDTLS_SSL_VERIFY_NONE`
       anywhere.
+- [ ] A CA in the news (compromised or distrusted root)? The firmware's bundle is
+      ESP-IDF's, fixed at framework release: add the root's exact common name to
+      `util::kDistrustedRoots` (`lib/core/util/ca_bundle.h`), check it is in the
+      bundle (`strings firmware.bin | grep '<name>'`), and expect `[tls] CA bundle:
+    N roots, M distrusted removed` at boot. Remove the entry once the framework
+      bundle drops the root. Dependabot alerts on `certifi` only cover the dev tools.
 - [ ] Certificate dates: the prebuilt mbedTLS doesn't check them;
       `TlsStream::peerDatesValid()` does once the clock is synced. A new TLS client
       path (not `esp_http_client`) must do the same.

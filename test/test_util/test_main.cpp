@@ -7,9 +7,11 @@
 #include <cstring>
 #include <string>
 
+#include <utility>
 #include <vector>
 #include "fakes/fake_clock.h"
 #include "util/bytes.h"
+#include "util/ca_bundle.h"
 #include "util/cert_time.h"
 #include "util/civil_time.h"
 #include "util/crc32.h"
@@ -472,8 +474,151 @@ static void test_certificate_dates_against_the_clock() {
                     static_cast<int>(util::certValidity(from, to, mid + 365LL * 86400, 0)));
 }
 
+// --- CA bundle filter (ESP-IDF x509 bundle format) ------------------------------------
+
+static std::vector<uint8_t> derSubject(const std::string& cn) {
+  // SEQUENCE { SET { SEQUENCE { OID 2.5.4.3, UTF8String cn } } } with DER lengths.
+  auto tlv = [](uint8_t tag, const std::vector<uint8_t>& v) {
+    std::vector<uint8_t> o{tag};
+    if (v.size() < 0x80) {
+      o.push_back(static_cast<uint8_t>(v.size()));
+    } else {
+      o.push_back(0x82);
+      o.push_back(static_cast<uint8_t>(v.size() >> 8));
+      o.push_back(static_cast<uint8_t>(v.size()));
+    }
+    o.insert(o.end(), v.begin(), v.end());
+    return o;
+  };
+  std::vector<uint8_t> attr{0x06, 0x03, 0x55, 0x04, 0x03};
+  const std::vector<uint8_t> value = tlv(0x0C, std::vector<uint8_t>(cn.begin(), cn.end()));
+  attr.insert(attr.end(), value.begin(), value.end());
+  return tlv(0x30, tlv(0x31, tlv(0x30, attr)));
+}
+
+// Builds a bundle from (common name, key bytes), sorted by DER subject like ESP-IDF's.
+static std::vector<uint8_t> makeBundle(std::vector<std::pair<std::string, std::string>> certs) {
+  std::vector<std::pair<std::vector<uint8_t>, std::string>> entries;
+  for (auto& c : certs) entries.push_back({derSubject(c.first), c.second});
+  std::sort(entries.begin(), entries.end());
+  std::vector<uint8_t> out(entries.size() * 4);
+  for (size_t i = 0; i < entries.size(); i++) {
+    const uint32_t off = static_cast<uint32_t>(out.size());
+    for (int b = 0; b < 4; b++) out[i * 4 + b] = static_cast<uint8_t>(off >> (8 * b));
+    const auto& name = entries[i].first;
+    const auto& key = entries[i].second;
+    out.push_back(static_cast<uint8_t>(name.size()));
+    out.push_back(static_cast<uint8_t>(name.size() >> 8));
+    out.push_back(static_cast<uint8_t>(key.size()));
+    out.push_back(static_cast<uint8_t>(key.size() >> 8));
+    out.insert(out.end(), name.begin(), name.end());
+    out.insert(out.end(), key.begin(), key.end());
+  }
+  return out;
+}
+
+static const char* const kDistrusted[] = {"emSign ECC Root CA - G3"};
+
+static void test_ca_bundle_filter_removes_only_the_distrusted_root() {
+  // GHSA-6q48-6c7w-9gw2: intermediates under emSign ECC Root CA - G3 were compromised;
+  // the other emSign roots are unaffected and stay.
+  const auto in = makeBundle({{"DigiCert Global Root G2", "KEY-DIGICERT"},
+                              {"emSign ECC Root CA - G3", "KEY-EMSIGN-ECC-G3"},
+                              {"emSign Root CA - G1", "KEY-EMSIGN-G1"},
+                              {"emSign ECC Root CA - C3", "KEY-EMSIGN-ECC-C3"},
+                              {"ISRG Root X1", "KEY-ISRG"}});
+  TEST_ASSERT_TRUE(util::caBundleValid(in.data(), in.size(), 200));
+  TEST_ASSERT_EQUAL(5, util::caBundleCount(in.data(), in.size()));
+  std::vector<uint8_t> out(in.size());
+  size_t removed = 99;
+  const size_t n =
+      util::filterCaBundle(in.data(), in.size(), kDistrusted, 1, out.data(), out.size(), &removed);
+  TEST_ASSERT_TRUE(n > 0);
+  TEST_ASSERT_EQUAL(1, removed);
+  out.resize(n);
+  TEST_ASSERT_TRUE(util::caBundleValid(out.data(), out.size(), 200));
+  TEST_ASSERT_EQUAL(4, util::caBundleCount(out.data(), out.size()));
+  const std::string text(out.begin(), out.end());
+  TEST_ASSERT_TRUE(text.find("KEY-EMSIGN-ECC-G3") == std::string::npos);
+  for (const char* kept : {"KEY-DIGICERT", "KEY-EMSIGN-G1", "KEY-EMSIGN-ECC-C3", "KEY-ISRG"})
+    TEST_ASSERT_TRUE_MESSAGE(text.find(kept) != std::string::npos, kept);
+  // Still sorted by subject (ESP-IDF binary-searches it): equal to a bundle built
+  // without the root in the first place.
+  const auto expect = makeBundle({{"DigiCert Global Root G2", "KEY-DIGICERT"},
+                                  {"emSign Root CA - G1", "KEY-EMSIGN-G1"},
+                                  {"emSign ECC Root CA - C3", "KEY-EMSIGN-ECC-C3"},
+                                  {"ISRG Root X1", "KEY-ISRG"}});
+  TEST_ASSERT_TRUE(out == expect);
+}
+
+static void test_ca_bundle_filter_matches_the_common_name_exactly() {
+  const auto in =
+      makeBundle({{"emSign ECC Root CA - G30", "K1"}, {"emSign ECC Root CA - G", "K2"}, {"x", "K3"}});
+  std::vector<uint8_t> out(in.size());
+  size_t removed = 9;
+  const size_t n =
+      util::filterCaBundle(in.data(), in.size(), kDistrusted, 1, out.data(), out.size(), &removed);
+  TEST_ASSERT_EQUAL(in.size(), n);
+  TEST_ASSERT_EQUAL(0, removed);
+  out.resize(n);
+  TEST_ASSERT_TRUE(out == in);  // nothing matched: an identical copy
+}
+
+static void test_ca_bundle_filter_refuses_malformed_input() {
+  const auto good = makeBundle({{"A", "k"}, {"B", "k"}});
+  std::vector<uint8_t> out(good.size() + 16);
+  auto filter = [&](std::vector<uint8_t> b) {
+    return util::filterCaBundle(b.data(), b.size(), kDistrusted, 1, out.data(), out.size(), nullptr);
+  };
+  TEST_ASSERT_EQUAL(0, filter({}));
+  TEST_ASSERT_EQUAL(0, filter({0, 0, 0, 0}));                                        // zero count
+  TEST_ASSERT_EQUAL(0, filter(std::vector<uint8_t>(good.begin(), good.end() - 1)));  // truncated
+  auto bad = good;
+  bad[0] = 6;  // first offset not a multiple of 4
+  TEST_ASSERT_EQUAL(0, filter(bad));
+  bad = good;
+  bad[4] = static_cast<uint8_t>(bad[4] + 1);  // second offset doesn't follow the first entry
+  TEST_ASSERT_EQUAL(0, filter(bad));
+  auto trailing = good;
+  trailing.push_back(0);  // bytes after the last entry
+  TEST_ASSERT_EQUAL(0, filter(trailing));
+  // Too small an output buffer, and a filter that would leave nothing.
+  std::vector<uint8_t> tiny(good.size() - 1);
+  TEST_ASSERT_EQUAL(
+      0, util::filterCaBundle(good.data(), good.size(), kDistrusted, 1, tiny.data(), tiny.size(), nullptr));
+  const auto only = makeBundle({{"emSign ECC Root CA - G3", "k"}});
+  TEST_ASSERT_EQUAL(
+      0, util::filterCaBundle(only.data(), only.size(), kDistrusted, 1, out.data(), out.size(), nullptr));
+  TEST_ASSERT_FALSE(util::caBundleValid(good.data(), good.size(), 1));  // over the cert limit
+}
+
+static void test_firmware_distrusts_the_compromised_emsign_root() {
+  // GHSA-6q48-6c7w-9gw2: only this emSign root; the exact name the bundle uses.
+  TEST_ASSERT_EQUAL(1, util::kDistrustedRootCount);
+  TEST_ASSERT_EQUAL_STRING("emSign ECC Root CA - G3", util::kDistrustedRoots[0]);
+}
+
+static void test_subject_common_name_with_a_long_form_length() {
+  const std::string longName(200, 'n');
+  const auto subj = derSubject(longName);
+  const uint8_t* cn = nullptr;
+  size_t len = 0;
+  TEST_ASSERT_TRUE(util::subjectCommonName(subj.data(), subj.size(), &cn, &len));
+  TEST_ASSERT_EQUAL(200, len);
+  TEST_ASSERT_EQUAL_MEMORY(longName.data(), cn, 200);
+  // A subject without a common name, and one cut off inside the value.
+  const uint8_t noCn[] = {0x30, 0x0B, 0x31, 0x09, 0x30, 0x07, 0x06, 0x03, 0x55, 0x04, 0x0A, 0x0C, 0x00};
+  TEST_ASSERT_FALSE(util::subjectCommonName(noCn, sizeof(noCn), &cn, &len));
+  TEST_ASSERT_FALSE(util::subjectCommonName(subj.data(), subj.size() - 5, &cn, &len));
+}
+
 int main(int, char**) {
   UNITY_BEGIN();
+  RUN_TEST(test_ca_bundle_filter_removes_only_the_distrusted_root);
+  RUN_TEST(test_ca_bundle_filter_matches_the_common_name_exactly);
+  RUN_TEST(test_ca_bundle_filter_refuses_malformed_input);
+  RUN_TEST(test_subject_common_name_with_a_long_form_length);
+  RUN_TEST(test_firmware_distrusts_the_compromised_emsign_root);
   RUN_TEST(test_certificate_dates_against_the_clock);
   RUN_TEST(test_send_with_deadline_sends_everything_in_pieces);
   RUN_TEST(test_send_with_deadline_gives_up_on_a_trickling_reader);

@@ -573,7 +573,15 @@ timeout)`, `close()`, plus `pipelined()`. Implementations:
     hostname, used for both SNI and certificate verification. We verify the name,
     never the IP.
   - Certificates are checked against the ESP-IDF CA bundle already linked into the
-    prebuilt mbedTLS (`esp_crt_bundle_attach`), with no extra files. TLS 1.2 minimum;
+    prebuilt mbedTLS (`esp_crt_bundle_attach`), with no extra files. At boot,
+    `platform::installTrustedCaBundle()` copies it without the roots in
+    `util::kDistrustedRoots` (exact common names; `util::filterCaBundle` keeps the
+    subject order ESP-IDF binary-searches) and installs the copy with
+    `esp_crt_bundle_set()`, which keeps a pointer (the copy stays in PSRAM). It covers
+    DoT/DoH and the blocklist download. First entry: `emSign ECC Root CA - G3`
+    (GHSA-6q48-6c7w-9gw2, compromised intermediates), 150 → 149 roots. If the format
+    isn't understood (a future ESP-IDF), the built-in bundle stays and an error is
+    logged. TLS 1.2 minimum;
     the prebuilt libraries have TLS 1.3 off, so sessions are TLS 1.2.
   - `CONFIG_MBEDTLS_HAVE_TIME_DATE` is not set in the prebuilt libraries, so
     mbedTLS never checks certificate validity dates. That is what lets DoT work
