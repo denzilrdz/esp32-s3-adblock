@@ -24,11 +24,13 @@ repos:
         pass_filenames: false
         files: ^(lib/core/|test/|platformio\.ini)
       - id: tool-tests
-        name: blocklist tool tests
+        name: tool + web page tests
         entry: .venv/bin/python -m unittest discover -s tools -p test_*.py
         language: system
         pass_filenames: false
-        files: ^tools/.*\.py$
+        # Also the files those tests guard: the dashboard/portal/installer pages
+        # (test_web_pages.py), and the limits and hosts test_build_blocklist.py checks.
+        files: ^(tools/.*\.py|src/web/.*|installer/.*|partitions_16MB\.csv|lib/core/blocklist/format\.h|lib/core/config/config\.cpp)$
       - id: workflow-lint
         name: GitHub Actions lint (zizmor + actionlint)
         entry: bash -c '.venv/bin/zizmor --offline --persona=auditor .github/ && .venv/bin/actionlint'
