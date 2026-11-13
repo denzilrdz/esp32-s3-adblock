@@ -155,6 +155,8 @@ native tests; pre-push = clang-tidy + esp32s3 firmware build.
   (`tools/test_web_pages.py` checks). Multipart field values are still unbounded in
   the library (ARCHITECTURE.md §9). Multipart "done" handlers must re-check their own
   request (`uploadDoneAllowed()`): the upload callback only runs for file parts.
+- **The board can't TCP-connect to its own Wi-Fi address** (times out; measured): talk
+  to itself over `127.0.0.1` (the OTA dashboard self-check, the DNS wake sockets).
 - **ARP/lwIP core calls** (e.g. `etharp_find_addr`) only via `tcpip_callback`.
 - **C hooks from Arduino** (`verifyRollbackLater`, …) need `extern "C"` to override.
 - **CA bundle:** `#include <esp_crt_bundle.h>` (ESP-IDF's; core 3 has no Arduino copy).

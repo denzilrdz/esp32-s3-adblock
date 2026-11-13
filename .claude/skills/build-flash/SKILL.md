@@ -56,7 +56,11 @@ cable also shows nothing in `system_profiler SPUSBDataType`.
 
 **Capture the log for a fixed time** (no `timeout` on macOS): `pio device monitor`
 runs until stopped; for scripted checks use pyserial from
-`~/.platformio/penv/bin/python`, pulse RTS to reset, read for N seconds.
+`~/.platformio/penv/bin/python`, pulse RTS to reset, read for N seconds. **Opening the
+port resets the board** unless DTR and RTS are set low _before_ `open()`
+(`s = serial.Serial(); s.port = ...; s.dtr = s.rts = False; s.open()`); a logger
+started the naive way logs a spurious `POWERON` boot. Stop any logger before
+`-t upload` (the port is busy otherwise).
 
 Fix the port with `upload_port = /dev/cu.usbserial-XXXX` in a gitignored
 `platformio_override.ini` (`[env:esp32s3]` section), or pass `--upload-port`.

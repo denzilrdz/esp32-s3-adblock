@@ -97,6 +97,9 @@ python3 tools/dns_load.py <ip> 60000 70      # mixed DNS load, flags silences (r
 python3 tools/http_stall.py <ip> 40 trickle  # slow HTTP client; expect "no restart"
 python3 tools/http_stall.py <ip> 40 stall    # client that stops reading the page
 python3 tools/http_stall.py <ip> 45 slowread # trickle reader; dashboard freed <= ~20 s
+python3 tools/audit_board_check.py <ip>      # 2026-11 audit fixes: TCP/53 trickle cut off,
+                                             # 413 bodies, upload auth, DNS 0x20 echo, CD
+                                             # answers not cached, no restart (no login needed)
 
 # every hang ends in a restart with its reason (needs a netrc with the dashboard login,
 # see the script; flashes the self-test build, then the release build back)
@@ -105,6 +108,23 @@ python3 tools/selftest_board.py s3adblock.local ~/.s3adblock.netrc
 ```
 
 Household DNS goes through the board, so run them when a short outage is acceptable.
+The Mac itself resolves through the board (Deco DHCP hands it out): a misbehaving board
+shows up in your own tools at once.
+
+Checks that need a login use the session cookie from the browser (`-b ab_session=...`,
+plus `X-Requested-With: adblock` and a `Referer`/`Origin` of the board for POSTs).
+Sessions live in RAM: every restart (firmware update, DNS-settings change, scheduled
+reboot) ends them. Settings that change DNS (upstreams, DoH, plain fallback, padding,
+AD, blocked TTL, canaries, private reverse) **restart the board** when saved; the time
+zone, log level, reboot schedule and blocklist time apply live. Save the settings
+(_Export_) before testing and import them afterwards.
+
+To see the daily blocklist update fire without waiting for 03:00: it runs once per
+local day, so move the time zone to one where today has no recorded run yet (a
+negative offset, e.g. `<-10>10`, gives yesterday's date before ~10:00 UTC), set the
+time two minutes ahead and allow up to 10 min of random delay; then restore the time
+zone and time. The board does one extra "not modified" check afterwards, nothing is
+skipped. A positive offset that crosses into tomorrow would skip tomorrow's run.
 A crash overwrites the stored crash record. Restart reasons from the software watchdog
 (ARCHITECTURE.md §4.3): "web task stuck", "blocklist download stuck", "upstream task
 stuck", "software watchdog stopped".
@@ -169,7 +189,10 @@ for i in $(seq 50); do dig @<ip> +short r$i.example.com & done; wait   # burst
   usually stale: a short outage made it fail, and a standby is only used again when
   the active one fails. _Test all upstreams_ under Upstream DNS (`POST
 /api/upstreams/test`) sends `example.com` through every upstream once and shows the
-  result per upstream (`[up] test <name>: ...` in the log); a pass puts it back to standby. A
+  result per upstream (`[up] test <name>: ...` in the log); a pass puts it back to standby.
+  Quad9 sometimes closes a test connection that a run seconds earlier left open
+  (`connection closed with queries in flight`, no TLS error): space test runs ~15 s
+  apart before reading anything into it. A
   `connect failed (TLS -0x....)` there is real: decode the mbedTLS code.
 - `[up] <name>: answer for <name> larger than 4096 bytes, answering SERVFAIL` (log
   level **debug**; `microsoft.com`/`amazon.com` TXT do it) → a
