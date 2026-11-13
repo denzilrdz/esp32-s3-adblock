@@ -227,7 +227,7 @@ HttpResponseParser::State HttpResponseParser::feed(const uint8_t* data, size_t l
     if (!parseHead(headEnd)) return state_ = State::kError;
     bodyStart_ = headEnd + 2;
     state_ = State::kBody;
-    if (bodyStart_ + contentLength_ > cap_) {
+    if (bodyStart_ + contentLength_ > cap_ || (maxBody_ && contentLength_ > maxBody_)) {
       // An answer bigger than our buffer: skip its body and keep the connection
       // (closing it and blaming the upstream let one big TXT answer push a DoH
       // upstream towards Down; audit 2026-11).

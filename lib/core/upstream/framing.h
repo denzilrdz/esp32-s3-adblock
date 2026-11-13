@@ -62,7 +62,10 @@ class HttpResponseParser {
  public:
   enum class State { kHead, kBody, kComplete, kError };
 
-  HttpResponseParser(uint8_t* buf, size_t cap) : buf_(buf), cap_(cap) {}
+  // `maxBody`: bodies longer than this are skipped as too big even if they would fit
+  // `buf` (the caller's answer buffer may be smaller than head + body); 0 = no limit.
+  HttpResponseParser(uint8_t* buf, size_t cap, size_t maxBody = 0)
+      : buf_(buf), cap_(cap), maxBody_(maxBody) {}
 
   // Feeds received bytes; returns the new state. Bytes past the end of this response
   // are rejected (no HTTP pipelining) and put the parser in kError.
@@ -88,6 +91,7 @@ class HttpResponseParser {
 
   uint8_t* buf_;
   size_t cap_;
+  size_t maxBody_;
   size_t len_ = 0;
   State state_ = State::kHead;
   int status_ = 0;

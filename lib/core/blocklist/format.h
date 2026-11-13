@@ -71,9 +71,21 @@ constexpr size_t kOtherFilesBytes = 192 * 1024;  // rules, rewrites, bans, Littl
 // failed with "not enough flash". 900k: 2 x 3.86 MB + margins fit (test_blocklist).
 constexpr uint32_t kMaxListEntries = 900000;
 
+// The cap before the 2026-11 change. A list already on flash may be up to this big
+// (it was valid when installed): boot recovery still loads it, so blocking keeps
+// working; only new downloads and uploads are held to kMaxListEntries.
+constexpr uint32_t kMaxStoredListEntries = 1000000;
+
 struct Limits {
   uint32_t minEntries = 1000;
-  uint32_t maxEntries = kMaxListEntries;
+  uint32_t maxEntries = kMaxListEntries;              // downloads and uploads
+  uint32_t maxStoredEntries = kMaxStoredListEntries;  // a list already on flash
+  // The limits for a file that is already installed.
+  Limits stored() const {
+    Limits l = *this;
+    if (l.maxStoredEntries > l.maxEntries) l.maxEntries = l.maxStoredEntries;
+    return l;
+  }
 };
 
 // Incremental validator for a download: checks the header, the total size and the

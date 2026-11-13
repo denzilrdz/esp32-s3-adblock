@@ -254,6 +254,28 @@ static void test_boot_recovery_paths() {
   TEST_ASSERT_EQUAL_STRING("size does not match entry count", blocklist::formatErrorName(r.liveError));
 }
 
+static void test_a_stored_list_over_the_new_cap_still_loads() {
+  // Review of the 900k cap (2026-11): the boot check of the list already on flash used
+  // the download cap, so a board holding a 900k-1M list (valid before) booted with no
+  // main list and kept re-downloading one it then refused. Lists already stored are
+  // accepted up to maxStoredEntries; new downloads keep the lower cap.
+  blocklist::Limits l = limits();
+  l.maxEntries = 1100;        // the new, lower cap for downloads
+  l.maxStoredEntries = 2000;  // the old one, for what is already on flash
+  const Bytes big = testbl::build(testbl::syntheticNames(1500, "big"));
+  fs->put("/blocklist.bin", big);
+  auto r = BlocklistUpdater::recover(*fs, l);
+  TEST_ASSERT_TRUE(r.haveList);
+  TEST_ASSERT_EQUAL_UINT32(1500, r.header.count);
+  // A download of the same size is refused; the stored list stays.
+  http.next.body = big;
+  http.next.etag = "\"e\"";
+  BlocklistUpdater u(l, *fs, http, kv, installer, logger);
+  const update::UpdateReport rep = u.update(kUrl);
+  TEST_ASSERT_TRUE(rep.status != update::UpdateStatus::kUpdated);
+  TEST_ASSERT_TRUE(*fs->get("/blocklist.bin") == big);
+}
+
 int main(int, char**) {
   UNITY_BEGIN();
   RUN_TEST(test_successful_update_swaps_file_installs_and_stores_etag);
@@ -270,5 +292,6 @@ int main(int, char**) {
   RUN_TEST(test_rejects_non_https_and_empty_urls);
   RUN_TEST(test_manual_upload_install_and_rejection);
   RUN_TEST(test_boot_recovery_paths);
+  RUN_TEST(test_a_stored_list_over_the_new_cap_still_loads);
   return UNITY_END();
 }

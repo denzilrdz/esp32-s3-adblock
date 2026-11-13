@@ -79,7 +79,11 @@ void DotTransport::close() {
 
 DohTransport::DohTransport(const char* name, const char* ipv4, const char* host, const char* path,
                            uint16_t port)
-    : name_(name), host_(host), path_(path), tls_(ipv4, port, host), parser_(rxStore_, sizeof(rxStore_)) {}
+    : name_(name),
+      host_(host),
+      path_(path),
+      tls_(ipv4, port, host),
+      parser_(rxStore_, sizeof(rxStore_), upstream::Forwarder::kMaxAnswer) {}
 
 IoStatus DohTransport::connect(uint32_t timeoutMs) {
   parser_.reset();

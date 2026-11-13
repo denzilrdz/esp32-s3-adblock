@@ -233,7 +233,7 @@ UpdateReport BlocklistUpdater::swapAndInstall(const char* from, const blocklist:
 
 void BlocklistUpdater::reinstallLive() {
   blocklist::Header h;
-  if (blocklist::validateFile(fs_, paths_.live, limits_, &h, tick_) == FormatError::kNone &&
+  if (blocklist::validateFile(fs_, paths_.live, limits_.stored(), &h, tick_) == FormatError::kNone &&
       installer_.install(paths_.live, h))
     return;
   log_.log(LogLevel::kError, kTag, "could not reload the previous list after a failed swap");
@@ -244,7 +244,7 @@ RecoveryResult BlocklistUpdater::recover(hal::IFileSystem& fs, const blocklist::
   RecoveryResult r;
   fs.remove(paths.tmp);
   if (fs.exists(paths.live)) {
-    r.liveError = blocklist::validateFile(fs, paths.live, limits, &r.header, tick);
+    r.liveError = blocklist::validateFile(fs, paths.live, limits.stored(), &r.header, tick);
     if (r.liveError == FormatError::kNone) {
       fs.remove(paths.old);
       r.haveList = true;
@@ -255,7 +255,7 @@ RecoveryResult BlocklistUpdater::recover(hal::IFileSystem& fs, const blocklist::
   }
   blocklist::Header oldHeader;
   if (fs.exists(paths.old) &&
-      blocklist::validateFile(fs, paths.old, limits, &oldHeader, tick) == FormatError::kNone) {
+      blocklist::validateFile(fs, paths.old, limits.stored(), &oldHeader, tick) == FormatError::kNone) {
     fs.remove(paths.live);
     if (fs.rename(paths.old, paths.live)) {
       r.haveList = true;

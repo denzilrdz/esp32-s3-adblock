@@ -173,7 +173,11 @@ bool TlsStream::peerDatesValid() {
   // prebuilt mbedTLS always does. The CA bundle check and the name check still apply.
   if (!wallClock_ || !wallClock_->wallClockSynced()) return true;
   const int64_t now = wallClock_->unixTime();
-  for (const mbedtls_x509_crt* c = mbedtls_ssl_get_peer_cert(&ssl_); c; c = c->next) {
+  // The leaf only: the list the server sends may hold extra or stale intermediates
+  // and cross-signs that aren't on the verified path (validators ignore those), and
+  // one expired extra certificate must not take every encrypted upstream down. A
+  // stolen or mis-issued leaf key is what the date check is for.
+  if (const mbedtls_x509_crt* c = mbedtls_ssl_get_peer_cert(&ssl_)) {
     const util::CertTime from{c->valid_from.year, c->valid_from.mon, c->valid_from.day,
                               c->valid_from.hour, c->valid_from.min, c->valid_from.sec};
     const util::CertTime to{c->valid_to.year, c->valid_to.mon, c->valid_to.day,

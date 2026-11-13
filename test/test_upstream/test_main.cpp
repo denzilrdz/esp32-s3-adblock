@@ -243,6 +243,26 @@ static void test_http_parser_skips_a_body_too_big_for_the_buffer() {
   TEST_ASSERT_FALSE(p.tooBig());
 }
 
+static void test_http_parser_body_cap_below_the_buffer() {
+  // Review 2026-11: the parser's buffer (head + 4 KB) is bigger than the forwarder's
+  // answer buffer, so a 4.1-4.5 KB DoH answer completed normally and the transport
+  // then failed (closed + blamed) on it. maxBody makes those "too big" as well.
+  uint8_t buf[600];
+  upstream::HttpResponseParser p(buf, sizeof(buf), 300);
+  std::string all = "HTTP/1.1 200 OK\r\nContent-Type: application/dns-message\r\nContent-Length: 400\r\n\r\n";
+  std::string body(400, 'x');
+  body[0] = '\xAB';
+  body[1] = '\xCD';
+  all += body;
+  TEST_ASSERT_TRUE(all.size() <= sizeof(buf));  // it would fit the buffer
+  const auto st = p.feed(reinterpret_cast<const uint8_t*>(all.data()), all.size());
+  TEST_ASSERT_EQUAL(static_cast<int>(upstream::HttpResponseParser::State::kComplete), static_cast<int>(st));
+  TEST_ASSERT_TRUE(p.tooBig());
+  uint16_t id = 0;
+  TEST_ASSERT_TRUE(p.tooBigId(id));
+  TEST_ASSERT_EQUAL_HEX16(0xABCD, id);
+}
+
 static void test_stream_deframer_fails_only_when_full_of_untaken_frames() {
   uint8_t buf[8], framed[16];
   upstream::StreamDeframer d(buf, sizeof(buf));
@@ -1135,6 +1155,7 @@ int main(int, char**) {
   RUN_TEST(test_stream_deframer_skips_oversized_frames);
   RUN_TEST(test_stream_deframer_reports_dropped_frame_ids);
   RUN_TEST(test_http_parser_skips_a_body_too_big_for_the_buffer);
+  RUN_TEST(test_http_parser_body_cap_below_the_buffer);
   RUN_TEST(test_stream_deframer_fails_only_when_full_of_untaken_frames);
   RUN_TEST(test_doh_request_head);
   RUN_TEST(test_http_parser_complete_response_byte_by_byte);
