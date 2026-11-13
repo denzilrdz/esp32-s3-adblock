@@ -154,6 +154,26 @@ N roots, M distrusted removed` at boot. Remove the entry once the framework
 - [ ] Known gap: the toolchain (pioarduino platform and packages) is fetched by URL
       without a hash check; a change there deserves a manual SHA-256 check.
 
+## 9. Dependency security updates (Dependabot alerts, `uv.lock`, actions)
+
+- [ ] Read every open advisory for the package, not just the alert being fixed: the
+      "first patched version" can itself be hit by a later advisory. 2026-11:
+      `virtualenv` 21.14.9 fixed the alerts at hand but was the version that
+      introduced GHSA-cx6f-vjhg-g3cc (high); 21.14.13 was needed. List them with
+      `gh api "repos/denzilrdz/esp32-s3-adblock/dependabot/alerts?state=open"` and
+      the package's advisories on GitHub/OSV, then pick the lowest version clear of
+      **all** of them.
+- [ ] Prefer that version over the newest release (cooldown policy in
+      `.github/dependabot.yml`), and change only the affected packages
+      (`uv lock --upgrade-package <pkg>==<ver>`); run `pre-commit run --all-files` and
+      a PlatformIO build with the new tools.
+- [ ] Check whether the vulnerable thing also exists in the firmware: a `certifi`
+      alert about a CA means checking ESP-IDF's bundle too
+      (`strings .pio/build/esp32s3/firmware.bin | grep '<CA name>'`); dev-tool
+      updates alone need no release.
+- [ ] An open Dependabot PR for the same package: fold it into the commit (it closes
+      itself once `main` has the version) or merge it, not both.
+
 ## Quick scans
 
 ```bash
