@@ -290,14 +290,29 @@ void rollBack(const char* why) {
 // and logged as a slow client every 2 s). One short-lived socket; at most ~3 s of the
 // maintenance task's 5 s watchdog.
 bool dashboardAnswers() {
+  static uint32_t failures = 0;
   NetworkClient c;
   const IPAddress ip = WiFi.localIP();
-  if (!c.connect(ip, 80, 1000)) return false;
-  c.setTimeout(2000);
-  c.printf("GET /api/stats HTTP/1.1\r\nHost: %s\r\nConnection: close\r\n\r\n", ip.toString().c_str());
-  const String status = c.readStringUntil('\n');
+  const uint32_t t0 = millis();
+  // Over loopback: on the board a TCP connect to its own Wi-Fi address times out
+  // (measured 2026-11-13), 127.0.0.1 works (the DNS wake sockets use it too). The Host
+  // header still names the board's IP, so the request passes the Host check.
+  const bool connected = c.connect(IPAddress(127, 0, 0, 1), 80, 1000);
+  String status;
+  if (connected) {
+    c.setTimeout(2000);
+    c.printf("GET /api/stats HTTP/1.1\r\nHost: %s\r\nConnection: close\r\n\r\n", ip.toString().c_str());
+    status = c.readStringUntil('\n');
+    status.trim();
+  }
   c.stop();
-  return status.startsWith("HTTP/1.1 401");
+  const bool ok = status.startsWith("HTTP/1.1 401");
+  // Say why it failed (first few times): a silent self-check left a good update
+  // pending without any hint (found on the board, 2026-11-13).
+  if (!ok && failures++ < 3)
+    gLog.log(hal::LogLevel::kWarn, "ota", "dashboard self-check failed: %s '%s' after %u ms",
+             connected ? "answer" : "connect failed", status.c_str(), static_cast<unsigned>(millis() - t0));
+  return ok;
 }
 
 void maintainOtaHealth() {
@@ -306,6 +321,12 @@ void maintainOtaHealth() {
   if (!pendingVerify()) {
     done = true;
     return;
+  }
+  static bool announced = false;
+  if (!announced) {
+    announced = true;
+    gLog.log(hal::LogLevel::kInfo, "ota",
+             "new firmware pending verification (Wi-Fi, DNS, dashboard for 60 s)");
   }
   diag::OtaHealthInput in;
   in.uptimeMs = millis();
