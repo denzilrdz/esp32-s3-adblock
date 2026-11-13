@@ -183,35 +183,65 @@ def check_upload_noauth():
         )
 
 
+def tcp_answer_size(name):
+    q, _ = build_query(name, qtype=16, edns=True)
+    with socket.create_connection((IP, 53), timeout=5) as c:
+        c.sendall(struct.pack(">H", len(q)) + q)
+        n = struct.unpack(">H", c.recv(2))[0]
+    return n
+
+
 def check_tcp_trickle():
-    # Pipeline cache-friendly queries with large-ish answers, never read, keep the TCP
-    # window tiny, then read a few bytes every 0.4 s: each send() makes a little progress.
+    # Pipeline 30 cached TXT answers (~50 KB, sent at once: no upstream wait, no
+    # in-flight limit). The OS receive buffer takes ~31 KB (macOS raises SO_RCVBUF),
+    # the board's send buffer ~5.7 KB, so the board blocks. Then read a few bytes every
+    # 0.4 s, which opens the window a little at a time: before the fix each send()
+    # made progress just inside its 500 ms timeout and dns_tcp ran past the 5 s
+    # watchdog. Expected: the board gives up on the reply (1 s budget) and closes the
+    # connection, so the stream ends well short of the full ~50 KB, with no restart.
+    names = ["google.com", "apple.com", "github.com"]
+    sizes = [tcp_answer_size(n) for n in names]  # also primes the cache
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 256)
     s.settimeout(20)
     s.connect((IP, 53))
-    names = ["google.com", "microsoft.com", "apple.com", "github.com"]
-    for i in range(4):
-        q, _ = build_query(names[i], qtype=16, edns=True)  # TXT, often 1-4 KB
+    expected = 0
+    for i in range(30):
+        q, _ = build_query(names[i % 3], qtype=16, edns=True)
         s.sendall(struct.pack(">H", len(q)) + q)
+        expected += sizes[i % 3] + 2
+    time.sleep(3)  # stall: the board's send blocks
+    got = 0
     t0 = time.time()
-    closed_after = None
-    while time.time() - t0 < 15:
+    eof = False
+    while time.time() - t0 < 10 and not eof:  # trickle
         try:
-            if not s.recv(16):
-                closed_after = time.time() - t0
-                break
+            d = s.recv(16)
+            eof = not d
+            got += len(d)
+        except ConnectionResetError:  # the board aborted it (RST): closed
+            eof = True
         except OSError:
-            closed_after = time.time() - t0
-            break
+            pass
         time.sleep(0.4)
+    s.settimeout(5)
+    while not eof:  # drain what was already delivered
+        try:
+            d = s.recv(65536)
+        except ConnectionResetError:
+            eof = True
+            break
+        except OSError:
+            break
+        eof = not d
+        got += len(d)
     s.close()
-    detail = (
-        f"board closed the slow reader after {closed_after:.1f}s"
-        if closed_after
-        else "still open after 15 s"
+    report(
+        "tcp-trickle",
+        eof and got < expected * 0.9,
+        f"received {got} of ~{expected} bytes before the board closed the slow reader"
+        + ("" if eof else " (never closed)"),
     )
-    report("tcp-trickle", True, detail + " (restart check: see 'alive')")
 
 
 if __name__ == "__main__":
