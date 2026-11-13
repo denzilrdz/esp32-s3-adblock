@@ -583,7 +583,13 @@ timeout)`, `close()`, plus `pipelined()`. Implementations:
     connection closes), and a plain attach then reloads the built-in bundle: every
     attach goes through `platform::attachTrustedBundle()` (sets the filtered bundle
     before and after attaching) and the download path reinstalls it on exit, so the
-    global holds the filtered bundle or nothing (nothing fails verification). First entry: `emSign ECC Root CA - G3`
+    global holds the filtered bundle or nothing (nothing fails verification). The
+    upstream transports attach once at boot (`TlsStream::prepare()`, before any other
+    task starts), so afterwards only the download's task attaches and detaches and no
+    detach can land between the wrapper's set and attach. Known limit, unchanged:
+    `esp_http_client` tries only the first address of a host (a GitHub download IP
+    unreachable from the ISP fails that attempt; the hourly retry usually gets
+    another). First entry: `emSign ECC Root CA - G3`
     (GHSA-6q48-6c7w-9gw2, compromised intermediates), 150 → 149 roots. If the format
     isn't understood (a future ESP-IDF), the built-in bundle stays and an error is
     logged. TLS 1.2 minimum;

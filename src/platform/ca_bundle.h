@@ -20,6 +20,9 @@ bool installTrustedCaBundle(hal::ILogger& log);
 // next esp_crt_bundle_attach() then reloads the BUILT-IN bundle, distrusted roots and
 // all. This sets the filtered bundle before and after attaching, so the global only
 // ever holds the filtered bundle or nothing (and nothing fails verification: closed).
+// The upstream transports attach once at boot (TlsStream::prepare()), so after boot
+// only the blocklist download (loopTask) attaches and detaches: no other task can
+// slip a detach between this function's set and attach.
 esp_err_t attachTrustedBundle(void* conf);
 
 // Puts the filtered bundle back after something detached it (an esp_http_client

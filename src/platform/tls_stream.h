@@ -30,6 +30,11 @@ class TlsStream {
 
   // TCP connect + TLS handshake within timeoutMs. Reuses the saved session if any.
   bool connect(uint32_t timeoutMs);
+  // The one-time TLS setup (config + CA bundle attach), done by the first connect()
+  // otherwise. main.cpp runs it at boot for every upstream, before any other task
+  // exists: the bundle attach then never runs in dns_up while the blocklist download
+  // (loopTask) attaches/detaches ESP-IDF's global bundle (platform/ca_bundle.h).
+  bool prepare() { return setupConfig(); }
   bool connected() const { return sslReady_; }
   // Writes everything or fails.
   StreamStatus writeAll(const uint8_t* data, size_t len, uint32_t timeoutMs);

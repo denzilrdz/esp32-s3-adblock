@@ -210,12 +210,21 @@ void startDnsService() {
   for (size_t i = 0; i < n; i++) {
     const config::Endpoint& e = endpoints[i];
     switch (e.kind) {
-      case upstream::TransportKind::kDoT:
-        chain[i] = new platform::DotTransport(e.name, e.ip, e.verifyName, e.port);
+      // TLS setup (and its CA bundle attach) now, while no other task runs: the
+      // upstream task then never attaches concurrently with the blocklist download's
+      // detach (platform/ca_bundle.h). A failure here is retried by the first connect.
+      case upstream::TransportKind::kDoT: {
+        auto* t = new platform::DotTransport(e.name, e.ip, e.verifyName, e.port);
+        t->prepareTls();
+        chain[i] = t;
         break;
-      case upstream::TransportKind::kDoH:
-        chain[i] = new platform::DohTransport(e.name, e.ip, e.verifyName, "/dns-query", e.port);
+      }
+      case upstream::TransportKind::kDoH: {
+        auto* t = new platform::DohTransport(e.name, e.ip, e.verifyName, "/dns-query", e.port);
+        t->prepareTls();
+        chain[i] = t;
         break;
+      }
       case upstream::TransportKind::kUdp: chain[i] = new platform::UdpTransport(e.name, e.ip, e.port); break;
     }
   }

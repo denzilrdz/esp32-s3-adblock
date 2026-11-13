@@ -16,6 +16,7 @@ namespace platform {
 class DotTransport final : public upstream::ITransport {
  public:
   DotTransport(const char* name, const char* ipv4, const char* verifyName, uint16_t port = 853);
+  bool prepareTls() { return tls_.prepare(); }  // at boot; see TlsStream::prepare()
 
   const char* name() const override { return name_; }
   upstream::TransportKind kind() const override { return upstream::TransportKind::kDoT; }
@@ -41,6 +42,7 @@ class DohTransport final : public upstream::ITransport {
  public:
   DohTransport(const char* name, const char* ipv4, const char* host, const char* path = "/dns-query",
                uint16_t port = 443);
+  bool prepareTls() { return tls_.prepare(); }  // at boot; see TlsStream::prepare()
 
   const char* name() const override { return name_; }
   upstream::TransportKind kind() const override { return upstream::TransportKind::kDoH; }
