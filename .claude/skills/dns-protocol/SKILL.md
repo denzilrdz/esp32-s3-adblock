@@ -72,8 +72,10 @@ Design: [ARCHITECTURE.md §5](../../../docs/ARCHITECTURE.md).
   backlog 1, 10 s idle timeout, a frame within 2 s, ≤ 4 in flight per connection and
   8 in all, each reply written within 1 s in total (`util::sendAllWithDeadline`; a
   per-`send()` timeout alone let a trickling reader trip the 5 s watchdog).
-- UDP: one client may hold at most half of the 32 pending slots
-  (`clients::InFlightLimiter`); `dns_io` yields a tick after 16 datagrams in a row.
+- UDP: once no more than 8 of the 32 pending slots are free, a client already
+  holding 16 gets SERVFAIL (`clients::InFlightLimiter`); while the pool has room a
+  busy client (a browser opening a page) may use more. `dns_io` yields a tick after
+  16 datagrams in a row.
 
 ## Checklist for changing DNS code
 

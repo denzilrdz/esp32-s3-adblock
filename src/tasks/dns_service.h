@@ -45,7 +45,8 @@ struct DnsServiceConfig {
   uint32_t localTtl = 60;
   bool passAd = true;          // pass the DNSSEC AD bit from authenticated upstreams
   uint16_t pendingSlots = 32;  // <= Forwarder::kMaxInFlight
-  // Most of those one UDP client may hold at once (0 = half the pool). A router relaying
+  // One UDP client's share of those (0 = half the pool), enforced only while no more
+  // than a quarter of the pool is free (clients::InFlightLimiter). A router relaying
   // DNS for the whole LAN is one client, so keep this a share, not a small number.
   uint16_t pendingPerClient = 0;
   uint16_t port = 53;

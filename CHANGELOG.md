@@ -27,8 +27,8 @@ All notable changes to this project are documented here. The format follows
   TCP and then reading the answer a few bytes at a time. Each TCP answer now has to
   go out within 1 second, or the connection is closed.
 - One device sending lots of lookups for names that aren't cached could use up all
-  32 waiting slots, so every other device got errors. A single device can now hold at
-  most half of them.
+  32 waiting slots, so every other device got errors. When the slots run short, one
+  device is now held to half of them, keeping room for everyone else.
 - A flood of DNS queries from one device could starve the board's other work until
   it restarted itself; the DNS task now pauses briefly between batches.
 - Banning a client or importing settings paused every DNS lookup on the network

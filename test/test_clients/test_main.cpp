@@ -158,31 +158,31 @@ static void test_long_uptime_has_no_wraparound() {
 }
 
 static void test_inflight_limiter_caps_each_client_separately() {
-  clients::InFlightLimiter lim(3);
+  clients::InFlightLimiter lim(3, 8);
   const uint32_t noisy = ip(192, 168, 1, 50), quiet = ip(192, 168, 1, 51);
-  for (int i = 0; i < 3; i++) TEST_ASSERT_TRUE(lim.tryAcquire(noisy));
-  TEST_ASSERT_FALSE(lim.tryAcquire(noisy));  // at its share
-  TEST_ASSERT_TRUE(lim.tryAcquire(quiet));   // others are unaffected
+  for (int i = 0; i < 3; i++) TEST_ASSERT_TRUE(lim.tryAcquire(noisy, 0));
+  TEST_ASSERT_FALSE(lim.tryAcquire(noisy, 0));  // at its share
+  TEST_ASSERT_TRUE(lim.tryAcquire(quiet, 0));   // others are unaffected
   TEST_ASSERT_EQUAL_UINT16(3, lim.heldBy(noisy));
   lim.release(noisy);
-  TEST_ASSERT_TRUE(lim.tryAcquire(noisy));  // a reply frees one
-  TEST_ASSERT_FALSE(lim.tryAcquire(noisy));
+  TEST_ASSERT_TRUE(lim.tryAcquire(noisy, 0));  // a reply frees one
+  TEST_ASSERT_FALSE(lim.tryAcquire(noisy, 0));
 }
 
 static void test_inflight_limiter_forgets_idle_clients_and_ignores_unknown_releases() {
-  clients::InFlightLimiter lim(2);
+  clients::InFlightLimiter lim(2, 8);
   lim.release(ip(10, 0, 0, 1));  // never acquired: no effect, no underflow
   TEST_ASSERT_EQUAL_UINT16(0, lim.heldBy(ip(10, 0, 0, 1)));
   // Many clients come and go: entries are reused once a client holds nothing.
   for (int round = 0; round < 10; round++)
     for (uint8_t host = 1; host <= 60; host++) {
-      TEST_ASSERT_TRUE(lim.tryAcquire(ip(10, 0, round, host)));
+      TEST_ASSERT_TRUE(lim.tryAcquire(ip(10, 0, round, host), 0));
       lim.release(ip(10, 0, round, host));
     }
   for (uint8_t host = 1; host <= clients::InFlightLimiter::kMaxTracked; host++)
-    TEST_ASSERT_TRUE(lim.tryAcquire(ip(10, 1, 0, host)));
-  TEST_ASSERT_FALSE(lim.tryAcquire(ip(10, 2, 0, 1)));  // table full: refused, not overwritten
-  TEST_ASSERT_EQUAL_UINT16(1, clients::InFlightLimiter(0).perClient());  // 0 means at least 1
+    TEST_ASSERT_TRUE(lim.tryAcquire(ip(10, 1, 0, host), 0));
+  TEST_ASSERT_FALSE(lim.tryAcquire(ip(10, 2, 0, 1), 32));  // table full: refused, not overwritten
+  TEST_ASSERT_EQUAL_UINT16(1, clients::InFlightLimiter(0, 0).perClient());  // 0 means at least 1
 }
 
 static void test_directory_adds_and_finds_clients() {
@@ -230,6 +230,24 @@ static void test_directory_eviction_survives_the_millis_wrap() {
   TEST_ASSERT_NULL(dir.find(ip(10, 0, 0, 1)));      // oldest
 }
 
+static void test_inflight_limiter_lets_a_lone_busy_client_use_a_free_pool() {
+  // Found on the board (2026-11-13): with a hard cap of 16, one browser resolving 40
+  // new names at once got SERVFAIL for some of them while nobody else was using DNS.
+  // A client may go past its share while plenty of the pool is free; at the share and
+  // with the pool nearly used up, it is refused, so others keep the reserve.
+  clients::InFlightLimiter lim(16, 8);  // share 16, keep 8 of 32 for everyone else
+  const uint32_t browser = ip(192, 168, 68, 100), phone = ip(192, 168, 68, 101);
+  int free = 32, got = 0;
+  for (int i = 0; i < 40; i++)
+    if (free > 0 && lim.tryAcquire(browser, static_cast<size_t>(free))) {
+      free--;
+      got++;
+    }
+  TEST_ASSERT_EQUAL(24, got);  // 32 - 8: past its share of 16, but the reserve is kept
+  TEST_ASSERT_TRUE(lim.tryAcquire(phone, static_cast<size_t>(free)));  // others still get in
+  TEST_ASSERT_FALSE(lim.tryAcquire(browser, static_cast<size_t>(free - 1)));
+}
+
 int main(int, char**) {
   UNITY_BEGIN();
   RUN_TEST(test_add_remove_contains);
@@ -244,6 +262,7 @@ int main(int, char**) {
   RUN_TEST(test_resume_early_and_pause_again);
   RUN_TEST(test_long_uptime_has_no_wraparound);
   RUN_TEST(test_inflight_limiter_caps_each_client_separately);
+  RUN_TEST(test_inflight_limiter_lets_a_lone_busy_client_use_a_free_pool);
   RUN_TEST(test_directory_adds_and_finds_clients);
   RUN_TEST(test_full_directory_replaces_the_client_not_seen_for_longest);
   RUN_TEST(test_directory_eviction_survives_the_millis_wrap);

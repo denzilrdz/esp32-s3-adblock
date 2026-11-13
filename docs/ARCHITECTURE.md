@@ -912,10 +912,13 @@ in RTC memory like every deliberate restart.
   - Upstream replies must match the in-flight ID and question.
   - The UDP/53 server answers only private, link-local and loopback source
     addresses (`util::isPrivateIpv4`; no open resolver if the device is ever exposed).
-  - One UDP client may hold at most half of the 32-slot pending pool
-    (`clients::InFlightLimiter`): a noisy device asking for random names during an
-    upstream slowdown no longer gets everyone else SERVFAIL. Half, not less, because
-    a router relaying DNS for the LAN is a single client.
+  - The 32-slot pending pool is shared fairly when it runs short
+    (`clients::InFlightLimiter`): a UDP client holding its share (half) is refused
+    once no more than a quarter of the pool is free, so a noisy device asking for
+    random names during an upstream slowdown no longer gets everyone else SERVFAIL.
+    While the pool has room a client may go past its share: a hard cap of 16 gave a
+    browser resolving 40 new names at once SERVFAILs on an idle network (measured
+    on the board). Half, not less, because a router relaying DNS is one client.
   - After 16 datagrams in a row `dns_io` yields one tick, so a UDP flood can't starve
     `dns_up` and the maintenance task on core 1 into a watchdog reset.
 - **Secrets:**

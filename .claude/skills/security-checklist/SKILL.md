@@ -97,8 +97,10 @@ network as hostile.
 - [ ] No unbounded `String` concatenation driven by client input.
 - [ ] Every loop a client can keep alive has a **total** deadline, not only a
       per-call timeout (`sendAllWithDeadline`), and fits the 5 s watchdog.
-- [ ] Shared pools give each client a share (`InFlightLimiter`); a router relaying
-      DNS for the LAN is one client, so shares are fractions, not small numbers.
+- [ ] Shared pools give each client a share when they run short (`InFlightLimiter`:
+      enforced only near exhaustion, so a lone busy client isn't refused on an idle
+      board); a router relaying DNS for the LAN is one client, so shares are
+      fractions, not small numbers.
 - [ ] Health / circuit-breaker logic counts one failure per event, not per query
       stuck on it (`blameSilence()`): a burst must not take a provider down, least
       of all the encrypted ones (plain fallback leaks every name).

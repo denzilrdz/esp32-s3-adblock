@@ -64,7 +64,8 @@ DnsService::DnsService(const DnsServiceConfig& cfg, dns::IQueryPolicy& policy, c
   if (cfg_.pendingSlots > upstream::Forwarder::kMaxInFlight)
     cfg_.pendingSlots = upstream::Forwarder::kMaxInFlight;
   udpInFlight_ =
-      clients::InFlightLimiter(cfg_.pendingPerClient ? cfg_.pendingPerClient : cfg_.pendingSlots / 2);
+      clients::InFlightLimiter(cfg_.pendingPerClient ? cfg_.pendingPerClient : cfg_.pendingSlots / 2,
+                               static_cast<uint16_t>(cfg_.pendingSlots / 4));  // reserve for others
   if (cfg_.tcpMaxConns > sizeof(tcp_) / sizeof(tcp_[0])) cfg_.tcpMaxConns = sizeof(tcp_) / sizeof(tcp_[0]);
   if (cfg_.replyCap < dns::kMaxUdpPayload) cfg_.replyCap = dns::kMaxUdpPayload;
   if (cfg_.replyCap > upstream::Forwarder::kMaxAnswer) cfg_.replyCap = upstream::Forwarder::kMaxAnswer;
@@ -270,7 +271,7 @@ size_t DnsService::forward(const dns::Query& q, const ClientRef& client, const d
   const dns::Query& replyTo = rewriteOf ? *rewriteOf : q;  // what the client asked
   // UDP clients get at most their share of the pool (TCP has per-connection limits).
   const bool udp = client.origin == Origin::kUdp;
-  if (udp && !udpInFlight_.tryAcquire(client.addr.sin_addr.s_addr)) {
+  if (udp && !udpInFlight_.tryAcquire(client.addr.sin_addr.s_addr, uxQueueMessagesWaiting(freeQ_))) {
     stats_.servfail++;
     return dns::buildErrorReply(replyTo, dns::Rcode::kServFail, out, outCap);
   }
