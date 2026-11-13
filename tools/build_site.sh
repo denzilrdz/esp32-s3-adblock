@@ -44,6 +44,8 @@ cp "$tmp"/package/dist/web/*.js "$site/vendor/esp-web-tools/"
 sed "s/__VERSION__/${ver}/g" "$root/installer/index.html" >"$site/index.html"
 cp "$root/installer/404.html" "$site/"
 cp "$root/installer/social-preview.png" "$site/"
+# Dashboard demo: the real page with a simulated device (tools/build_demo.py).
+python3 "$root/tools/build_demo.py" "$site/demo" "$ver"
 cp "$dist/factory-esp32s3-${tag}.bin" "$site/factory-esp32s3.bin"
 sed "s/__VERSION__/${ver}/" "$root/installer/manifest.json" >"$site/manifest.json"
 # Dashboard update check: the browser fetches these from Pages (release downloads send

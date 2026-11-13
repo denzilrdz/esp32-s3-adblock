@@ -184,5 +184,113 @@ class InstallerSiteTest(unittest.TestCase):
         self.assertIn(f'installer/{name}" "$site/"', script)
 
 
+DEMO_HARNESS = r"""
+// Runs installer/demo/api.js against stand-ins for the browser globals it uses.
+const store = {};
+globalThis.sessionStorage = {getItem: k => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v) }};
+globalThis.location = new URL('https://example.github.io/esp32-s3-adblock/demo/');
+globalThis.window = globalThis;
+window.fetch = async () => { throw new Error('network used') };
+require(process.argv[1]);
+const get = async p => { const r = await fetch(p, {cache: 'no-store'}); return r.ok ? r.json() : r.status };
+const post = async (p, d) => { const r = await fetch(p, {method: 'POST', body: new URLSearchParams(d || {})}); return [r.status, await r.text()] };
+(async () => {
+  const out = {}, s0 = await get('/api/stats');
+  out.version = s0.version;
+  out.updateUrl = s0.updateUrl;
+  out.hist = JSON.parse(store['ab.hist']).s.length;
+  out.blockedShare = s0.dns.blocked / s0.dns.queries;
+  out.sumOk = s0.dns.blocked + s0.dns.cacheHits + s0.dns.forwarded + s0.dns.local <= s0.dns.queries;
+  out.config = Object.keys(await get('/api/config')).length;
+  out.pause = (await post('/api/blocking/pause', {s: 300}))[0];
+  const s1 = await get('/api/stats');
+  out.paused = !s1.blocking && s1.resumeIn > 290;
+  out.monotonic = s1.dns.queries >= s0.dns.queries;
+  await post('/api/rules/add', {list: 'block', d: 'ads.example.org'});
+  out.rule = (await get('/api/stats')).rules.block.includes('ads.example.org');
+  out.badRule = (await post('/api/rules/add', {list: 'block', d: 'not a domain'}))[0];
+  await post('/api/rewrites/add', {d: 'printer.home', t: '192.168.1.60', m: 15});
+  out.rewrite = (await get('/api/stats')).rewrites.items.find(r => r.d === 'printer.home');
+  out.ban = (await post('/api/clients/ban', {ip: '192.168.1.10'}))[1];
+  out.firmware = (await post('/api/firmware'))[0];
+  await post('/api/reboot');
+  out.rebootReset = (await get('/api/stats')).dns.queries < s0.dns.queries;
+  await post('/api/logout');
+  out.loggedOut = await get('/api/stats');
+  out.login = (await post('/api/login', {user: 'me', pass: 'anything'}))[0];
+  out.back = typeof (await get('/api/stats')) === 'object';
+  console.log(JSON.stringify(out));
+})();
+"""
+
+
+class DemoSiteTest(unittest.TestCase):
+    """The dashboard demo on Pages (tools/build_demo.py + installer/demo/api.js)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.out = pathlib.Path(cls.tmp.name) / "demo"
+        r = subprocess.run(
+            ["python3", str(ROOT / "tools/build_demo.py"), str(cls.out), "1.2.3"],
+            capture_output=True,
+            text=True,
+        )
+        assert r.returncode == 0, r.stderr
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
+
+    def test_is_the_real_dashboard_without_inline_script(self):
+        html = (self.out / "index.html").read_text(encoding="utf-8")
+        self.assertIn("Content-Security-Policy", html)
+        self.assertIn("script-src 'self'", html)
+        self.assertNotRegex(html, r"<script(?![^>]*\bsrc=)[^>]*>")
+        self.assertLess(
+            html.index("<script src=api.js>"), html.index("<script src=app.js>")
+        )
+        self.assertEqual(external_loads(html), [])
+        page_script = re.search(r"<script>(.*?)</script>", dashboard(), re.S).group(1)
+        app = (self.out / "app.js").read_text(encoding="utf-8")
+        self.assertEqual(app.strip(), page_script.strip())
+
+    def test_deployed_and_linked(self):
+        script = (ROOT / "tools/build_site.sh").read_text(encoding="utf-8")
+        self.assertIn('tools/build_demo.py" "$site/demo"', script)
+        html = (ROOT / "installer/index.html").read_text(encoding="utf-8")
+        self.assertIn('href="demo/"', html)
+
+    @unittest.skipUnless(shutil.which("node"), "node not installed")
+    def test_simulated_api(self):
+        api = self.out / "api.js"
+        r = subprocess.run(
+            ["node", "-e", DEMO_HARNESS, str(api)], capture_output=True, text=True
+        )
+        self.assertEqual(r.returncode, 0, r.stderr)
+        res = json.loads(r.stdout)
+        self.assertEqual(res["version"], "1.2.3")
+        self.assertEqual(
+            res["updateUrl"], "https://example.github.io/esp32-s3-adblock/"
+        )
+        self.assertGreater(res["hist"], 400)  # 30 min of 4 s samples for the chart
+        self.assertTrue(0.1 < res["blockedShare"] < 0.4, res)
+        self.assertTrue(res["sumOk"])
+        self.assertGreater(res["config"], 15)
+        self.assertEqual(res["pause"], 200)
+        self.assertTrue(res["paused"])
+        self.assertTrue(res["monotonic"])
+        self.assertTrue(res["rule"])
+        self.assertEqual(res["badRule"], 400)
+        self.assertEqual(res["rewrite"]["k"], "ipv4")
+        self.assertGreater(res["rewrite"]["s"], 14 * 60)
+        self.assertEqual(res["ban"], "banned")
+        self.assertEqual(res["firmware"], 400)  # never pretends to flash
+        self.assertTrue(res["rebootReset"])
+        self.assertEqual(res["loggedOut"], 401)
+        self.assertEqual(res["login"], 200)
+        self.assertTrue(res["back"])
+
+
 if __name__ == "__main__":
     unittest.main()

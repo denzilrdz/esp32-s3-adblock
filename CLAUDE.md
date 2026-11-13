@@ -40,6 +40,7 @@ tools/lint.sh                            # clang-tidy on lib/core (.clang-tidy)
 tools/make_factory.sh                    # merged image flashable at 0x0 (after a build)
 python3 tools/build_blocklist.py out.bin # build a format-v2 blocklist (stdlib only)
 python3 tools/make_update_json.py fw.bin vX.Y.Z update.json   # dashboard update manifest
+python3 tools/build_demo.py out/demo 0.5.0   # Pages dashboard demo (page.h + installer/demo/api.js)
 gh workflow run pages.yml                # redeploy the Pages site (installer/ on main + latest release)
 python3 -m unittest discover -s tools -p 'test_*.py'   # tool + web page tests
 ```
@@ -60,7 +61,8 @@ src/           ESP32-only: main.cpp (composition root), platform/ (HAL impls: TL
                web/ (dashboard REST API, page.h, Wi-Fi setup portal; skill web-ui)
 test/          Unity tests: test/test_<area>/test_main.cpp, fakes in test/fakes/
 tools/         blocklist builder, factory image, setup/format/lint/coverage scripts
-installer/     browser installer + 404 (esp-web-tools pinned by SHA-512), deployed by CI
+installer/     browser installer + 404 (esp-web-tools pinned by SHA-512), deployed by CI;
+               demo/api.js = simulated device for the dashboard demo (site/demo/)
 docs/          ARCHITECTURE.md, ROUTER_SETUP.md
 .github/       CI (build.yml), release.yml (v* tags), pages.yml (manual Pages redeploy),
                daily blocklist.yml

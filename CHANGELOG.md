@@ -6,6 +6,15 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- A dashboard demo on the installer site
+  ([denzilrdz.github.io/esp32-s3-adblock/demo/](https://denzilrdz.github.io/esp32-s3-adblock/demo/)):
+  the real dashboard with a simulated board behind it, so anyone can click around
+  before buying one. Traffic follows a household day (quiet nights, busy evenings,
+  bursts when an app opens); pausing, rules, rewrites, bans, upstream tests and
+  reboots all respond. Nothing leaves the browser.
+
 ## [0.5.0] - 2026-11-11
 
 Adds a one-click test of every upstream DNS server. Update from the dashboard

@@ -11,6 +11,7 @@ running on a small ESP32-S3 board powered over USB.
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 [**Install from the browser**](https://denzilrdz.github.io/esp32-s3-adblock/) ·
+[Try the dashboard demo](https://denzilrdz.github.io/esp32-s3-adblock/demo/) ·
 [Quick start](#quick-start) ·
 [Router setup](docs/ROUTER_SETUP.md) ·
 [How it works](#how-it-works) ·

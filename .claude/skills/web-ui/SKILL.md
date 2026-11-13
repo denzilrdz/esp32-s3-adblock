@@ -5,15 +5,16 @@ description: Design system and rules for every web page of the project - the das
 
 # Web UI
 
-Three pages, one look. All are hand-written HTML/CSS/vanilla JS with **no external
-resources** (no CDN, fonts, frameworks), because the CSPs forbid them, the setup portal
-has no internet, and the dashboard lives in flash.
+Three pages (plus a demo of the dashboard), one look. All are hand-written
+HTML/CSS/vanilla JS with **no external resources** (no CDN, fonts, frameworks), because
+the CSPs forbid them, the setup portal has no internet, and the dashboard lives in flash.
 
-| Page         | File                   | Constraints                                                                                                                                                               |
-| ------------ | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Dashboard    | `src/web/page.h`       | CSP `default-src 'self'` + update-site origin, inline script/style allowed. ≤ 64 KB (test). Login screen until `/api/stats` answers (session cookie); polls it every 4 s. |
-| Setup portal | `src/web/portal.cpp`   | Opened by phones' captive mini-browsers (iOS CNA: little JS): **must work without JS**. Built with `String` (not the DNS hot path).                                       |
-| Installer    | `installer/index.html` | CSP `script-src 'self'`: **no inline script**. `__VERSION__` is stamped by release.yml. esp-web-tools vendored and hash-checked. `404.html`.                              |
+| Page         | File                    | Constraints                                                                                                                                                                                                                                                                               |
+| ------------ | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Dashboard    | `src/web/page.h`        | CSP `default-src 'self'` + update-site origin, inline script/style allowed. ≤ 64 KB (test). Login screen until `/api/stats` answers (session cookie); polls it every 4 s.                                                                                                                 |
+| Setup portal | `src/web/portal.cpp`    | Opened by phones' captive mini-browsers (iOS CNA: little JS): **must work without JS**. Built with `String` (not the DNS hot path).                                                                                                                                                       |
+| Installer    | `installer/index.html`  | CSP `script-src 'self'`: **no inline script**. `__VERSION__` is stamped by release.yml. esp-web-tools vendored and hash-checked. `404.html`.                                                                                                                                              |
+| Demo         | `installer/demo/api.js` | The dashboard on Pages at `/demo/`, built by `tools/build_demo.py` from page.h (script moved to `app.js`, CSP `script-src 'self'`). `api.js` loads first and answers `/api/*` in the browser with simulated traffic: **a new dashboard endpoint or field needs a matching answer there**. |
 
 `tools/test_web_pages.py` enforces size, no `innerHTML`, no external loads, no inline
 script on Pages, and that the dashboard script parses (`node --check`).
