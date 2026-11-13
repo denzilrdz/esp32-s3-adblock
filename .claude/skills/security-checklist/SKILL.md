@@ -28,7 +28,15 @@ network as hostile.
       `guard(Access::kAuth)` in `src/web/dashboard.cpp` (Host check, POST,
       `X-Requested-With: adblock`, Origin/Referer, session cookie or Basic Auth vs the PBKDF2 hash,
       per-client lockout, setup-code gate). Uploads use `check()` at
-      `UPLOAD_FILE_START`.
+      `UPLOAD_FILE_START`, **and** their "done" handler starts with
+      `uploadDoneAllowed()` (a request without a file part never runs the upload
+      callback, so a flag from an earlier upload must not authorize it).
+- [ ] Routes are registered with `route()` (`BoundedRoute`: 413 for bodies over 8 KB
+      or a negative Content-Length, before the library buffers them), never
+      `server.on()` / `onNotFound()`.
+- [ ] Anything that checks a password (login, password change, future re-auth)
+      goes through `verifyPassword()`: lockout + 1 s delay. Never call
+      `PasswordStore::verify()`/`change()` on user input without it.
 - [ ] Data GET routes call `guard(Access::kRead)` (login + Host check); only the
       page shell and 404 use `guard(Access::kPublic)`. Never send
       `WWW-Authenticate` (it pops up the browser's login box over the page's own).
@@ -38,8 +46,10 @@ network as hostile.
 - [ ] All values rendered into HTML are escaped (`htmlEscape`); JSON strings are
       escaped (`jsonEscape`); no `innerHTML` with server data in `page.h`, use
       `textContent`. `tools/test_web_pages.py` checks the pages (skill `web-ui`).
-- [ ] Inputs are validated (domain syntax, IPs, URL must be `https://`, numeric
-      ranges).
+- [ ] Inputs are validated (domain syntax, IPs, numeric ranges), with the **same**
+      function on every path that sets the value (dashboard and settings import:
+      e.g. `config::validBlocklistUrl()`), including length limits of the storage it
+      ends up in.
 - [ ] Failed-login backoff still applies (per client + fixed 1 s delay); no endpoint
       leaks passwords, the password hash, the setup code, `OTA_PASS` or Wi-Fi
       credentials. The setup code is only ever printed to the serial console.
@@ -48,8 +58,13 @@ network as hostile.
 
 ## 3. OTA
 
-- [ ] Auth is checked at `UPLOAD_FILE_START`, and every later chunk is ignored if
-      it failed.
+- [ ] Auth is checked at `UPLOAD_FILE_START`, every later chunk is ignored if it
+      failed, and the done handler re-checks its own request.
+- [ ] Rollback decisions (`diag::otaVerdict()`) never depend on something an
+      unauthenticated LAN host can block (e.g. the single web task): that would
+      let anyone force a downgrade. Only missing Wi-Fi/DNS rolls back.
+- [ ] Firmware images are not signed yet (ARCHITECTURE.md §15 W11): anything that
+      widens who can upload (new route, new auth path) needs that weighed.
 - [ ] With a signing key configured, the image hash is verified **before**
       `Update.end(true)`; on failure, `Update.abort()`.
 - [ ] The rollback health check still gates `esp_ota_mark_app_valid_cancel_rollback()`.
@@ -59,6 +74,9 @@ network as hostile.
 
 - [ ] No `setInsecure()`, no `skip_common_name`, and no `MBEDTLS_SSL_VERIFY_NONE`
       anywhere.
+- [ ] Certificate dates: the prebuilt mbedTLS doesn't check them;
+      `TlsStream::peerDatesValid()` does once the clock is synced. A new TLS client
+      path (not `esp_http_client`) must do the same.
 - [ ] The verify hostname is set for every IP-literal connection.
 - [ ] The plain-DNS fallback is logged and visible on the dashboard; AD is cleared
       on it.
@@ -73,9 +91,19 @@ network as hostile.
 
 ## 6. Resource exhaustion
 
-- [ ] Fixed limits on queues, connections (TCP/53 ≤ 4, HTTP), cache, custom rules
-      and client table; when full, degrade (SERVFAIL / 503) rather than allocate.
+- [ ] Fixed limits on queues, connections (TCP/53 ≤ 2, HTTP), cache, custom rules
+      and client table; when full, degrade (SERVFAIL / 503 / replace the stalest
+      entry) rather than allocate or stop working until a reboot.
 - [ ] No unbounded `String` concatenation driven by client input.
+- [ ] Every loop a client can keep alive has a **total** deadline, not only a
+      per-call timeout (`sendAllWithDeadline`), and fits the 5 s watchdog.
+- [ ] Shared pools give each client a share (`InFlightLimiter`); a router relaying
+      DNS for the LAN is one client, so shares are fractions, not small numbers.
+- [ ] Health / circuit-breaker logic counts one failure per event, not per query
+      stuck on it (`blameSilence()`): a burst must not take a provider down, least
+      of all the encrypted ones (plain fallback leaks every name).
+- [ ] Listen backlogs and transient sockets fit the 16-socket budget
+      (ARCHITECTURE.md §11).
 
 ## 7. Lessons from past findings (check these patterns explicitly)
 
@@ -96,6 +124,14 @@ network as hostile.
   scripts from CDNs on pages that flash firmware (vendor + pin by hash).
 - **Untracked files:** never overwrite `src/secrets.h` (or other gitignored user files)
   without looking at it first.
+- **Locks on the hot path** (audit 2026-11): file I/O or a log line under a mutex
+  the DNS tasks take stalled every query. Copy under the lock, act outside it.
+- **Third-party data is input too:** the daily blocklist build drops entries that
+  would block the update site, DNS or NTP (`PROTECTED` in `build_blocklist.py`) and
+  refuses size jumps; cache entries never mix checking-disabled answers with
+  validated ones.
+- **Early randomness:** before Wi-Fi, `esp_random()` is pseudo-random; secrets made
+  then use `bootloader_random_enable()`.
 
 ## 8. CI / GitHub Actions changes
 
@@ -105,12 +141,17 @@ network as hostile.
       `# vX.Y.Z` comment (Dependabot updates both, after a 7-day cooldown).
 - [ ] Job `permissions` are minimal and commented; workflow default is `{}`.
 - [ ] No `pull_request_target`/`workflow_run` triggers; no untrusted `${{ }}` in `run:`.
+- [ ] A deploy job `needs:` every job whose failure should stop it (Pages after the
+      release exists); attestation checks pin `--signer-workflow` and `--source-ref`.
+- [ ] Known gap: the toolchain (pioarduino platform and packages) is fetched by URL
+      without a hash check; a change there deserves a manual SHA-256 check.
 
 ## Quick scans
 
 ```bash
 git grep -nE 'setInsecure|strcpy|sprintf\(|VERIFY_NONE|skip_common_name'
 git grep -nE 'innerHTML *=' src/web  # must print nothing
+git grep -nE '\bs\.on\(|onNotFound\(' src/web/dashboard.cpp  # must print nothing (BoundedRoute)
 tools/lint.sh
 ```
 

@@ -117,9 +117,16 @@ verify new strings against nayarsystems/posix_tz_db `zones.csv`.
 - Server data → `textContent`/`value`/attributes only. In C++ (portal) every scanned
   SSID goes through `htmlEscape`. Quote attribute values that may end in `/`:
   `fill=currentColor/>` parses as the colour `currentColor/` (use ` />`).
-- Every change is a POST through `api()` (adds `X-Requested-With: adblock`).
+- Every change is a POST through `api()` (adds `X-Requested-With: adblock`). `api()`
+  treats **any 401 as "session ended"** and logs the page out: a route that rejects a
+  wrong value the user typed (e.g. the current password) answers 400, not 401.
+- New dashboard routes: `route()` in `dashboard.cpp` (request-body limit), never
+  `server.on()`. Form posts stay well under 8 KB; bigger data goes as a multipart
+  file upload.
 - New origins need a CSP change in `pageCsp()` (dashboard) or the installer `<meta>`:
-  avoid.
+  avoid. The dashboard CSP also sets `base-uri 'none'`, `form-action 'self'`,
+  `object-src 'none'`; the installer's `frame-ancestors` in a `<meta>` tag is ignored
+  by browsers (GitHub Pages can't send headers).
 
 ## Preview without a board
 

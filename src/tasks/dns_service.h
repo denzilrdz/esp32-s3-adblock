@@ -9,8 +9,8 @@
 // dns_io and dns_tcp share one query pipeline (validate, local zones, policy, cache).
 // Misses go to dns_up through a fixed slot pool + queue; dns_up writes the reply into
 // the slot and hands it back to the task that owns the client's socket, waking it
-// through a loopback "self-pipe" socket. Each socket is used by exactly one task
-// (lwIP is built without full-duplex netconn).
+// through a loopback "self-pipe" socket. Each socket is used by exactly one task (our
+// ownership rule; lwIP itself is built with LWIP_NETCONN_FULLDUPLEX).
 
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>

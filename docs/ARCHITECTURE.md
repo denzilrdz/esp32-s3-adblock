@@ -197,8 +197,9 @@ flowchart LR
    cache and posts the finished reply slot to the **reply queue**, then writes one
    byte to the wake socket.
 8. `dns_io` sends the reply from the UDP/53 socket (the only task that touches
-   it — lwIP is built without `LWIP_NETCONN_FULLDUPLEX`, so a socket must not be
-   used from two tasks at once).
+   it). One task per socket is our ownership rule, not an lwIP limit: the prebuilt
+   `lwipopts.h` has `LWIP_NETCONN_FULLDUPLEX 1` and ESP-IDF sockets are thread-safe,
+   but a single owner keeps socket lifetimes and closes simple.
 
 Why a hand-off at all: the prebuilt lwIP has `CONFIG_LWIP_UDP_RECVMBOX_SIZE = 6`,
 so a UDP socket buffers only six datagrams. Anything that blocks the receiver
@@ -802,6 +803,19 @@ in RTC memory like every deliberate restart.
 - The software watchdog runs in the `esp_timer` task. If that task died while the
   blocklist download was stuck in its unwatched phase, nothing would restart the board
   (two independent failures; a dead `esp_timer` also stops Wi-Fi and lwIP timers).
+- Open items from the 2026-11 audit, each a decision rather than a quick fix:
+  - **Unsigned firmware** (W11): anyone with a session (sniffable on plain HTTP) can
+    install any image, older ones included; the dashboard checks only size and the
+    image's own SHA-256. Fix: signed app images (`CONFIG_SECURE_SIGNED_APPS_*`) or an
+    Ed25519 check before `Update.end()`, plus refusing downgrades.
+  - **Toolchain not hash-checked:** the pioarduino platform and its packages come
+    from mutable GitHub release URLs; the SHA-256 in `platformio.ini` is a comment.
+  - **Secrets at rest:** NVS holds the Wi-Fi password in plain text and the
+    dashboard password as PBKDF2 with 4096 iterations (OWASP suggests far more);
+    flash/NVS encryption is off.
+  - **Multipart field values** are accumulated by WebServer without a total limit
+    (each line ≤ 16 KB, 5 s): closing it needs a patched copy of the library.
+  - The blocklist download (`esp_http_client`) doesn't check certificate dates.
 
 **Controls:**
 
@@ -938,7 +952,7 @@ in RTC memory like every deliberate restart.
 | Wi-Fi + lwIP buffers (part offloaded to PSRAM by `SPIRAM_TRY_ALLOCATE_WIFI_LWIP`)                           | 60–90 KB    |
 | Active TLS session (mbedTLS buffers are internal-only in the prebuilt libs, 16 KB in + 16 KB out + context) | ≈ 45 KB     |
 | Transient second TLS session (failover, or the HTTPS blocklist download)                                    | ≈ 45 KB     |
-| Task stacks (6 + 10 + 6 + 8 + 12 KB)                                                                        | 42 KB       |
+| Task stacks (dns_io 6 + dns_up 12 + dns_tcp 6 + web 8 + loopTask 16 KB)                                     | 48 KB       |
 | Query pool (32 × 512 B) + queues + in-flight table                                                          | ≈ 20 KB     |
 | Web server, mDNS, ArduinoOTA, misc                                                                          | ≈ 30 KB     |
 | **Headroom**                                                                                                | ≈ 60–100 KB |

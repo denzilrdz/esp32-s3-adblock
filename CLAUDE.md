@@ -80,7 +80,15 @@ docs/          ARCHITECTURE.md, ROUTER_SETUP.md
   no new globals.
 - **DNS hot path** (`dns_io`/`dns_tcp`, policy, blocklist lookup, cache lookup): no
   heap allocation, no `String`, no blocking calls, no flash writes, no per-query
-  logging above DEBUG.
+  logging above DEBUG. That includes **locks the hot path takes**
+  (`ClientTable::mutex_`, `RewriteManager::mutex_`, the cache mutex): never hold one
+  across file I/O, logging (a UART line blocks ~9 ms) or allocation. Copy under the
+  lock, release, then write/log (`saveBans()`, `RewriteManager::save()`).
+- **Anything one LAN host can drive needs a total bound**, not just a per-call
+  timeout: a client trickling bytes resets per-call timeouts forever (TCP/53 replies:
+  `util::sendAllWithDeadline`; pages: `util::sendWithDeadline`). Shared pools get a
+  per-client share (`clients::InFlightLimiter`), loops over network input a batch cap
+  plus a yield (`dns_io`).
 - Large buffers (blocklist, cache, pending pool) go in PSRAM (`platform::allocLarge`).
   Never PSRAM for task stacks, DMA buffers, or anything touched with the flash cache
   disabled.
@@ -92,7 +100,10 @@ docs/          ARCHITECTURE.md, ROUTER_SETUP.md
   its priority. A scope that can't feed (esp_http_client) uses `platform::WatchdogPause`
   plus its own overall deadline. Whatever the hardware watchdog can't see needs a
   software one (`diag::LivenessMonitor` in main.cpp, table in ARCHITECTURE.md §4.3).
-- One task per socket: lwIP is built without full-duplex netconn.
+- One task per socket (our ownership rule). The prebuilt lwIP has
+  `LWIP_NETCONN_FULLDUPLEX 1` and ESP-IDF sockets are thread-safe, but one owner per
+  socket keeps lifetimes simple: never `vTaskDelete()` a task blocked in
+  `select()`/`recv()`.
 - `-Wall -Wextra` must stay clean (src/ and lib/core); native tests use `-Werror`.
 
 ## Testing rule
@@ -126,10 +137,23 @@ native tests; pre-push = clang-tidy + esp32s3 firmware build.
   that label; changing it wipes the list). Changing offsets wipes data and needs a
   USB flash.
 - **mbedTLS buffers are internal RAM only** (prebuilt libs): about 45 KB per TLS
-  session, so at most 2 at once.
+  session. The forwarder keeps at most 2 (`maxTlsConnections`); the 02:00 blocklist
+  download briefly adds a third: watch `heapBlock` in `/api/stats` before adding any.
+- **mbedTLS doesn't check certificate dates** (`MBEDTLS_HAVE_TIME_DATE` off; it lets
+  DoT work before NTP). `TlsStream` checks them after the handshake once the clock is
+  synced; any new date check must also wait for sync.
 - **UDP socket buffers only 6 datagrams** (`LWIP_UDP_RECVMBOX_SIZE`), so the DNS
   receive task must never block.
 - **Only 16 lwIP sockets in total**: budget in ARCHITECTURE.md §11 before adding one.
+  Connections queued in a listen backlog count too (lwIP allocates their netconn
+  before `accept()`): listen with backlog 1 (`platform::setListenBacklog()` for
+  library servers such as WebServer, which uses 4).
+- **Arduino WebServer buffers a whole non-multipart POST body** (any size, unknown
+  URLs too) before a handler runs. Register routes with `Dashboard::route()`
+  (`web/bounded_route.h`, 413 above 8 KB), never `server.on()`/`onNotFound()`
+  (`tools/test_web_pages.py` checks). Multipart field values are still unbounded in
+  the library (ARCHITECTURE.md §9). Multipart "done" handlers must re-check their own
+  request (`uploadDoneAllowed()`): the upload callback only runs for file parts.
 - **ARP/lwIP core calls** (e.g. `etharp_find_addr`) only via `tcpip_callback`.
 - **C hooks from Arduino** (`verifyRollbackLater`, …) need `extern "C"` to override.
 - **CA bundle:** `#include <esp_crt_bundle.h>` (ESP-IDF's; core 3 has no Arduino copy).
@@ -155,7 +179,21 @@ native tests; pre-push = clang-tidy + esp32s3 firmware build.
   `WWW-Authenticate` (the browser pop-up would cover the page's login form).
 - **Restarts:** call `platform::restart("why")` (`src/platform/restart_info.h`), never
   `ESP.restart()`: the reason is kept in RTC memory and shown under _Device → Health_.
+- **OTA rollback** (`diag::otaVerdict()`): only missing Wi-Fi/DNS may roll a pending
+  image back. Never let something any LAN host can block (the single web task) force
+  a rollback: that is a downgrade attack. A boot-time `esp_timer` covers a hang in
+  `setup()` and is stopped when `setup()` ends.
+- **Randomness before Wi-Fi:** `esp_random()` is only pseudo-random until the radio
+  runs; wrap early secrets in `bootloader_random_enable()/disable()` (setup code).
 - **IPv6 / browser secure DNS bypass** the blocker: docs/ROUTER_SETUP.md.
+- **DNS replies echo the question exactly** (case too, DNS 0x20):
+  `dns::writeQuestionName()`; matching, cache keys and upstream queries stay
+  lowercase. Answers to CD=1 queries are never cached. An answer over 4 KB is
+  `IoStatus::kTooBig`: SERVFAIL for that query, nobody blamed.
+- **Blocklist limit 900k names** (`blocklist::kMaxListEntries` = `MAX_ENTRIES` in
+  `tools/build_blocklist.py`): live + download copies must fit LittleFS. The builder's
+  `PROTECTED` set must cover every host the firmware needs (upstreams, NTP,
+  `UPDATE_BASE_URL`): extend it when one changes (`test_build_blocklist.py` checks).
 - **DNS rewrites** (ARCHITECTURE.md §5.7) run before the blocklist and skip the
   device's own lookups (127.0.0.1): test them from another LAN host
   (`dig @<board-ip> nas.home`), never from the board. Replies they build must keep AD
@@ -170,7 +208,10 @@ native tests; pre-push = clang-tidy + esp32s3 firmware build.
 - **SSH alias:** the `origin` remote uses the `github-denzil` host alias from
   `~/.ssh/config`; don't rewrite it to `github.com`.
 - **macOS:** `pio` is at `/opt/homebrew/bin/pio` (or `.venv/bin/pio`). Don't name test
-  globals `clock`/`time` (libc clash).
+  globals `clock`/`time` (libc clash), nor any identifier `unix` (a predefined macro on
+  host compilers).
+- **New files:** `tools/format.sh` only formats files git tracks: `git add` new ones
+  first, or the pre-commit format check fails on them.
 
 ## Skills (.claude/skills/)
 

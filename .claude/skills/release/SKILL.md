@@ -52,6 +52,9 @@ schema), MINOR (features), PATCH (fixes).
 - Publishes the dashboard update files to Pages: `firmware-esp32s3.bin` and
   `update.json` (`tools/make_update_json.py`: version, size, SHA-256, release link).
   Every board with the update check sees the new release as soon as Pages deploys.
+- The `installer` job (Pages) `needs: [firmware, release]`: if the release job fails
+  (no CHANGELOG section, attestation error), nothing reaches Pages and no dashboard
+  is offered a build without a release behind it.
 - Deploys the browser installer to GitHub Pages: `installer/index.html` +
   `manifest.json` (ESP32-S3) + esp-web-tools vendored from the npm tarball
   pinned in `installer/esp-web-tools.lock` (SHA-512 checked). Needs Pages set to
@@ -64,8 +67,9 @@ schema), MINOR (features), PATCH (fixes).
 - Page-only changes (installer/ text, preview image) don't need a release: run
   `gh workflow run pages.yml` (Actions -> pages). It rebuilds the site with
   `tools/build_site.sh` (same script as the release) from `installer/` on main plus the
-  latest release's binaries, after checking their SHA256SUMS and attestations, and that
-  release's `installer/min-update-from`. Both deploys share the `pages-deploy`
+  latest release's binaries, after checking their SHA256SUMS and attestations (signer
+  `release.yml`, source ref the release tag), that release's
+  `installer/min-update-from`, and that release's `tools/make_update_json.py`. Both deploys share the `pages-deploy`
   concurrency group.
 
 ## After the release

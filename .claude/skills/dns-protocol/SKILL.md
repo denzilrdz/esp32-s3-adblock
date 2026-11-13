@@ -7,8 +7,9 @@ description: Rules and checklist for DNS packet handling. Use before changing an
 
 Code: `lib/core/dns/message.{h,cpp}` (parse/build), `name.{h,cpp}`,
 `local_zones.{h,cpp}`, `rewrite_reply.{h,cpp}`, `query_policy.h`; the pipeline that applies them is
-`DnsService::processQuery()` in `src/tasks/dns_service.cpp`; the policy is
-`src/app/app_policy.h`. Tests: `test/test_dns`, `test/test_local_zones`, `test/test_rules` (rewrites).
+`DnsService::processQuery()` in `src/tasks/dns_service.cpp`; the policy order is
+`dns::decidePolicy()` in `query_policy.h` (adapter: `src/app/app_policy.h`). Tests:
+`test/test_dns`, `test/test_local_zones`, `test/test_rules` (rewrites), `test/test_policy`.
 Design: [ARCHITECTURE.md §5](../../../docs/ARCHITECTURE.md).
 
 ## Incoming query validation (in order)
@@ -32,7 +33,10 @@ Design: [ARCHITECTURE.md §5](../../../docs/ARCHITECTURE.md).
   synthetic SOA in the authority section with TTL and MINIMUM = `blocked_ttl`.
 - **Never NXDOMAIN for blocked names.** RFC 8020 lets resolvers prune the whole
   subtree.
-- Flags: QR = 1, RA = 1, AA = 0, AD = 0; copy ID, RD, CD; echo the question exactly.
+- Flags: QR = 1, RA = 1, AA = 0, AD = 0; copy ID, RD, CD; echo the question exactly,
+  **letter case included** (`writeQuestionName()` from `Query::qnameCase`): resolvers
+  using DNS 0x20 (Unbound `use-caps-for-id`) drop a reply whose question differs in
+  case. Any new reply builder must use it; never `memcpy(q.qnameWire)` into a reply.
 - If the query had OPT: add OPT (UDP size 1232, DO echoed) + EDE option 15 with
   info-code 15 "Blocked" (17 "Filtered" for a banned client).
 - **Local:** `localhost`/`*.localhost` → 127.0.0.1 / ::1; RFC 6303 private reverse
@@ -51,14 +55,25 @@ Design: [ARCHITECTURE.md §5](../../../docs/ARCHITECTURE.md).
 - Strip the upstream OPT; rebuild our own for the client (EDNS is hop-by-hop).
 - AD: pass through only if the upstream channel was authenticated (DoT/DoH) **and**
   the client set AD or DO. Clear it on plain-UDP fallback.
-- Restore the client's ID; preserve the RD from the query.
+- Restore the client's ID; preserve the RD from the query; put back the client's
+  spelling of the question (`finalizeForClient`, only over an uncompressed name of
+  the same length).
+- **Cache:** only answers from authenticated upstreams, never answers to CD=1 queries
+  (unvalidated: RFC 6840 §5.9). The key is lowercase name, type, class, DO.
+- An answer over `Forwarder::kMaxAnswer` (4 KB) never arrives: the transport reports
+  `IoStatus::kTooBig` and the client gets SERVFAIL at once.
 
 ## Size limits and TCP
 
 - UDP limit = the client's OPT size clamped to [512, 1232], or 512 without OPT.
 - Too big → header + question + OPT, TC = 1, ANCOUNT = NSCOUNT = 0 (and ARCOUNT = 1
   if OPT). Client retries over TCP/53.
-- TCP/53: 2-byte big-endian length prefix, ≤ 4 connections, 10 s idle timeout.
+- TCP/53: 2-byte big-endian length prefix, ≤ 2 connections (socket budget), listen
+  backlog 1, 10 s idle timeout, a frame within 2 s, ≤ 4 in flight per connection and
+  8 in all, each reply written within 1 s in total (`util::sendAllWithDeadline`; a
+  per-`send()` timeout alone let a trickling reader trip the 5 s watchdog).
+- UDP: one client may hold at most half of the 32 pending slots
+  (`clients::InFlightLimiter`); `dns_io` yields a tick after 16 datagrams in a row.
 
 ## Checklist for changing DNS code
 
@@ -70,7 +85,8 @@ Design: [ARCHITECTURE.md §5](../../../docs/ARCHITECTURE.md).
    - compression loop / pointer in question;
    - QDCOUNT = 0 and 2;
    - OPT with bad length;
-   - an oversized answer that triggers TC.
+   - an oversized answer that triggers TC;
+   - a mixed-case question (the reply must echo it exactly).
 4. Check `ID`, flags, all four counts and the OPT in assertions, not just the
    answer RDATA.
 5. Verify on hardware with `dig`:

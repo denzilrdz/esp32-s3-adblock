@@ -40,13 +40,28 @@ Design: [ARCHITECTURE.md §6](../../../docs/ARCHITECTURE.md).
 ```bash
 python3 tools/build_blocklist.py out.bin                             # default sources
 python3 tools/build_blocklist.py out.bin hosts.txt https://...      # custom sources
+python3 tools/build_blocklist.py --previous old.bin out.bin          # refuse a size jump
 python3 -m unittest discover -s tools -p 'test_*.py'
 ```
 
 - Inputs: hosts files, plain domain lists, AdGuard `||d^` / `@@||d^`.
 - Regex, `$modifiers` and cosmetic rules are skipped and counted.
 - A missing source fails the build (`--allow-missing` to override).
-- CI rebuilds the default list daily (18:30 UTC = 00:00 IST; scheduled runs can start late) and publishes it at
+- Safety (audit 2026-11; the firmware blocks every subdomain of a listed name):
+  - entries that are, or are parents of, a `PROTECTED` name (update site, GitHub,
+    Cloudflare/Quad9 DNS, NTP, big shared hosting) are dropped with a GitHub
+    `::warning::`. **Extend `PROTECTED` when the firmware starts depending on a new
+    host**; `test_protected_set_covers_the_device_dependencies` checks the current
+    ones against `config.cpp` and `dashboard.cpp`;
+  - bare TLDs and the common second-level public suffixes in `PUBLIC_SUFFIXES`
+    (`co.uk`, `com.au`) are dropped. An explicit set, not a pattern: lists block
+    abused free-subdomain hosts on purpose (`co.cc`, `co.nf`);
+  - more than `MAX_ENTRIES` (900k, = `blocklist::kMaxListEntries`) fails;
+  - `--previous` (the daily workflow passes the published list) fails on fewer than
+    half or more than double its entries: a truncated or tampered source keeps the
+    old list.
+- CI rebuilds the default list daily (18:30 UTC = 00:00 IST, 2 h before the boards'
+  02:00 update; scheduled runs can start late) and publishes it at
   `https://github.com/denzilrdz/esp32-s3-adblock/releases/download/blocklist/blocklist.bin`.
   A list whose payload matches the published one isn't re-uploaded (the compare skips
   the build-time header bytes 16–23), so its ETag stays and boards skip the download.

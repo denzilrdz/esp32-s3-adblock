@@ -84,6 +84,9 @@ pio device monitor -e esp32s3        # 115200 baud, filters: esp32_exception_dec
     task above idle priority spinning on `yield()`, as the web task did up to v0.2.7;
   - a long flash erase in one go: chunk writes and reset the watchdog between
     chunks.
+- A LAN host can't cause these any more by design (audit 2026-11): TCP/53 replies
+  have a 1 s total budget, `dns_io` yields after 16 datagrams. A watchdog reset right
+  after `dnsperf`/`dns_load.py` against the board is a regression.
 - Reset reason on boot: `TG1WDT_SYS_RESET` / `TASK_WDT` = watchdog;
   `BROWNOUT_RST` = power. Weak USB ports (routers, hubs) may sag; use a 5 V/1 A supply.
 
@@ -105,6 +108,17 @@ Household DNS goes through the board, so run them when a short outage is accepta
 A crash overwrites the stored crash record. Restart reasons from the software watchdog
 (ARCHITECTURE.md §4.3): "web task stuck", "blocklist download stuck", "upstream task
 stuck", "software watchdog stopped".
+
+## Firmware update rollback
+
+- `[E][ota] rollback: new firmware without Wi-Fi or DNS after 5 min` / `... never
+finished booting` (10-min `esp_timer` from the start of `setup()`, e.g. a Wi-Fi
+  regression) → the previous image runs again; the reason is under _Device →
+  Health_.
+- An image stays **pending** (no "marked valid" line) while the dashboard doesn't
+  answer its local self-check (`GET /` with the board's IP as Host). That never rolls
+  back by itself (a LAN host could hold the web task to force a downgrade); the
+  bootloader rolls back at the next restart if it never answers.
 
 ## Blocklist download failures
 
@@ -157,7 +171,17 @@ for i in $(seq 50); do dig @<ip> +short r$i.example.com & done; wait   # burst
 /api/upstreams/test`) sends `example.com` through every upstream once and shows the
   result per upstream (`[up] test <name>: ...` in the log); a pass puts it back to standby. A
   `connect failed (TLS -0x....)` there is real: decode the mbedTLS code.
+- `[up] <name>: answer for <name> larger than 4096 bytes, answering SERVFAIL` → a
+  huge answer (big TXT/DNSKEY sets with DO). Expected for that name; the upstream is
+  not marked down for it.
+- `[up] <name>: TLS connect failed (error -0x2700)` after the clock synced, with the
+  CA bundle unchanged → a certificate in the upstream's chain is outside its validity
+  dates by more than an hour (or the board's clock is wrong: check _time_ on the
+  dashboard).
+- Encrypted upstreams no longer go down because one website's own DNS servers are
+  slow: silence counts once per upstream per 1.2 s, never if it answered anything
+  meanwhile. Repeated "down" with plain fallback is a real outage of port 853/443.
 - Dashboard **Plain DNS in use** banner → ports 853 and 443 to 1.1.1.1/9.9.9.9 are blocked
-  or failing. Test from the Mac: `kdig @1.1.1.1 +tls example.com` (knot) or
+  or failing. While it shows, the encrypted upstreams are retried every 10 s. Test from the Mac: `kdig @1.1.1.1 +tls example.com` (knot) or
   `openssl s_client -connect 1.1.1.1:853 -servername cloudflare-dns.com`.
 - Clients bypassing the blocker → IPv6 RDNSS or browser DoH (docs/ROUTER_SETUP.md).

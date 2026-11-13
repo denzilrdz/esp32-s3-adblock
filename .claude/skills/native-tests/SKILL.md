@@ -20,20 +20,28 @@ test/
   fakes/                 header-only fakes (FakeClock, FakeRandom, FakeTransport,
                          FakeHttpClient, MemFileSystem, MemKvStore, CapturingLogger)
                          and builders (dns_builder.h packets, blocklist_builder.h v2 files)
-  test_dns/test_main.cpp         parser/builder, EDNS0, malformed, blocked replies
+  test_dns/test_main.cpp         parser/builder, EDNS0, malformed, blocked replies,
+                                 question case echoed exactly (DNS 0x20)
+  test_policy/test_main.cpp      policy order: loopback bypass, ban, rewrite, pause, lists
   test_blocklist/test_main.cpp   hash, index, parent matching, collisions, format
-  test_cache/test_main.cpp       TTL decrement/expiry, LRU eviction, negative caching
+  test_cache/test_main.cpp       TTL decrement/expiry, LRU eviction, negative caching,
+                                 CD=1 answers never cached
   test_scheduler/test_main.cpp   02:00 local trigger, dedupe, retry, no-sync gating
-  test_upstream/test_main.cpp    fallback chain, health FSM, pipelining, timeouts
+  test_upstream/test_main.cpp    fallback chain, health FSM, pipelining, timeouts, blame
+                                 windows (stuck bursts), kTooBig, plain-UDP socket rotation
   test_updater/test_main.cpp     ETag, validation, atomic swap, corrupt download
   test_config/test_main.cpp      settings validation, NVS round trip, upstream chain
   test_auth/test_main.cpp        password hashing, setup code, lockout, Host/Origin, sessions
   test_diag/test_main.cpp        restart cause names, crash summary, backtrace text,
-                                 software watchdog (LivenessMonitor)
+                                 software watchdog (LivenessMonitor), OTA rollback verdict
+  test_clients/test_main.cpp     ban list, pause timer, client directory (stalest
+                                 replaced, wrap-safe), per-client in-flight limiter
   test_soak/test_main.cpp        DNS pipeline soak under ASan (-DSOAK_SCALE=10 for long)
   test_netsim/test_main.cpp      90 days of bad internet: scheduler + updater + watchdog
   test_local_zones/test_main.cpp localhost, canary domains, private reverse zones
-  test_util/test_main.cpp        CRC-32, civil time, SHA-256/HMAC/PBKDF2 vectors, paced send
+  test_util/test_main.cpp        CRC-32, civil time, SHA-256/HMAC/PBKDF2 vectors, paced
+                                 send (pieces and partial sends under one deadline),
+                                 private-IPv4 ranges, certificate validity dates
   test_json/test_main.cpp        JSON reader/writer (malformed input, depth, escapes),
                                  weekday/addDays/HH:MM parsing
   test_reboot/test_main.cpp      scheduled reboot: window, DST, midnight, fresh boot, once a day
@@ -87,6 +95,19 @@ int main(int, char**) {
 }
 ```
 
+Python tests in `tools/` (`python3 -m unittest discover -s tools -p 'test_*.py'`) guard
+the web pages and the dashboard's server rules (`test_web_pages.py`) and the blocklist
+builder, including its limits against `format.h` and `partitions_16MB.csv`
+(`test_build_blocklist.py`).
+
+## Testing code in src/
+
+`src/` can't be compiled natively, so put the **decision** in `lib/core` as a small
+pure function or class and keep only the I/O in `src/`: e.g. `dns::decidePolicy()`
+(AppPolicy), `diag::otaVerdict()` (rollback), `clients::InFlightLimiter` and
+`util::sendAllWithDeadline()` (DnsService), `util::certValidity()` (TlsStream). A
+change in `src/` that has no such seam needs one before its fix.
+
 ## Adding a fake
 
 1. Find the interface in `lib/core/hal/` (e.g. `IHttpClient`).
@@ -110,6 +131,12 @@ strengthened this way.
 - If a test needs a static/global, reset it in `setUp()`; tests in one binary share
   state.
 - Don't name test globals `clock`, `time` or `random`: they collide with libc
-  functions on macOS. Use `fakeClock`, `fakeRandom`.
+  functions on macOS. Use `fakeClock`, `fakeRandom`. Never name anything `unix`: it
+  is a predefined macro on the host compilers.
+- `FakeTransport` reports an inbox entry bigger than the receive buffer as
+  `IoStatus::kTooBig` with its ID, like the real DoT/DoH transports.
+- A health test that relies on N stuck queries making N failures no longer holds:
+  silence counts once per upstream per `hedgeAfterMs`. Lower `failuresToDown`
+  instead.
 - Native tests run under AddressSanitizer + UBSan. An out-of-bounds read shows up
   as `ERRORED`; run `pio test -e native -f <test> -v` to see the ASan report.
