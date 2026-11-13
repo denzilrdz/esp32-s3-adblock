@@ -1,5 +1,6 @@
 #include "platform/transports.h"
 
+#include <esp_random.h>
 #include <esp_timer.h>
 #include <lwip/sockets.h>
 
@@ -152,8 +153,19 @@ IoStatus UdpTransport::connect(uint32_t) {
   if (inet_pton(AF_INET, ip_, &addr.sin_addr) != 1) return IoStatus::kError;
   fd_ = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
   if (fd_ < 0) return IoStatus::kError;
+  // A random source port (lwIP hands them out in sequence): with the 16-bit ID, an
+  // off-path attacker must guess ~2^30 combinations to spoof a plain answer. The
+  // forwarder closes this socket whenever nothing is in flight, so it changes often.
+  struct sockaddr_in local;
+  memset(&local, 0, sizeof(local));
+  local.sin_family = AF_INET;
+  local.sin_addr.s_addr = htonl(INADDR_ANY);
+  for (int attempt = 0; attempt < 8; attempt++) {
+    local.sin_port = htons(static_cast<uint16_t>(49152 + esp_random() % 16384));
+    if (bind(fd_, reinterpret_cast<struct sockaddr*>(&local), sizeof(local)) == 0) break;
+  }
   // connect() on UDP fixes the peer: datagrams from any other source are dropped
-  // by the stack. A fresh socket (new source port) is used after every idle close.
+  // by the stack.
   if (::connect(fd_, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)) != 0) {
     close();
     return IoStatus::kError;

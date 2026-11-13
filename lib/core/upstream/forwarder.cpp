@@ -399,10 +399,13 @@ void Forwarder::poll(uint32_t waitMs) {
 
   // 1. Close idle connections before the server does, so we never write into a
   //    half-closed socket.
+  //    Plain UDP closes as soon as nothing is in flight: its next query gets a fresh
+  //    socket on a new random source port, so an off-path spoofer can't learn the port
+  //    once and then only guess 16-bit IDs (audit 2026-11).
   for (size_t i = 0; i < count_; i++) {
     ITransport* t = transports_[i];
-    if (t->connected() && !busy(static_cast<int>(i)) && now - lastActivityMs_[i] >= cfg_.idleCloseMs)
-      t->close();
+    if (!t->connected() || busy(static_cast<int>(i))) continue;
+    if (t->kind() == TransportKind::kUdp || now - lastActivityMs_[i] >= cfg_.idleCloseMs) t->close();
   }
 
   // 2. Send anything waiting (new, rerouted, or queued behind a busy DoH).

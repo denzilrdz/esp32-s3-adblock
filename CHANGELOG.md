@@ -74,6 +74,8 @@ All notable changes to this project are documented here. The format follows
 
 ### Security
 
+- Plain (unencrypted) fallback DNS now uses a random source port that changes after
+  every burst of lookups, which makes forged answers much harder to slip in.
 - One device asking with DNSSEC checking disabled (`dig +cd`) could make the cache
   hand an unvalidated answer to every other device. Such answers are no longer
   cached.

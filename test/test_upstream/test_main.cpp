@@ -862,6 +862,28 @@ static void test_an_answer_too_big_fails_only_that_query_and_blames_nobody() {
   TEST_ASSERT_EQUAL(0, fwd->inFlight());
 }
 
+static void test_plain_udp_gets_a_new_socket_after_each_burst() {
+  // Audit 2026-11: plain fallback kept one socket (one source port) while busy, so the
+  // 16-bit ID was the only thing an off-path spoofer had to guess.
+  downAll(*dot1);
+  downAll(*dot2);
+  downAll(*doh);
+  for (int i = 0; i < 4; i++) {
+    fwd->submit(i, query("p" + std::to_string(i) + ".example"));
+    fwd->poll(0);
+    fwd->poll(0);
+  }
+  TEST_ASSERT_TRUE(fwd->plainFallbackActive());
+  const int connects = plain->connects;
+  for (int i = 0; i < 3; i++) {
+    fwd->submit(10 + i, query("q" + std::to_string(i) + ".example"));
+    fwd->poll(0);  // answered
+    fwd->poll(0);  // nothing in flight: closed
+    TEST_ASSERT_FALSE(plain->connected());
+  }
+  TEST_ASSERT_EQUAL(connects + 3, plain->connects);
+}
+
 // --- after a power cut: slow internet, many queries, scarce internal RAM -------------
 
 static int tlsConnected() {
@@ -1144,6 +1166,7 @@ int main(int, char**) {
   RUN_TEST(test_deadline_does_not_blame_an_upstream_that_answered_meanwhile);
   RUN_TEST(test_encrypted_upstreams_are_retried_often_while_plain_dns_is_used);
   RUN_TEST(test_an_answer_too_big_fails_only_that_query_and_blames_nobody);
+  RUN_TEST(test_plain_udp_gets_a_new_socket_after_each_burst);
   RUN_TEST(test_hedges_dont_mark_a_slow_but_answering_upstream_down);
   RUN_TEST(test_tls_connections_are_capped_closing_the_idlest);
   RUN_TEST(test_no_new_tls_connection_while_every_open_one_is_busy);
