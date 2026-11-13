@@ -38,7 +38,10 @@ void UpstreamHealth::capBackoff(uint64_t nowMs, uint32_t maxMs) {
 void UpstreamHealth::onFailure(uint64_t nowMs, uint32_t random) {
   stats_.failed++;
   failures_++;
-  const bool wasDown = state_ == HealthState::kProbing || state_ == HealthState::kDown;
+  // Already Down (not probing): a query sent before it went down timing out now. Same
+  // failure, no new evidence: keep the backoff and the next probe time.
+  if (state_ == HealthState::kDown) return;
+  const bool wasDown = state_ == HealthState::kProbing;
   if (!wasDown && failures_ < cfg_.failuresToDown) {
     state_ = HealthState::kDegraded;
     return;

@@ -8,6 +8,9 @@
 //                                            +-------- fail ------------+  (backoff x2)
 //   Probing --ok--> Up
 //
+// A failure while Down (a query sent before it went down, timing out late) is counted
+// but changes nothing: only a failed probe doubles the backoff.
+//
 // Connection setup (TCP/TLS) is the transport's concern; a failed connect is simply
 // reported as a failure here.
 

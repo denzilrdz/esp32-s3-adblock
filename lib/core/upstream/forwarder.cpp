@@ -90,8 +90,13 @@ void Forwarder::recordFailure(int u) {
   const HealthState before = health_[u].state();
   health_[u].onFailure(now, random_.next32());
   const bool everythingDown = allDown();
-  if (everythingDown)  // cap first, so the log below shows the real retry delay
-    for (size_t i = 0; i < count_; i++) health_[i].capBackoff(now, cfg_.outageProbeMs);
+  // Cap first, so the log below shows the real retry delay. Every upstream down: our
+  // own internet is the likely cause. Every encrypted one down while plain DNS still
+  // works: queries go out in plaintext, so get back to encrypted DNS quickly.
+  const bool encryptedDown = !everythingDown && encryptedAllFailing();
+  if (everythingDown || encryptedDown)
+    for (size_t i = 0; i < count_; i++)
+      if (everythingDown || transports_[i]->authenticated()) health_[i].capBackoff(now, cfg_.outageProbeMs);
   const HealthState after = health_[u].state();
   if (after != before)
     log_.log(after == HealthState::kDown ? LogLevel::kWarn : LogLevel::kInfo, kTag,
@@ -103,6 +108,23 @@ void Forwarder::recordFailure(int u) {
              "every upstream is failing: internet connection down? retrying every %u s",
              static_cast<unsigned>(cfg_.outageProbeMs / 1000));
   }
+}
+
+void Forwarder::blameSilence(int u, uint64_t sentMs, uint64_t now) {
+  if (lastReplyMs_[u] > sentMs || now < nextBlameMs_[u]) return;
+  nextBlameMs_[u] = now + cfg_.hedgeAfterMs;
+  recordFailure(u);
+}
+
+bool Forwarder::encryptedAllFailing() const {
+  bool any = false;
+  for (size_t i = 0; i < count_; i++) {
+    if (!transports_[i]->authenticated()) continue;
+    any = true;
+    const HealthState st = health_[i].state();
+    if (st != HealthState::kDown && st != HealthState::kProbing) return false;
+  }
+  return any;
 }
 
 bool Forwarder::allDown() const {
@@ -402,7 +424,8 @@ void Forwarder::poll(uint32_t waitMs) {
       // Blame the upstream only if it had a fair chance (hedgeAfterMs since this send).
       // A query that reached it late, e.g. after a blackholed upstream used up the
       // budget in its connect timeout, says nothing about its health.
-      if (!s.needsSend && s.upstream >= 0 && now - s.sentMs >= cfg_.hedgeAfterMs) recordFailure(s.upstream);
+      if (!s.needsSend && s.upstream >= 0 && now - s.sentMs >= cfg_.hedgeAfterMs)
+        blameSilence(s.upstream, s.sentMs, now);
       log_.log(LogLevel::kInfo, kTag, "timeout for %s, answering SERVFAIL", s.q.qname);
       finishFailed(s);
       continue;
@@ -415,7 +438,7 @@ void Forwarder::poll(uint32_t waitMs) {
       // Only blame an upstream that has gone silent. One that answered anything since
       // this query was sent is alive, just slow (e.g. a congested link right after the
       // internet comes back); marking it down would push every query onto the next one.
-      if (lastReplyMs_[s.upstream] <= s.sentMs) recordFailure(s.upstream);
+      blameSilence(s.upstream, s.sentMs, now);
       reroute(s);
       trySend(s);
     }

@@ -7,7 +7,12 @@
 //  - Each query gets a fresh random upstream ID and lives in a fixed in-flight table;
 //    replies must match ID and question (late or forged replies are ignored).
 //  - A query unanswered after hedgeAfterMs is re-sent to the next healthy upstream;
-//    at totalDeadlineMs the client gets SERVFAIL via the sink.
+//    at totalDeadlineMs the client gets SERVFAIL via the sink. Silence counts against
+//    an upstream at most once per hedgeAfterMs, and never if it answered anything since
+//    the query was sent: a burst of queries stuck on a slow authoritative server must
+//    not take encrypted DNS down (and push the LAN onto plain DNS).
+//  - While every encrypted upstream is down, they are retried at least every
+//    outageProbeMs, so plain fallback ends soon after one comes back.
 //  - At most maxTlsConnections DoT/DoH connections are open at once: a new one first
 //    closes the longest-idle one, or waits until one is idle.
 //  - startProbe() tests every upstream in turn with one query each (dashboard "Test
@@ -165,6 +170,10 @@ class Forwarder {
   void finishFailed(Slot& s);
   void recordSuccess(int u, uint32_t latencyMs);
   void recordFailure(int u);
+  // Blames `u` for a query sent at sentMs that is still unanswered, unless it answered
+  // anything since then or was already blamed in the last hedgeAfterMs.
+  void blameSilence(int u, uint64_t sentMs, uint64_t now);
+  bool encryptedAllFailing() const;  // every encrypted upstream Down or Probing
   uint16_t freshId(int u);
   void driveProbe();
   void finishProbe(Slot& s, ProbeResult r, int32_t tlsError = 0, uint32_t latencyMs = 0, uint8_t rcode = 0);
@@ -174,6 +183,7 @@ class Forwarder {
   UpstreamHealth health_[kMaxUpstreams];
   uint64_t lastActivityMs_[kMaxUpstreams] = {};
   uint64_t lastReplyMs_[kMaxUpstreams] = {};  // any reply, matched or late: it's alive
+  uint64_t nextBlameMs_[kMaxUpstreams] = {};  // blameSilence() window
   size_t count_;
   const hal::IClock& clock_;
   hal::IRandom& random_;

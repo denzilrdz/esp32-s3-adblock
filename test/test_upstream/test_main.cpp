@@ -128,6 +128,21 @@ static void test_health_backoff_is_capped() {
   TEST_ASSERT_TRUE(h.nextProbeMs() == 300000);
 }
 
+static void test_health_failures_while_down_dont_extend_the_backoff() {
+  // Queries already in flight when an upstream goes Down time out afterwards. They are
+  // leftovers of the same failure, not new evidence: only a failed probe doubles it.
+  upstream::HealthConfig cfg;
+  cfg.jitterPercent = 0;
+  upstream::UpstreamHealth h(cfg);
+  for (int i = 0; i < 3; i++) h.onFailure(0, 0);
+  TEST_ASSERT_EQUAL_UINT32(1000, h.backoffMs());
+  for (int i = 0; i < 20; i++) h.onFailure(10, 0);
+  TEST_ASSERT_EQUAL(static_cast<int>(HealthState::kDown), static_cast<int>(h.state()));
+  TEST_ASSERT_EQUAL_UINT32(1000, h.backoffMs());
+  TEST_ASSERT_TRUE(h.nextProbeMs() == 1000);
+  TEST_ASSERT_EQUAL_UINT32(23, h.stats().failed);  // still counted
+}
+
 // --- framing ----------------------------------------------------------------------
 
 static void test_stream_deframer_handles_split_and_coalesced_frames() {
@@ -701,6 +716,83 @@ static void test_plain_upstream_state_isnt_left_stale_after_encrypted_returns() 
   TEST_ASSERT_EQUAL(static_cast<int>(HealthState::kUnknown), static_cast<int>(fwd->upstreamStatus(3).state));
 }
 
+// --- slow authoritative servers must not take encrypted DNS down ------------------
+
+static void test_a_burst_of_stuck_queries_counts_as_one_failure() {
+  // Audit 2026-11: a web page can embed ~15 images on random subdomains of a domain
+  // whose nameservers answer after > 2.5 s. Every one of those queries hedged and then
+  // hit its deadline, each blamed separately: the upstreams went Down one after another
+  // with growing backoffs and the LAN fell back to plain DNS for minutes. Queries that
+  // get stuck together are one piece of evidence, not fifteen.
+  dot1->holdReplies = dot2->holdReplies = doh->holdReplies = true;
+  for (int i = 0; i < 15; i++) fwd->submit(i, query("r" + std::to_string(i) + ".slow.example"));
+  for (int step = 0; step < 30; step++) {
+    fakeClock.advanceMs(100);
+    fwd->poll(0);
+    TEST_ASSERT_FALSE(fwd->plainFallbackActive());
+  }
+  TEST_ASSERT_EQUAL(15, sink.results.size());  // all got SERVFAIL at the deadline
+  for (int u = 0; u < 3; u++) {
+    TEST_ASSERT_NOT_EQUAL_MESSAGE(static_cast<int>(HealthState::kDown),
+                                  static_cast<int>(fwd->upstreamStatus(u).state), allTransports()[u]->name());
+    TEST_ASSERT_TRUE_MESSAGE(fwd->upstreamStatus(u).stats.failed <= 1, allTransports()[u]->name());
+  }
+}
+
+static void test_deadline_does_not_blame_an_upstream_that_answered_meanwhile() {
+  // Same rule as the hedge: an upstream that answered anything since this query was
+  // sent is alive, just slow on this name.
+  upstream::ITransport* chain[] = {dot1.get(), plain.get()};
+  fwd =
+      std::make_unique<Forwarder>(upstream::ForwarderConfig{}, chain, 2, fakeClock, fakeRandom, logger, sink);
+  dot1->responder = [](const Bytes& q) -> Bytes {
+    dns::Query parsed;
+    dns::parseQuery(q.data(), q.size(), parsed);
+    if (std::string(parsed.qname).find("slow") != std::string::npos) return {};  // never answered
+    return FakeTransport::defaultAnswer(q);
+  };
+  fwd->submit(1, query("slow.example"));
+  fwd->poll(0);
+  fakeClock.advanceMs(500);
+  fwd->submit(2, query("fast.example"));  // answered: the upstream is alive
+  fwd->poll(0);
+  for (int step = 0; step < 25; step++) {
+    fakeClock.advanceMs(100);
+    fwd->poll(0);
+  }
+  TEST_ASSERT_EQUAL(2, sink.results.size());
+  TEST_ASSERT_FALSE(sink.results[1].ok);  // the slow one still gets SERVFAIL
+  TEST_ASSERT_EQUAL_UINT32(0, fwd->upstreamStatus(0).stats.failed);
+}
+
+static void test_encrypted_upstreams_are_retried_often_while_plain_dns_is_used() {
+  // With plain fallback working, "every upstream down" never held, so the outage cap
+  // didn't apply: encrypted upstreams backed off to 5 min and the LAN stayed on plain
+  // DNS that long after they came back. While every encrypted one is down, retry them
+  // at least every outageProbeMs.
+  const upstream::ForwarderConfig cfg;
+  downAll(*dot1);
+  downAll(*dot2);
+  downAll(*doh);
+  for (int i = 0; i < 40; i++) {
+    fwd->submit(100 + i, query("plain" + std::to_string(i) + ".example"));
+    fwd->poll(0);
+    fakeClock.advanceMs(cfg.outageProbeMs + 2000);
+  }
+  TEST_ASSERT_TRUE(fwd->plainFallbackActive());
+  for (int u = 0; u < 3; u++)
+    TEST_ASSERT_TRUE_MESSAGE(fwd->upstreamStatus(u).backoffMs <= cfg.outageProbeMs,
+                             allTransports()[u]->name());
+  dot1->mode = FakeTransport::Mode::kAnswer;
+  fakeClock.advanceMs(cfg.outageProbeMs + 2000);
+  sink.results.clear();
+  fwd->submit(200, query("encrypted-again.example"));
+  fwd->poll(0);
+  TEST_ASSERT_EQUAL(1, sink.results.size());
+  TEST_ASSERT_TRUE(sink.results[0].authenticated);
+  TEST_ASSERT_FALSE(fwd->plainFallbackActive());
+}
+
 // --- after a power cut: slow internet, many queries, scarce internal RAM -------------
 
 static int tlsConnected() {
@@ -743,6 +835,7 @@ static void test_tls_connections_are_capped_closing_the_idlest() {
   // dropped; only a reboot recovered. At most maxTlsConnections stay open.
   upstream::ForwarderConfig cfg;
   cfg.health.baseBackoffMs = 60000;  // keep both DoT upstreams down for the whole test
+  cfg.health.failuresToDown = 1;     // stuck queries count once per upstream: one is enough
   build(cfg);
   dot1->mode = dot2->mode = FakeTransport::Mode::kSilent;  // connected, never answer
   for (int i = 0; i < 3; i++) fwd->submit(20 + i, query("q" + std::to_string(i) + ".example"));
@@ -946,6 +1039,7 @@ int main(int, char**) {
   RUN_TEST(test_health_goes_down_after_three_failures_and_backs_off);
   RUN_TEST(test_health_probe_failure_doubles_backoff_and_success_recovers);
   RUN_TEST(test_health_backoff_is_capped);
+  RUN_TEST(test_health_failures_while_down_dont_extend_the_backoff);
   RUN_TEST(test_stream_deframer_handles_split_and_coalesced_frames);
   RUN_TEST(test_stream_deframer_skips_oversized_frames);
   RUN_TEST(test_stream_deframer_fails_only_when_full_of_untaken_frames);
@@ -975,6 +1069,9 @@ int main(int, char**) {
   RUN_TEST(test_recovery_after_outage_resets_the_others_to_unknown);
   RUN_TEST(test_one_dead_provider_still_backs_off_normally);
   RUN_TEST(test_plain_upstream_state_isnt_left_stale_after_encrypted_returns);
+  RUN_TEST(test_a_burst_of_stuck_queries_counts_as_one_failure);
+  RUN_TEST(test_deadline_does_not_blame_an_upstream_that_answered_meanwhile);
+  RUN_TEST(test_encrypted_upstreams_are_retried_often_while_plain_dns_is_used);
   RUN_TEST(test_hedges_dont_mark_a_slow_but_answering_upstream_down);
   RUN_TEST(test_tls_connections_are_capped_closing_the_idlest);
   RUN_TEST(test_no_new_tls_connection_while_every_open_one_is_busy);

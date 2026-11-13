@@ -15,6 +15,15 @@ All notable changes to this project are documented here. The format follows
   bursts when an app opens); pausing, rules, rewrites, bans, upstream tests and
   reboots all respond. Nothing leaves the browser.
 
+### Fixed
+
+- A burst of lookups for a slow website (many names whose own DNS servers take more
+  than 2.5 s) could mark every encrypted upstream down one after another and switch
+  the whole network to plain, unencrypted DNS for up to 5 minutes. Such a burst now
+  counts as one failure, an upstream that is still answering other lookups is never
+  marked down, and while every encrypted upstream is down they are retried every
+  10 s so plain DNS ends quickly.
+
 ## [0.5.0] - 2026-11-11
 
 Adds a one-click test of every upstream DNS server. Update from the dashboard

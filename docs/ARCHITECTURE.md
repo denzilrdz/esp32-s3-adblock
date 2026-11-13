@@ -604,7 +604,16 @@ timeout)`, `close()`, plus `pipelined()`. Implementations:
   first answer after that resets the other upstreams to Unknown. Plain upstreams are
   only judged while plain fallback is in use, and go back to Unknown when encrypted
   DNS returns, so the dashboard never shows a stale "down" for a path nothing uses.
-  A single provider failing on its own keeps its normal, growing backoff.
+  A single provider failing on its own keeps its normal, growing backoff. While every
+  _encrypted_ upstream is Down but plain fallback works, their retries are capped at
+  `outageProbeMs` too, so the LAN leaves plaintext DNS soon after one comes back.
+- **Slow authoritative servers** (audit 2026-11): a page embedding many names on a
+  domain whose nameservers take > 2.5 s used to make every one of those queries hedge
+  and time out, each blamed separately, until every encrypted upstream was Down and
+  the LAN fell back to plain DNS for minutes. Silence now counts against an upstream
+  at most once per `hedgeAfterMs`, never if it answered anything since the query was
+  sent (at the hedge _and_ at the deadline), and a failure while already Down
+  (a leftover in-flight query) doesn't extend the backoff: only a failed probe does.
 - **Unreachable upstreams** (all found while testing on hardware):
   - The TCP stage of a connect is capped at 1 s (`TlsStream`); the full connect
     budget (3 s) is for the TLS handshake. A blackholed upstream then fails fast

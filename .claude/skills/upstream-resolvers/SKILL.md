@@ -92,6 +92,12 @@ created at boot in `startDnsService()`).
   3 s. A full handshake measured ~1.5 s on the S3: don't lower the total below ~2.5 s.
 - Blame at the deadline only if the upstream had `hedgeAfterMs` since the send; a
   failed transport reroutes every query assigned to it (incl. queued DoH ones).
+- Silence (hedge or deadline) goes through `blameSilence()`: no blame if the upstream
+  answered anything since the send, and at most one per upstream per `hedgeAfterMs`,
+  so a burst of queries stuck on a slow authoritative server is one failure, not N.
+  A failure while already Down changes nothing; only a failed probe doubles backoff.
+- Every encrypted upstream Down (plain fallback in use): their retries are capped at
+  `outageProbeMs` as well, so plaintext DNS ends soon after one recovers.
 - Outage (every upstream Down): retries capped at `outageProbeMs` (10 s); the first
   success resets the others to Unknown; plain upstreams are only judged during
   fallback and reset to Unknown when encrypted DNS returns. Test on hardware by
