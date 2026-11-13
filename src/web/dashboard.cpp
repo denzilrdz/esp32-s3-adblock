@@ -121,6 +121,7 @@ bool parseBasicAuth(const String& header, String& user, String& pass) {
 // take well under a second; a cut-off page just reloads.
 void Dashboard::sendBody(const char* data, size_t len, const char* type, bool progmem) {
   WebServer& s = *ctx_.server;
+  const String peer = s.client().remoteIP().toString();  // before the client can go away
   s.setContentLength(len);
   s.send(200, type, "");
   const util::SendResult r =
@@ -134,8 +135,7 @@ void Dashboard::sendBody(const char* data, size_t len, const char* type, bool pr
       });
   if (!r.complete) {
     ctx_.log->log(LogLevel::kWarn, kTag, "send to %s cut off after %u of %u bytes (slow client)",
-                  s.client().remoteIP().toString().c_str(), static_cast<unsigned>(r.sent),
-                  static_cast<unsigned>(len));
+                  peer.c_str(), static_cast<unsigned>(r.sent), static_cast<unsigned>(len));
     s.client().stop();
   }
 }

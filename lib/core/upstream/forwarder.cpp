@@ -383,7 +383,9 @@ void Forwarder::handleTooBig(int u, const uint8_t* msg, size_t len) {
   for (Slot& s : slots_) {
     if (!s.used || s.needsSend || s.upstream != u) continue;
     if (haveId ? s.wireId != id : transports_[u]->pipelined()) continue;  // no ID: only one in flight
-    log_.log(LogLevel::kInfo, kTag, "%s: answer for %s larger than %u bytes, answering SERVFAIL",
+    // DEBUG: some names always do this (big TXT sets): one line per lookup at INFO
+    // filled the log and each UART line blocks this task ~9 ms (seen on the board).
+    log_.log(LogLevel::kDebug, kTag, "%s: answer for %s larger than %u bytes, answering SERVFAIL",
              transports_[u]->name(), s.q.qname, static_cast<unsigned>(kMaxAnswer));
     if (s.probe)
       finishProbe(s, ProbeResult::kBadReply);

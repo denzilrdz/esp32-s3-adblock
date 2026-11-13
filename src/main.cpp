@@ -284,18 +284,20 @@ void rollBack(const char* why) {
   esp_ota_mark_app_invalid_rollback_and_reboot();
 }
 
-// The dashboard serves its page to a local request: routes, Host check and page are
-// intact, so a later update (or a fix) can still be installed from the browser. One
-// short-lived socket; at most ~3 s of the maintenance task's 5 s watchdog.
+// The dashboard answers a local request: the web task runs, routes and the Host/auth
+// checks work, so a later update (or a fix) can still be installed from the browser.
+// /api/stats without a login is a cheap 401 (the 60 KB page would be cut off at once
+// and logged as a slow client every 2 s). One short-lived socket; at most ~3 s of the
+// maintenance task's 5 s watchdog.
 bool dashboardAnswers() {
   NetworkClient c;
   const IPAddress ip = WiFi.localIP();
   if (!c.connect(ip, 80, 1000)) return false;
   c.setTimeout(2000);
-  c.printf("GET / HTTP/1.1\r\nHost: %s\r\nConnection: close\r\n\r\n", ip.toString().c_str());
+  c.printf("GET /api/stats HTTP/1.1\r\nHost: %s\r\nConnection: close\r\n\r\n", ip.toString().c_str());
   const String status = c.readStringUntil('\n');
   c.stop();
-  return status.startsWith("HTTP/1.1 200");
+  return status.startsWith("HTTP/1.1 401");
 }
 
 void maintainOtaHealth() {
@@ -572,7 +574,11 @@ void setup() {
   gDashboard = new web::Dashboard(ctx);
   gDashboard->begin();
   gServer.begin();
-  if (!platform::setListenBacklog(80, 1))  // socket budget, ARCHITECTURE.md §11
+  // Socket budget (ARCHITECTURE.md §11) vs browsers: lwIP counts a connection against
+  // the backlog from its SYN until the idle-priority web task accepts it, so with 1 a
+  // second near-simultaneous request was refused and retried by the browser 1 s later
+  // (measured on the board, 2026-11-13). 2 covers the page's overlapping fetches.
+  if (!platform::setListenBacklog(80, 2))
     gLog.log(hal::LogLevel::kWarn, "web", "could not shrink the HTTP accept queue");
   startOta();
   xTaskCreatePinnedToCore(webTask, "web", 8192, nullptr, tskIDLE_PRIORITY, nullptr, 0);

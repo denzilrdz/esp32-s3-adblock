@@ -171,7 +171,8 @@ for i in $(seq 50); do dig @<ip> +short r$i.example.com & done; wait   # burst
 /api/upstreams/test`) sends `example.com` through every upstream once and shows the
   result per upstream (`[up] test <name>: ...` in the log); a pass puts it back to standby. A
   `connect failed (TLS -0x....)` there is real: decode the mbedTLS code.
-- `[up] <name>: answer for <name> larger than 4096 bytes, answering SERVFAIL` → a
+- `[up] <name>: answer for <name> larger than 4096 bytes, answering SERVFAIL` (log
+  level **debug**; `microsoft.com`/`amazon.com` TXT do it) → a
   huge answer (big TXT/DNSKEY sets with DO). Expected for that name; the upstream is
   not marked down for it.
 - `[up] <name>: TLS connect failed (error -0x2700)` after the clock synced, with the

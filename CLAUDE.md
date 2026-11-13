@@ -146,8 +146,9 @@ native tests; pre-push = clang-tidy + esp32s3 firmware build.
   receive task must never block.
 - **Only 16 lwIP sockets in total**: budget in ARCHITECTURE.md §11 before adding one.
   Connections queued in a listen backlog count too (lwIP allocates their netconn
-  before `accept()`): listen with backlog 1 (`platform::setListenBacklog()` for
-  library servers such as WebServer, which uses 4).
+  before `accept()`, from the SYN on): TCP/53 listens with 1, the web server is cut
+  from 4 to 2 (`platform::setListenBacklog()`; 1 made a browser's second parallel
+  request wait 1 s for a SYN retry, measured on the board).
 - **Arduino WebServer buffers a whole non-multipart POST body** (any size, unknown
   URLs too) before a handler runs. Register routes with `Dashboard::route()`
   (`web/bounded_route.h`, 413 above 8 KB), never `server.on()`/`onNotFound()`

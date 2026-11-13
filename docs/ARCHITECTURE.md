@@ -893,7 +893,7 @@ in RTC memory like every deliberate restart.
   - **Rollback:** the prebuilt bootloader has `CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE`.
     Arduino's `verifyRollbackLater()` hook is overridden, so a new image stays
     "pending verify" until it has had Wi-Fi, a running DNS service and a dashboard
-    that serves its page to a local request for 60 s (`diag::otaVerdict()`); only
+    that answers a local request (`GET /api/stats` → 401) for 60 s (`diag::otaVerdict()`); only
     then is `esp_ota_mark_app_valid_cancel_rollback()` called. Upstream
     reachability is deliberately not required (an ISP outage must not roll back
     good firmware). A crash loop, or no Wi-Fi/DNS within 5 minutes, rolls back. A
@@ -980,16 +980,22 @@ blocks in one piece each, so watch the largest free block (`heapBlock` in
 | ----------------------------------------------------------------------------------- | --------- |
 | DNS: UDP/53, TCP/53 listener (backlog 1) + 2 connections, 2 wake sockets + 1 sender | 7–8       |
 | Upstream: active DoT/DoH (+1 transient on failover), plain UDP when used            | 1–3       |
-| Web server: listener + client + 1 queued connection (backlog shrunk from 4 to 1)    | 2–3       |
+| Web server: listener + client + up to 2 queued connections (backlog 2, was 4)       | 2–4       |
 | ArduinoOTA (+1 TCP connection while an OTA upload runs)                             | 1–2       |
 | Blocklist download (esp_http_client)                                                | 1         |
-| **Total**                                                                           | **12–16** |
+| **Total**                                                                           | **12–18** |
 
-This is why TCP/53 is limited to 2 concurrent connections. Connections waiting in a
+Steady state is about 11. The 17–18 worst case needs everything at once (both TCP/53
+connections busy, a failover TLS session, the 02:00 download, an ArduinoOTA upload and
+a browser burst); then a `socket()` call fails and its user retries (an upstream
+connect counts as a failed attempt). This is why TCP/53 is limited to 2 concurrent
+connections. Connections waiting in a
 listen queue count too: lwIP allocates a netconn for each one before `accept()`
 (`MEMP_NUM_NETCONN = CONFIG_LWIP_MAX_SOCKETS`). Arduino's WebServer listens with a
-backlog of 4, so `platform::setListenBacklog()` shrinks it to 1 after
-`gServer.begin()`; TCP/53 listens with 1. The rollback health check's local request
+backlog of 4, so `platform::setListenBacklog()` shrinks it to 2 after
+`gServer.begin()` (1 made a browser's second parallel request wait 1 s: lwIP
+counts it from its SYN until the idle-priority web task accepts it); TCP/53
+listens with 1. The rollback health check's local request
 to the dashboard (only while a new image is pending verification) uses one more.
 
 ### Flash (16 MB)
