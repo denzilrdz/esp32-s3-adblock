@@ -151,6 +151,21 @@ class DashboardServerTest(unittest.TestCase):
             body = self.src[self.src.index(f"void Dashboard::{fn}()") :][:200]
             self.assertIn("uploadDoneAllowed()", body, fn)
 
+    def test_unauthorised_uploads_are_closed_and_never_feed_the_watchdogs(self):
+        # Review 2026-11: uploadProgress() ran for every chunk before the auth check, so
+        # an upload without a login kept both watchdogs fed while holding the web task.
+        for fn in ("handleListUpload", "handleFirmwareUpload", "handleImportUpload"):
+            body = self.src[self.src.index(f"void Dashboard::{fn}()") :]
+            body = body[: body.index("\n}\n")]
+            self.assertIn("rejectUpload(c)", body, fn)
+            for m in re.finditer(r"uploadProgress\(\)", body):
+                before = body[: m.start()]
+                self.assertTrue(
+                    "if (uploadAuthorized_)" in before[-40:]
+                    or "!uploadAuthorized_" in before,
+                    f"{fn}: uploadProgress() reachable without auth",
+                )
+
     def test_page_csp(self):
         for d in (
             "frame-ancestors 'none'",

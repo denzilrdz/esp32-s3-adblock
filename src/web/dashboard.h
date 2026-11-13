@@ -78,6 +78,7 @@ class Dashboard {
   // but only runs for requests that carry a file part, so a stale flag from an earlier
   // upload must never stand in for this request's own check. Consumes the flag.
   bool uploadDoneAllowed();
+  void rejectUpload(const Check& c);  // answers 401/403/429 and closes the connection
   // Registers a route that refuses oversized bodies (web/bounded_route.h).
   void route(const char* uri, HTTPMethod method, std::function<void()> fn,
              std::function<void()> upload = nullptr);

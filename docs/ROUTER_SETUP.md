@@ -35,7 +35,10 @@ Best: tell the router's DHCP server to give clients the blocker as their DNS ser
      yet; see the roadmap.)_
   3. Point only the router's **WAN/Internet DNS** at the blocker. Clients then still
      ask the router, which forwards to the blocker. This works, but every query
-     appears to come from the router, so per-client stats and bans show one client.
+     appears to come from the router, so per-client stats and bans show one client,
+     and the whole network shares one client's share of lookups waiting for an
+     answer (16 at a time; plenty for a household, but a burst during an internet
+     hiccup can see a few more errors than with options 1 or 2).
 
 ### 2a. Your own router behind a locked ISP router
 

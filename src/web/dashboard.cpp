@@ -624,11 +624,14 @@ void Dashboard::handleListUpload() {
       const Check c = check(Access::kAuth);
       uploadAuthorized_ = c.ok;
       uploadResult_ = c.ok ? "upload incomplete" : c.message;
-      if (c.ok) file = LittleFS.open(kUploadTmp, "w");
+      if (c.ok)
+        file = LittleFS.open(kUploadTmp, "w");
+      else
+        rejectUpload(c);
       break;
     }
     case UPLOAD_FILE_WRITE:
-      uploadProgress();  // the whole upload runs inside one handleClient() call
+      if (uploadAuthorized_) uploadProgress();  // the whole upload runs inside one handleClient() call
       if (uploadAuthorized_ && file && file.write(u.buf, u.currentSize) != u.currentSize) {
         file.close();
         uploadResult_ = "not enough flash";
@@ -651,6 +654,22 @@ void Dashboard::handleListUpload() {
   }
 }
 
+// An upload that fails its auth check is answered and closed at once. Reading (and
+// discarding) the rest would let anyone without a login trickle a multipart body for
+// as long as they like, holding the single web task; before the 2026-11 review it also
+// fed both watchdogs on every chunk, so nothing ever ended it.
+void Dashboard::rejectUpload(const Check& c) {
+  NetworkClient& client = ctx_.server->client();
+  client.printf(
+      "HTTP/1.1 %d %s\r\nContent-Type: text/plain\r\nContent-Length: %u\r\nConnection: close\r\n\r\n%s",
+      c.code,
+      c.code == 429   ? "Too Many Requests"
+      : c.code == 401 ? "Unauthorized"
+                      : "Forbidden",
+      static_cast<unsigned>(strlen(c.message)), c.message);
+  client.stop();  // the library's next read returns 0: the upload is aborted
+}
+
 bool Dashboard::uploadDoneAllowed() {
   const bool started = uploadAuthorized_;
   uploadAuthorized_ = false;
@@ -670,8 +689,12 @@ void Dashboard::handleListUploadDone() {
 void Dashboard::handleFirmwareUpload() {
   HTTPUpload& u = ctx_.server->upload();
   if (u.status == UPLOAD_FILE_START) {
-    uploadAuthorized_ = check(Access::kAuth).ok;
-    if (!uploadAuthorized_) return;
+    const Check c = check(Access::kAuth);
+    uploadAuthorized_ = c.ok;
+    if (!uploadAuthorized_) {
+      rejectUpload(c);
+      return;
+    }
     ctx_.log->log(LogLevel::kInfo, "ota", "firmware upload: %s", u.filename.c_str());
     if (!Update.begin(UPDATE_SIZE_UNKNOWN)) Update.printError(Serial);
   } else if (!uploadAuthorized_) {
@@ -755,7 +778,10 @@ void Dashboard::handleImportUpload() {
       importCap_ = importLen_ = 0;
       importError_ = nullptr;
       importErrorCode_ = 400;
-      if (!c.ok) break;
+      if (!c.ok) {
+        rejectUpload(c);
+        break;
+      }
       // The request size bounds the file (multipart adds a few hundred bytes).
       const int body = ctx_.server->clientContentLength();
       importCap_ = body > 0 && static_cast<size_t>(body) < config::kMaxBackupBytes ? static_cast<size_t>(body)
@@ -768,8 +794,8 @@ void Dashboard::handleImportUpload() {
       break;
     }
     case UPLOAD_FILE_WRITE:
-      uploadProgress();
       if (!uploadAuthorized_ || importError_) break;
+      uploadProgress();
       if (u.currentSize > importCap_ - importLen_) {
         importError_ = "file too large for a settings file";
         importErrorCode_ = 413;
