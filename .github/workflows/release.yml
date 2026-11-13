@@ -83,7 +83,9 @@ jobs:
 
   installer:
     name: installer
-    needs: firmware
+    # After the release: if its CHANGELOG check or attestation fails, Pages must not
+    # offer dashboards a firmware that has no release, checksums or provenance.
+    needs: [firmware, release]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
