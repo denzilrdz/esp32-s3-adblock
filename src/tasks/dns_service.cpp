@@ -125,12 +125,13 @@ bool DnsService::start() {
     return false;
   }
   if (cfg_.tcpEnabled) {
+    // Backlog 1: every queued connection holds an lwIP netconn (16 in all, §11).
     tcpListenFd_ = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     int one = 1;
     setsockopt(tcpListenFd_, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
     if (tcpListenFd_ < 0 ||
         bind(tcpListenFd_, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)) != 0 ||
-        listen(tcpListenFd_, 2) != 0 || !createWakePair(tcpWakeRxFd_, tcpWakeAddr_)) {
+        listen(tcpListenFd_, 1) != 0 || !createWakePair(tcpWakeRxFd_, tcpWakeAddr_)) {
       log_.log(LogLevel::kWarn, kTag, "TCP/53 unavailable; UDP only");
       if (tcpListenFd_ >= 0) close(tcpListenFd_);
       tcpListenFd_ = -1;

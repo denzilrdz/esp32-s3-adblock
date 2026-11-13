@@ -9,6 +9,7 @@
 #include <thread>
 
 #include "diag/liveness.h"
+#include "diag/ota_health.h"
 #include "diag/restart.h"
 #include "fakes/fake_clock.h"
 
@@ -249,8 +250,41 @@ static void test_condense_task_watchdog_panic_text() {
   TEST_ASSERT_EQUAL_STRING("", out);
 }
 
+static void test_ota_verdict_keeps_a_healthy_image_after_a_minute() {
+  diag::OtaHealthInput in;
+  in.wifi = in.dnsRunning = in.webAnswers = true;
+  in.uptimeMs = 59000;
+  TEST_ASSERT_EQUAL(static_cast<int>(diag::OtaVerdict::kWait), static_cast<int>(diag::otaVerdict(in)));
+  in.uptimeMs = 61000;
+  TEST_ASSERT_EQUAL(static_cast<int>(diag::OtaVerdict::kMarkValid), static_cast<int>(diag::otaVerdict(in)));
+}
+
+static void test_ota_verdict_needs_the_dashboard_too() {
+  // Audit 2026-11: an image whose dashboard (and so its update path) was broken was
+  // still marked valid; then only a USB flash could fix it.
+  diag::OtaHealthInput in;
+  in.wifi = in.dnsRunning = true;
+  in.webAnswers = false;
+  in.uptimeMs = 120000;
+  TEST_ASSERT_EQUAL(static_cast<int>(diag::OtaVerdict::kWait), static_cast<int>(diag::otaVerdict(in)));
+  in.uptimeMs = diag::kOtaGiveUpMs + 1;
+  TEST_ASSERT_EQUAL(static_cast<int>(diag::OtaVerdict::kRollback), static_cast<int>(diag::otaVerdict(in)));
+}
+
+static void test_ota_verdict_rolls_back_without_wifi_or_dns() {
+  diag::OtaHealthInput in;
+  in.webAnswers = true;
+  in.uptimeMs = diag::kOtaGiveUpMs + 1;
+  TEST_ASSERT_EQUAL(static_cast<int>(diag::OtaVerdict::kRollback), static_cast<int>(diag::otaVerdict(in)));
+  // The boot guard (setup() never finishing) fires later than the in-loop check.
+  TEST_ASSERT_TRUE(diag::kOtaBootGuardMs > diag::kOtaGiveUpMs);
+}
+
 int main(int, char**) {
   UNITY_BEGIN();
+  RUN_TEST(test_ota_verdict_keeps_a_healthy_image_after_a_minute);
+  RUN_TEST(test_ota_verdict_needs_the_dashboard_too);
+  RUN_TEST(test_ota_verdict_rolls_back_without_wifi_or_dns);
   RUN_TEST(test_reset_cause_follows_idf_order);
   RUN_TEST(test_only_panics_and_watchdogs_count_as_crashes);
   RUN_TEST(test_backtrace_is_ready_for_addr2line);

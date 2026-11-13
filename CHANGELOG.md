@@ -49,7 +49,18 @@ All notable changes to this project are documented here. The format follows
 - The upload endpoints could answer a later request using an earlier upload's
   login check. Each request is now checked on its own.
 
+- A firmware update that got stuck while starting up (for example unable to join
+  Wi-Fi) left the network without DNS until someone unplugged the board. It now
+  rolls back to the previous firmware after 10 minutes. An update is also only kept
+  once the dashboard answers, so a broken dashboard can't block the next update.
+- A browser opening several connections to the dashboard could use up the board's
+  network sockets and make encrypted DNS reconnects or the blocklist download fail.
+
 ### Security
+
+- The one-time setup code shown on the serial console at first boot is now made
+  from the hardware random number generator with its entropy source switched on
+  (Wi-Fi isn't running yet at that point).
 
 - The dashboard's Content-Security-Policy also sets `base-uri 'none'`,
   `form-action 'self'` and `object-src 'none'`.

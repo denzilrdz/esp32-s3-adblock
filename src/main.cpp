@@ -11,6 +11,7 @@
 #include <Update.h>
 #include <WebServer.h>
 #include <WiFi.h>
+#include <bootloader_random.h>
 #include <esp_netif.h>
 #include <esp_ota_ops.h>
 #include <esp_rom_sys.h>
@@ -26,9 +27,11 @@
 #include "auth/auth.h"
 #include "config/config.h"
 #include "diag/liveness.h"
+#include "diag/ota_health.h"
 #include "platform/esp_clock.h"
 #include "platform/esp_http.h"
 #include "platform/esp_random.h"
+#include "platform/listen_backlog.h"
 #include "platform/littlefs_fs.h"
 #include "platform/nvs_kv_store.h"
 #include "platform/psram.h"
@@ -268,26 +271,68 @@ void startOta() {
   ArduinoOTA.begin();
 }
 
+bool pendingVerify() {
+  esp_ota_img_states_t state;
+  return esp_ota_get_state_partition(esp_ota_get_running_partition(), &state) == ESP_OK &&
+         state == ESP_OTA_IMG_PENDING_VERIFY;
+}
+
+void rollBack(const char* why) {
+  gLog.log(hal::LogLevel::kError, "ota", "%s: rolling back", why);
+  platform::noteRestart(why);
+  esp_ota_mark_app_invalid_rollback_and_reboot();
+}
+
+// The dashboard serves its page to a local request: routes, Host check and page are
+// intact, so a later update (or a fix) can still be installed from the browser. One
+// short-lived socket; at most ~3 s of the maintenance task's 5 s watchdog.
+bool dashboardAnswers() {
+  NetworkClient c;
+  const IPAddress ip = WiFi.localIP();
+  if (!c.connect(ip, 80, 1000)) return false;
+  c.setTimeout(2000);
+  c.printf("GET / HTTP/1.1\r\nHost: %s\r\nConnection: close\r\n\r\n", ip.toString().c_str());
+  const String status = c.readStringUntil('\n');
+  c.stop();
+  return status.startsWith("HTTP/1.1 200");
+}
+
 void maintainOtaHealth() {
   static bool done = false;
   if (done) return;
-  esp_ota_img_states_t state;
-  if (esp_ota_get_state_partition(esp_ota_get_running_partition(), &state) != ESP_OK ||
-      state != ESP_OTA_IMG_PENDING_VERIFY) {
+  if (!pendingVerify()) {
     done = true;
     return;
   }
-  // Healthy = Wi-Fi up and the DNS service running for 60 s without a crash. Upstream
-  // reachability is deliberately not required: an ISP outage must not roll back.
-  if (WiFi.status() == WL_CONNECTED && gDns && gDns->running() && millis() > 60000) {
-    esp_ota_mark_app_valid_cancel_rollback();
-    gLog.log(hal::LogLevel::kInfo, "ota", "new firmware marked valid");
-    done = true;
-  } else if (millis() > 300000) {
-    gLog.log(hal::LogLevel::kError, "ota", "new firmware unhealthy after 5 min: rolling back");
-    platform::noteRestart("rollback: new firmware unhealthy");
-    esp_ota_mark_app_invalid_rollback_and_reboot();
+  diag::OtaHealthInput in;
+  in.uptimeMs = millis();
+  in.wifi = WiFi.status() == WL_CONNECTED;
+  in.dnsRunning = gDns && gDns->running();
+  in.webAnswers = in.wifi && in.dnsRunning && in.uptimeMs > diag::kOtaHealthyAfterMs && dashboardAnswers();
+  switch (diag::otaVerdict(in)) {
+    case diag::OtaVerdict::kMarkValid:
+      esp_ota_mark_app_valid_cancel_rollback();
+      gLog.log(hal::LogLevel::kInfo, "ota", "new firmware marked valid");
+      done = true;
+      break;
+    case diag::OtaVerdict::kRollback: rollBack("rollback: new firmware unhealthy after 5 min"); break;
+    case diag::OtaVerdict::kWait: break;
   }
+}
+
+// maintainOtaHealth() only runs once setup() is done; setup() can wait for Wi-Fi
+// forever (known networks are retried). A new image stuck there would leave the LAN
+// without DNS until someone power-cycled the board, so a timer rolls it back.
+void armBootRollbackGuard() {
+  if (!pendingVerify()) return;
+  static esp_timer_handle_t timer = nullptr;
+  esp_timer_create_args_t args = {};
+  args.callback = [](void*) {
+    if (pendingVerify()) rollBack("rollback: new firmware never finished booting");
+  };
+  args.name = "ota_guard";
+  if (esp_timer_create(&args, &timer) == ESP_OK)
+    esp_timer_start_once(timer, static_cast<uint64_t>(diag::kOtaBootGuardMs) * 1000);
 }
 
 // Wi-Fi events, recorded by the Arduino event task and reported by superviseWifi().
@@ -429,6 +474,7 @@ void setup() {
   Serial.printf("\n[adblock] v%s booting (%s, PSRAM %u KB)\n", FW_VERSION, kHostname,
                 static_cast<unsigned>(ESP.getPsramSize() / 1024));
   gRestart = platform::readRestartInfo();
+  armBootRollbackGuard();
   // Armed only once each task runs: setup() may wait minutes for Wi-Fi first.
   gWebAlive = gLiveness.add("web task", kWebStuckMs, false);
   gDownloadAlive = gLiveness.add("blocklist download", kDownloadStuckMs, false);  // armed by get()
@@ -456,7 +502,12 @@ void setup() {
   gReboots = new sched::RebootScheduler(gClock, gKv);
   applyLiveConfig(gConfig);
 
+  // The setup code is made here, before Wi-Fi starts: without the radio esp_random() is
+  // only pseudo-random, so switch on the SAR-ADC entropy source around it (nothing
+  // else uses the ADC or RF yet). Audit 2026-11.
+  bootloader_random_enable();
   gPasswords = new auth::PasswordStore(gKv, gRandom, WEB_USER, WEB_PASS);
+  bootloader_random_disable();
   if (gPasswords->mustChange())
     Serial.printf("[setup] Dashboard password not set. One-time setup code: %s  (user: %s)\n",
                   gPasswords->setupCode(), gPasswords->user());
@@ -504,6 +555,8 @@ void setup() {
   gDashboard = new web::Dashboard(ctx);
   gDashboard->begin();
   gServer.begin();
+  if (!platform::setListenBacklog(80, 1))  // socket budget, ARCHITECTURE.md §11
+    gLog.log(hal::LogLevel::kWarn, "web", "could not shrink the HTTP accept queue");
   startOta();
   xTaskCreatePinnedToCore(webTask, "web", 8192, nullptr, tskIDLE_PRIORITY, nullptr, 0);
   startLivenessChecks();

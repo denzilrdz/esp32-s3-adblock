@@ -873,10 +873,15 @@ in RTC memory like every deliberate restart.
     USB from their version, or an unknown schema, and link the release notes.
   - **Rollback:** the prebuilt bootloader has `CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE`.
     Arduino's `verifyRollbackLater()` hook is overridden, so a new image stays
-    "pending verify" until it has had Wi-Fi and a running DNS service for 60 s; only
+    "pending verify" until it has had Wi-Fi, a running DNS service and a dashboard
+    that serves its page to a local request for 60 s (`diag::otaVerdict()`); only
     then is `esp_ota_mark_app_valid_cancel_rollback()` called. Upstream
     reachability is deliberately not required (an ISP outage must not roll back
-    good firmware). A crash loop, or no health within 5 minutes, rolls back.
+    good firmware). A crash loop, or no health within 5 minutes, rolls back. An
+    `esp_timer` armed at the start of `setup()` also rolls back after 10 minutes
+    if the image is still pending: `setup()` retries a known Wi-Fi network forever,
+    and a new image stuck there would otherwise leave the LAN without DNS until a
+    power cycle.
 - **Blocklist and upstream integrity:** HTTPS/DoT/DoH with certificate verification.
   The blocklist also has a CRC check (integrity only; authenticity comes from TLS).
 - **Network input hardening:**
@@ -949,16 +954,21 @@ blocks in one piece each, so watch the largest free block (`heapBlock` in
 
 ### Sockets (lwIP: `CONFIG_LWIP_MAX_SOCKETS = 16`, fixed in the prebuilt libs)
 
-| User                                                                     | Sockets   |
-| ------------------------------------------------------------------------ | --------- |
-| DNS: UDP/53, TCP/53 listener + 2 connections, 2 wake sockets + 1 sender  | 7         |
-| Upstream: active DoT/DoH (+1 transient on failover), plain UDP when used | 1–3       |
-| Web server listener + client                                             | 2         |
-| ArduinoOTA                                                               | 1         |
-| Blocklist download (esp_http_client)                                     | 1         |
-| **Total**                                                                | **12–14** |
+| User                                                                                | Sockets   |
+| ----------------------------------------------------------------------------------- | --------- |
+| DNS: UDP/53, TCP/53 listener (backlog 1) + 2 connections, 2 wake sockets + 1 sender | 7–8       |
+| Upstream: active DoT/DoH (+1 transient on failover), plain UDP when used            | 1–3       |
+| Web server: listener + client + 1 queued connection (backlog shrunk from 4 to 1)    | 2–3       |
+| ArduinoOTA (+1 TCP connection while an OTA upload runs)                             | 1–2       |
+| Blocklist download (esp_http_client)                                                | 1         |
+| **Total**                                                                           | **12–16** |
 
-This is why TCP/53 is limited to 2 concurrent connections.
+This is why TCP/53 is limited to 2 concurrent connections. Connections waiting in a
+listen queue count too: lwIP allocates a netconn for each one before `accept()`
+(`MEMP_NUM_NETCONN = CONFIG_LWIP_MAX_SOCKETS`). Arduino's WebServer listens with a
+backlog of 4, so `platform::setListenBacklog()` shrinks it to 1 after
+`gServer.begin()`; TCP/53 listens with 1. The rollback health check's local request
+to the dashboard (only while a new image is pending verification) uses one more.
 
 ### Flash (16 MB)
 
