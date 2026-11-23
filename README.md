@@ -375,7 +375,7 @@ nothing (other methods get `405`):
 {
   "ok": true,
   "issues": [],
-  "version": "0.6.1",
+  "version": "0.7.0",
   "uptimeS": 12345,
   "blocking": true,
   "blocklist": { "entries": 812345, "lastOk": true, "successAgeH": 5 },
