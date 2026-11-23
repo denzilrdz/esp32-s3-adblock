@@ -6,6 +6,27 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `GET /api/health` reports more, all additive (existing fields and issue codes are
+  unchanged): DNS totals since boot (queries, blocked, forwarded, cached, SERVFAIL,
+  discarded, rate-limited), the average answer time and upstream time over the last
+  5 minutes, cache size, free heap and PSRAM, sockets in use, flash use, chip
+  temperature, Wi-Fi reconnects, hours to the next blocklist update and the last
+  update result as a code, boot and crash counts (kept across restarts), liveness,
+  OTA state and the git commit of the build. New issue codes: `dns_slow`,
+  `socket_pressure`, `queries_dropped`, `fs_low`, `temp_high`, `task_stalled`,
+  `ota_rolled_back`.
+
+### Fixed
+
+- Cache misses after a quiet spell no longer take ~2 s. Cloudflare's TLS session
+  tickets expire 5 minutes after the full handshake, so when the board reconnected
+  later (for example when a cached name expired), it had to do a full TLS handshake
+  (~1.5 s on this chip) while the query waited. The board now renews the session in
+  the background shortly before the ticket expires, while no query is waiting, so
+  reconnects resume in about 0.1 s.
+
 ## [0.7.0] - 2026-11-23
 
 A health check for monitoring: point an uptime monitor at `/api/health` to be told

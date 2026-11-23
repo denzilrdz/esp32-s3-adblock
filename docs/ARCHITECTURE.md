@@ -819,8 +819,9 @@ in RTC memory like every deliberate restart.
   holds the single web task: the dashboard is unavailable meanwhile (DNS is not
   affected), and after 10 min the software watchdog restarts the board. Every
   accidental slow-client case is bounded by seconds (§4.3).
-- `GET /api/health` tells any LAN host the firmware version and coarse health
-  (e.g. that DNS is on plain fallback or the list is stale). The version helps an
+- `GET /api/health` tells any LAN host the firmware version and build commit and
+  coarse health (e.g. that DNS is on plain fallback or the list is stale, query
+  totals). The version helps an
   attacker match known bugs; that is the price of a monitor without the password.
 - The software watchdog runs in the `esp_timer` task. If that task died while the
   blocklist download was stuck in its unwatched phase, nothing would restart the board
@@ -892,16 +893,35 @@ in RTC memory like every deliberate restart.
 - **Health endpoint** (`GET /api/health`) is the one data route without a login, for
   uptime monitors that shouldn't hold the admin password. It returns a fixed set of
   fields (`diag::writeHealthJson()`; a native test fails on any other key): an
-  overall `ok`, issue codes (`diag::evaluateHealth()`), firmware version, uptime,
-  blocking on/off, blocklist size / last result / age in hours, whether DNS is
-  encrypted or on plain fallback, `heapBlock`/`heapMin`, RSSI, clock sync and a
-  reset-cause code. Never client IPs or MACs, host or query names, settings, URLs,
-  the restart summary or crash details. It changes nothing (any method but GET gets
-  405), keeps the Host check (DNS rebinding), sends no CORS header (other sites'
-  scripts can't read it) and `Cache-Control: no-store`, and is built in a 512-byte
-  stack buffer with no `String`, so polling it costs no heap. It also answers during
-  first-boot setup; that leaks nothing more: the setup state itself isn't in it, and
-  the setup code only ever goes to the serial console.
+  overall `ok`, issue codes (`diag::evaluateHealth()`), firmware version and build
+  commit, uptime, blocking on/off, blocklist size / last result code / age / hours to
+  the next update, whether DNS is encrypted or on plain fallback, heap and PSRAM,
+  RSSI, clock sync, a reset-cause code, DNS totals since boot, rolling answer and
+  upstream latency, cache size, sockets in use, flash use, chip temperature, Wi-Fi
+  reconnects, boot and crash counts, liveness and OTA state. Never client IPs or
+  MACs, host or query names, settings, URLs, the restart summary or crash details;
+  every string value is a sanitized code (a native test fails on any other key, and
+  on dots or colons in any string but `version`). It changes nothing (any method but
+  GET gets 405), keeps the Host check (DNS rebinding), sends no CORS header (other
+  sites' scripts can't read it) and `Cache-Control: no-store`.
+  - **Cost per request is bounded and allocation-free:** atomic counters and
+    snapshots, a 1.5 KB static buffer (no `String`), 16 `lwip_fcntl()` probes for the
+    socket count and one temperature read. What would cost more is measured by the
+    maintenance task instead: LittleFS usage every 10 min (a block walk), the
+    10-minute drop rise every minute; the OTA state (a flash read, which stalls the DNS
+    core's cache) once at boot. The web task stays the only one a poller can occupy.
+  - **What feeds it:** the DNS tasks record answer latency into a fixed 256-slot ring
+    (`diag::LatencyRing`: one `fetch_add` and two relaxed stores, no lock), dns_up
+    records upstream latency into a second one; `bootCount`/`crashCount` and the
+    rolled-back image id are written to NVS once in `setup()` (`diag::recordBoot()`,
+    `diag::rolledBackThisBoot()`), never on the DNS path.
+  - **Not measurable:** datagrams lwIP drops when the 6-slot UDP receive mailbox is
+    full (`CONFIG_LWIP_STATS` is off in the prebuilt libs); `udpDropped` counts what
+    the board itself discards. `task_stalled` is mostly a last word: the software
+    watchdog restarts the board soon after (§4.3), and a stalled web task can't
+    answer at all.
+  - It also answers during first-boot setup; that leaks nothing more: the setup state
+    itself isn't in it, and the setup code only ever goes to the serial console.
 - **Firmware OTA:**
   - Browser upload and ArduinoOTA require the dashboard password and OTA password
     respectively.

@@ -46,6 +46,15 @@ created at boot in `startDnsService()`).
 - **Session resumption:** `esp_tls` has no client-session API in this SDK, which is
   why `TlsStream` exists; it keeps the ticket with `mbedtls_ssl_get_session` /
   `mbedtls_ssl_set_session`.
+- **Tickets expire from the full handshake:** Cloudflare's live 300 s (Quad9's
+  7200 s) and a resumed handshake does not extend them (measured 2026-11-23 with
+  chained resumptions). A board answering mostly from its cache reconnected only when
+  an entry expired (google.com: TTL 300) and paid a full ~1.5 s handshake in the
+  client's query. `Forwarder::refreshTicket()` therefore renews the preferred
+  upstream with a full handshake (`forgetTicket()`, then connect) once less than
+  `ticketRefreshMarginMs` (60 s) is left, only while nothing is in flight, a TLS slot
+  is free and the LAN sent a query upstream in the last 30 min. `TlsStream` tells
+  resumed from full handshakes by the session's `start` time (kept on resumption).
 - **Memory:** mbedTLS buffers are internal RAM only, about 45 KB per session. At
   most 2 sessions (one DNS + one transient for failover or the blocklist download).
 - **Trusted roots:** ESP-IDF's full bundle (150 roots), minus
@@ -56,7 +65,8 @@ created at boot in `startDnsService()`).
   peer chain (`util::certValidity`, ±1 h); a bad date fails the connect with
   `-0x2700`. Never make a date check apply before the clock is synced.
 - **Idle close:** Cloudflare and Quad9 close idle DoT connections after about 10 s.
-  Reconnect lazily with resumption; don't send keep-warm queries.
+  Reconnect lazily with resumption; don't send keep-warm queries (the ticket renewal
+  above sends none: it only handshakes).
 - **Quad9 DoH needs HTTP/2** (HTTP/1.1 gets 505), so it's not usable here.
 
 ## Health state machine

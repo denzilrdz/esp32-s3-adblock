@@ -46,6 +46,9 @@ class DailyScheduler {
   bool gaveUpToday() const { return gaveUp_; }
   // Minutes after local midnight when today's run becomes due (incl. jitter).
   uint32_t targetMinuteOfDay() const;
+  // Minutes until the next run is due (0 = due now), -1 while the clock isn't valid.
+  // Ignores a DST change in between; tomorrow's jitter isn't known yet (counted as 0).
+  int32_t minutesUntilNext() const;
 
  private:
   void rollDay(uint32_t today);

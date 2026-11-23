@@ -211,6 +211,7 @@ bool Forwarder::submit(uint32_t token, const dns::Query& q) {
     s.q = q;
     s.arrivalMs = now;
     s.deadlineMs = now + cfg_.totalDeadlineMs;
+    lastSubmitMs_ = now;
     trySend(s);
     return true;
   }
@@ -395,6 +396,42 @@ void Forwarder::handleTooBig(int u, const uint8_t* msg, size_t len) {
   }
 }
 
+void Forwarder::refreshTicket(uint64_t now) {
+  const uint32_t margin = cfg_.ticketRefreshMarginMs;
+  if (margin == 0 || probeActive_ || inFlight() > 0) return;  // never delay a client
+  if (lastSubmitMs_ == 0 || now - lastSubmitMs_ > cfg_.ticketRefreshActiveMs) return;
+  int u = -1;  // where the next query would go: the first available encrypted upstream
+  for (size_t i = 0; i < count_; i++)
+    if (transports_[i]->authenticated() && health_[i].available(now)) {
+      u = static_cast<int>(i);
+      break;
+    }
+  if (u < 0) return;
+  ITransport* t = transports_[u];
+  if (t->kind() == TransportKind::kUdp || t->connected()) return;
+  const uint32_t lifetime = t->ticketLifetimeMs();
+  const uint64_t issued = t->ticketIssuedMs();
+  // No ticket yet (the first query's connect makes one), or one too short-lived to
+  // keep ahead of: leave it to the normal path.
+  if (lifetime < 2 * margin || issued == 0 || issued > now) return;
+  if (now - issued + margin < lifetime) return;                             // more than `margin` left
+  if (lastRefreshTryMs_[u] && now - lastRefreshTryMs_[u] < margin) return;  // failed recently
+  if (cfg_.connectTimeoutMs > cfg_.maxBlockingMs) return;
+  uint32_t open = 0;  // a free TLS slot only: a refresh never closes another connection
+  for (size_t i = 0; i < count_; i++)
+    if (transports_[i]->kind() != TransportKind::kUdp && transports_[i]->connected()) open++;
+  if (open >= cfg_.maxTlsConnections) return;
+  lastRefreshTryMs_[u] = now;
+  t->forgetTicket();  // a resumed handshake would keep the old expiry
+  if (t->connect(cfg_.connectTimeoutMs) != IoStatus::kOk) {
+    t->close();  // says nothing about health: the next real query decides
+    return;
+  }
+  ticketRefreshes_++;
+  lastActivityMs_[u] = clock_.monotonicMs();  // idle-closes like any connection (idleCloseMs)
+  log_.log(LogLevel::kDebug, kTag, "%s: TLS session renewed before its ticket expired", t->name());
+}
+
 void Forwarder::poll(uint32_t waitMs) {
   uint64_t now = clock_.monotonicMs();
   callStartMs_ = now;
@@ -409,6 +446,9 @@ void Forwarder::poll(uint32_t waitMs) {
     if (!t->connected() || busy(static_cast<int>(i))) continue;
     if (t->kind() == TransportKind::kUdp || now - lastActivityMs_[i] >= cfg_.idleCloseMs) t->close();
   }
+
+  // 1b. Keep the preferred upstream's TLS resumption ticket fresh (ticketRefreshMs).
+  refreshTicket(now);
 
   // 2. Send anything waiting (new, rerouted, or queued behind a busy DoH).
   driveProbe();

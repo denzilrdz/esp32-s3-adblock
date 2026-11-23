@@ -41,6 +41,13 @@ enum class UpdateStatus {
 };
 
 const char* updateStatusName(UpdateStatus s);
+// Short machine code for the health endpoint: "ok" (updated), "unchanged", "no_url",
+// "network_error", "http_error", "invalid_list", "no_space", "fs_error",
+// "install_failed".
+const char* updateStatusCode(UpdateStatus s);
+// Recovers the status from a stored result text ("<updateStatusName>[: detail]", as the
+// blocklist manager keeps it in NVS). False for anything else.
+bool updateStatusFromResult(const char* result, UpdateStatus& out);
 
 struct UpdateReport {
   UpdateStatus status = UpdateStatus::kNoUrl;

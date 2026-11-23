@@ -1,3 +1,6 @@
+// The session's start time and ticket lifetime hint are private fields in mbedTLS 3.6
+// with no getter for a TLS 1.2 client (forgetSession(), ticketLifetimeMs()).
+#define MBEDTLS_ALLOW_PRIVATE_ACCESS
 #include "platform/tls_stream.h"
 
 #include "platform/ca_bundle.h"
@@ -206,6 +209,10 @@ bool TlsStream::connect(uint32_t timeoutMs) {
   mbedtls_ssl_set_hostname(&ssl_, verifyName_);
   mbedtls_ssl_set_bio(&ssl_, this, bioSend, bioRecv, nullptr);
   if (haveSession_) mbedtls_ssl_set_session(&ssl_, &session_);
+  // mbedTLS sets a session's start time on a full handshake only; a resumed one keeps
+  // the saved session's, so an unchanged start after the handshake means "resumed".
+  const bool offeredSession = haveSession_;
+  const mbedtls_time_t offeredStart = haveSession_ ? session_.MBEDTLS_PRIVATE(start) : 0;
 
   handshakeDeadlineMs_ = deadline;
   while ((rc = mbedtls_ssl_handshake(&ssl_)) != 0) {
@@ -218,9 +225,7 @@ bool TlsStream::connect(uint32_t timeoutMs) {
     lastError_ = rc;
     // A rejected resumption must not poison later attempts.
     if (haveSession_) {
-      mbedtls_ssl_session_free(&session_);
-      mbedtls_ssl_session_init(&session_);
-      haveSession_ = false;
+      forgetSession();
     }
     close();
     return false;
@@ -228,9 +233,7 @@ bool TlsStream::connect(uint32_t timeoutMs) {
   if (!peerDatesValid()) {
     lastError_ = MBEDTLS_ERR_X509_CERT_VERIFY_FAILED;  // logged by the forwarder with its code
     if (haveSession_) {
-      mbedtls_ssl_session_free(&session_);
-      mbedtls_ssl_session_init(&session_);
-      haveSession_ = false;
+      forgetSession();
     }
     close();
     return false;
@@ -241,7 +244,26 @@ bool TlsStream::connect(uint32_t timeoutMs) {
   mbedtls_ssl_session_free(&session_);
   mbedtls_ssl_session_init(&session_);
   haveSession_ = mbedtls_ssl_get_session(&ssl_, &session_) == 0;
+  if (!haveSession_ || session_.MBEDTLS_PRIVATE(ticket_len) == 0) {
+    ticketLifetimeMs_ = 0;  // no ticket: nothing to keep fresh
+    ticketIssuedMs_ = 0;
+  } else {
+    const bool resumed = offeredSession && session_.MBEDTLS_PRIVATE(start) == offeredStart;
+    if (!resumed || ticketIssuedMs_ == 0) ticketIssuedMs_ = start ? start : 1;
+    const uint32_t hintS = session_.MBEDTLS_PRIVATE(ticket_lifetime);
+    ticketLifetimeMs_ = (hintS > 7 * 86400 ? 7 * 86400 : hintS) * 1000u;  // RFC 5077 caps it at 7 days
+  }
   return true;
+}
+
+void TlsStream::forgetSession() {
+  if (haveSession_) {
+    mbedtls_ssl_session_free(&session_);
+    mbedtls_ssl_session_init(&session_);
+  }
+  haveSession_ = false;
+  ticketLifetimeMs_ = 0;
+  ticketIssuedMs_ = 0;
 }
 
 StreamStatus TlsStream::writeAll(const uint8_t* data, size_t len, uint32_t timeoutMs) {

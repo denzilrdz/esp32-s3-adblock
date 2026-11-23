@@ -173,6 +173,22 @@ static void test_liveness_survives_the_32_bit_millisecond_wrap() {
   TEST_ASSERT_EQUAL_STRING("upstream task", m.check());
 }
 
+static void test_liveness_stuck_now_reads_without_checking() {
+  // GET /api/health asks from the web task; that must not count as the checker running.
+  FakeClock clock;
+  diag::LivenessMonitor m(clock);
+  const int up = m.add("upstream task", 10000, true);
+  m.check();
+  const uint32_t checked = m.lastCheckMs();
+  TEST_ASSERT_NULL(m.stuckNow());
+  clock.advanceMs(10001);
+  TEST_ASSERT_EQUAL_STRING("upstream task", m.stuckNow());
+  TEST_ASSERT_EQUAL_UINT32(checked, m.lastCheckMs());  // unchanged
+  TEST_ASSERT_TRUE(m.checkerStalled(10000));           // still visible as stalled
+  m.beat(up);
+  TEST_ASSERT_NULL(m.stuckNow());
+}
+
 static void test_liveness_checker_is_watched_too() {
   FakeClock clock;
   diag::LivenessMonitor m(clock);
@@ -298,6 +314,7 @@ int main(int, char**) {
   RUN_TEST(test_liveness_flags_only_silent_armed_activities);
   RUN_TEST(test_liveness_survives_the_32_bit_millisecond_wrap);
   RUN_TEST(test_liveness_checker_is_watched_too);
+  RUN_TEST(test_liveness_stuck_now_reads_without_checking);
   RUN_TEST(test_liveness_table_limits_and_bad_ids);
   RUN_TEST(test_liveness_concurrent_beats_never_false_alarm);
   return UNITY_END();

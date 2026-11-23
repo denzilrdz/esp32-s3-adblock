@@ -31,6 +31,14 @@ void LivenessMonitor::disarm(int id) {
 const char* LivenessMonitor::check() {
   const uint32_t t = now();
   lastCheck_.store(t ? t : 1);  // 0 means "never ran"
+  return firstStuck(t);
+}
+
+const char* LivenessMonitor::stuckNow() const {
+  return firstStuck(now());
+}
+
+const char* LivenessMonitor::firstStuck(uint32_t t) const {
   const int n = count_.load();
   for (int i = 0; i < n; i++) {
     const Activity& a = activities_[i];

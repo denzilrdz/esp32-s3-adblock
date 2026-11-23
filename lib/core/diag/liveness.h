@@ -46,6 +46,9 @@ class LivenessMonitor {
   uint32_t lastCheckMs() const { return lastCheck_.load(); }
   // True if check() hasn't run for `limitMs` (the checker itself stopped).
   bool checkerStalled(uint32_t limitMs) const;
+  // What check() would return, without counting as a check (GET /api/health reads it
+  // from the web task; recording that would hide a stopped checker).
+  const char* stuckNow() const;
 
  private:
   struct Activity {
@@ -56,6 +59,7 @@ class LivenessMonitor {
   };
 
   uint32_t now() const { return static_cast<uint32_t>(clock_.monotonicMs()); }
+  const char* firstStuck(uint32_t t) const;
   bool valid(int id) const { return id >= 0 && id < count_.load(); }
 
   const hal::IClock& clock_;

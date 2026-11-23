@@ -139,6 +139,12 @@ native tests; pre-push = clang-tidy + esp32s3 firmware build.
 - **mbedTLS buffers are internal RAM only** (prebuilt libs): about 45 KB per TLS
   session. The forwarder keeps at most 2 (`maxTlsConnections`); the 02:00 blocklist
   download briefly adds a third: watch `heapBlock` in `/api/stats` before adding any.
+- **TLS tickets expire from the full handshake:** Cloudflare's after 300 s, and
+  resuming doesn't extend them. `Forwarder::refreshTicket()` renews the preferred
+  upstream with a full handshake shortly before (skill `upstream-resolvers`); without
+  it every reconnect after a quiet 5 min cost ~1.5 s inside a client's query.
+- **Build id:** `tools/fw_build_info.py` (pre-script) writes `fw_build.h` (`FW_BUILD`,
+  short git commit, `+dirty`) into the build dir; only `main.cpp` includes it.
 - **mbedTLS doesn't check certificate dates** (`MBEDTLS_HAVE_TIME_DATE` off; it lets
   DoT work before NTP). `TlsStream` checks them after the handshake once the clock is
   synced; any new date check must also wait for sync.

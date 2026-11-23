@@ -1,6 +1,7 @@
 #include "tasks/dns_service.h"
 
 #include <esp_task_wdt.h>
+#include <esp_timer.h>
 
 #include <cstring>
 #include <new>
@@ -16,6 +17,15 @@ using hal::LogLevel;
 namespace {
 
 constexpr const char* kTag = "dns";
+
+// Latency timestamps (GET /api/health): low 32 bits of esp_timer, compared by unsigned
+// difference (micros wrap after 71 min, longer than any query lives).
+uint32_t nowUs() {
+  return static_cast<uint32_t>(esp_timer_get_time());
+}
+uint32_t nowMs32() {
+  return static_cast<uint32_t>(esp_timer_get_time() / 1000);
+}
 constexpr int kIoPriority = 10;
 constexpr int kUpstreamPriority = 8;
 constexpr int kTcpPriority = 5;
@@ -216,6 +226,7 @@ size_t DnsService::processQuery(const uint8_t* pkt, size_t len, const ClientRef&
     opt.ttl = cfg_.blockedTtl;
     opt.ede = action == dns::PolicyAction::kBan ? dns::kEdeFiltered : dns::kEdeBlocked;
     stats_.blocked++;
+    if (action == dns::PolicyAction::kBan) stats_.rateLimited++;
     return dns::buildBlockedReply(q, opt, out, outCap);
   }
 
@@ -273,6 +284,7 @@ size_t DnsService::forward(const dns::Query& q, const ClientRef& client, const d
   const bool udp = client.origin == Origin::kUdp;
   if (udp && !udpInFlight_.tryAcquire(client.addr.sin_addr.s_addr, uxQueueMessagesWaiting(freeQ_))) {
     stats_.servfail++;
+    stats_.rateLimited++;
     return dns::buildErrorReply(replyTo, dns::Rcode::kServFail, out, outCap);
   }
   uint16_t idx;
@@ -285,6 +297,7 @@ size_t DnsService::forward(const dns::Query& q, const ClientRef& client, const d
   p.q = q;
   p.client = client;
   p.replyLen = 0;
+  p.forwardUs = nowUs();
   p.rewritten = rewriteOf != nullptr;
   if (p.rewritten) {
     p.clientQ = *rewriteOf;
@@ -321,9 +334,11 @@ void DnsService::ioLoop() {
     uint16_t idx;
     while (xQueueReceive(udpReplyQ_, &idx, 0) == pdTRUE) {
       Pending& p = pool_[idx];
-      if (p.replyLen)
+      if (p.replyLen) {
         sendto(udpFd_, p.reply, p.replyLen, 0, reinterpret_cast<const struct sockaddr*>(&p.client.addr),
                sizeof(p.client.addr));
+        recordAnswer(p.client.arrivalUs);
+      }
       udpInFlight_.release(p.client.addr.sin_addr.s_addr);
       xQueueSend(freeQ_, &idx, 0);
     }
@@ -336,8 +351,12 @@ void DnsService::ioLoop() {
       const int n = recvfrom(udpFd_, udpRx_, sizeof(udpRx_), MSG_DONTWAIT,
                              reinterpret_cast<struct sockaddr*>(&c.addr), &fromLen);
       if (n <= 0) break;
+      c.arrivalUs = nowUs();
       const size_t r = processQuery(udpRx_, static_cast<size_t>(n), c, udpWork_, udpOut_, sizeof(udpOut_));
-      if (r) sendto(udpFd_, udpOut_, r, 0, reinterpret_cast<const struct sockaddr*>(&c.addr), sizeof(c.addr));
+      if (r) {
+        sendto(udpFd_, udpOut_, r, 0, reinterpret_cast<const struct sockaddr*>(&c.addr), sizeof(c.addr));
+        recordAnswer(c.arrivalUs);
+      }
     }
     if (handled == kMaxDatagramsPerWake) vTaskDelay(1);  // more waiting: let core 1's other tasks run
   }
@@ -437,6 +456,7 @@ void DnsService::tcpProcessBuffered(uint8_t i) {
     ref.addr = c.peer;
     ref.conn = i;
     ref.connGen = c.gen;
+    ref.arrivalUs = nowUs();
     bool forwarded = false;
     const size_t r =
         processQuery(c.rx + 2, msgLen, ref, tcpWork_, tcpOut_ + 2, sizeof(tcpOut_) - 2, &forwarded);
@@ -447,7 +467,7 @@ void DnsService::tcpProcessBuffered(uint8_t i) {
       c.inFlight++;
       tcpPending_++;
     }
-    if (r) tcpWrite(i, tcpOut_ + 2, r);
+    if (r && tcpWrite(i, tcpOut_ + 2, r)) recordAnswer(ref.arrivalUs);
   }
   if (c.fd >= 0) c.partialSince = c.rxLen ? (c.partialSince ? c.partialSince : clock_.monotonicMs()) : 0;
 }
@@ -479,7 +499,7 @@ void DnsService::tcpLoop() {
       if (tcpPending_) tcpPending_--;  // counted until dequeued, even if the connection closed
       if (tcp_[i].fd >= 0 && tcp_[i].gen == p.client.connGen) {
         if (tcp_[i].inFlight) tcp_[i].inFlight--;
-        if (p.replyLen) tcpWrite(i, p.reply, p.replyLen);
+        if (p.replyLen && tcpWrite(i, p.reply, p.replyLen)) recordAnswer(p.client.arrivalUs);
       }
       xQueueSend(freeQ_, &idx, 0);
     }
@@ -516,6 +536,7 @@ void DnsService::completeSlot(uint16_t idx) {
 
 void DnsService::onAnswer(uint32_t token, const dns::Query& q, const uint8_t* answer, size_t len,
                           const dns::ResponseInfo& info, bool authenticated) {
+  if (authenticated) upstreamRing_.record(nowMs32(), nowUs() - pool_[token].forwardUs);
   // Cache only answers that came over a verified encrypted channel.
   if (authenticated) {
     platform::LockGuard g(cacheMutex_);
@@ -622,6 +643,7 @@ DnsStats DnsService::stats() const {
   s.errors = stats_.errors.load();
   s.dropped = stats_.dropped.load();
   s.rewritten = stats_.rewritten.load();
+  s.rateLimited = stats_.rateLimited.load();
   return s;
 }
 
@@ -631,6 +653,18 @@ UpstreamSnapshot DnsService::upstreams() const {
   // The snapshot can be ~1 s old: a test asked for just now is already "testing".
   if (testRequested_.load()) s.testing = true;
   return s;
+}
+
+void DnsService::recordAnswer(uint32_t arrivalUs) {
+  answerRing_.record(nowMs32(), nowUs() - arrivalUs);  // unsigned: survives the 71-min wrap
+}
+
+DnsLatency DnsService::latency() const {
+  DnsLatency l;
+  const uint32_t now = nowMs32();
+  l.answer = answerRing_.average(now, diag::kAnswerWindowMs);
+  l.upstream = upstreamRing_.average(now, diag::kAnswerWindowMs);
+  return l;
 }
 
 cache::CacheStats DnsService::cacheStats() {

@@ -159,6 +159,44 @@ static void test_configurable_time_and_late_slot_clamped() {
   TEST_ASSERT_TRUE(s.due());
 }
 
+// GET /api/health's blocklist.nextUpdateInH.
+static void test_minutes_until_next_run() {
+  DailyScheduler s(noJitter(), fakeClock, kv, fakeRandom);
+  fakeClock.setSynced(false);
+  TEST_ASSERT_EQUAL_INT32(-1, s.minutesUntilNext());  // clock not synced
+  fakeClock.setSynced(true);
+  kv.setU32(DailyScheduler::kLastSuccessKey, 20261014);
+  DailyScheduler t(noJitter(), fakeClock, kv, fakeRandom);
+  fakeClock.setLocal(2026, 10, 15, 0, 30);
+  TEST_ASSERT_EQUAL_INT32(90, t.minutesUntilNext());  // today 02:00
+  fakeClock.setLocal(2026, 10, 15, 2, 0);
+  TEST_ASSERT_EQUAL_INT32(0, t.minutesUntilNext());  // due now
+  TEST_ASSERT_TRUE(t.due());
+  t.markSuccess();
+  TEST_ASSERT_EQUAL_INT32(24 * 60, t.minutesUntilNext());  // tomorrow 02:00
+  fakeClock.setLocal(2026, 10, 15, 23, 0);
+  TEST_ASSERT_EQUAL_INT32(180, t.minutesUntilNext());
+}
+
+static void test_minutes_until_next_run_after_failures() {
+  kv.setU32(DailyScheduler::kLastSuccessKey, 20261014);
+  ScheduleConfig c = noJitter();
+  c.maxRetries = 1;
+  DailyScheduler s(c, fakeClock, kv, fakeRandom);
+  fakeClock.setLocal(2026, 10, 15, 2, 0);
+  TEST_ASSERT_TRUE(s.due());
+  s.markFailure();  // retry in an hour
+  TEST_ASSERT_EQUAL_INT32(60, s.minutesUntilNext());
+  fakeClock.advanceSeconds(30 * 60);
+  TEST_ASSERT_EQUAL_INT32(30, s.minutesUntilNext());
+  fakeClock.advanceSeconds(30 * 60);
+  TEST_ASSERT_TRUE(s.due());
+  s.markFailure();  // retries used up: tomorrow
+  TEST_ASSERT_EQUAL_INT32(24 * 60 - 60, s.minutesUntilNext());
+  s.requestNow();  // dashboard "Update now"
+  TEST_ASSERT_EQUAL_INT32(0, s.minutesUntilNext());
+}
+
 int main(int, char**) {
   UNITY_BEGIN();
   RUN_TEST(test_not_due_before_time_sync_or_with_bogus_year);
@@ -171,5 +209,7 @@ int main(int, char**) {
   RUN_TEST(test_retry_success_records_the_day);
   RUN_TEST(test_manual_request_runs_even_if_done_today);
   RUN_TEST(test_configurable_time_and_late_slot_clamped);
+  RUN_TEST(test_minutes_until_next_run);
+  RUN_TEST(test_minutes_until_next_run_after_failures);
   return UNITY_END();
 }

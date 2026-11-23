@@ -57,6 +57,18 @@ struct ForwarderConfig {
   bool allowPlainFallback = true;
   // One upstream test query: connect (connectTimeoutMs) plus the reply.
   uint32_t probeTimeoutMs = 5000;
+  // TLS session tickets expire, and Cloudflare (300 s) counts that from the full
+  // handshake: resumed reconnects don't extend it (measured 2026-11-23; Quad9: 7200 s).
+  // A board whose answers mostly come from the cache connects upstream only when an
+  // entry expires, often after the ticket has, and then pays a full handshake (~1.5 s
+  // on the ESP32-S3) inside a client's query: google.com every 5 min took ~1.95 s
+  // instead of ~0.1 s. So while nothing is in flight, the preferred encrypted upstream
+  // does that full handshake itself once its ticket has less than this left; client
+  // reconnects then resume. 0 = off.
+  uint32_t ticketRefreshMarginMs = 60000;
+  // ...but only while the LAN still sends queries upstream: no refreshes all night for
+  // an idle network.
+  uint32_t ticketRefreshActiveMs = 30 * 60000;
   dns::UpstreamQueryOptions query;  // padding, AD request
   HealthConfig health;
 };
@@ -138,6 +150,8 @@ class Forwarder {
   // only reported in upstreamStatus(i).probe. False if a test is already running.
   bool startProbe(const dns::Query& q);
   bool probing() const { return probeActive_; }
+  // Resumption tickets refreshed by an idle reconnect (ForwarderConfig::ticketRefreshMs).
+  uint32_t ticketRefreshes() const { return ticketRefreshes_; }
 
  private:
   struct Slot {
@@ -177,14 +191,18 @@ class Forwarder {
   bool encryptedAllFailing() const;  // every encrypted upstream Down or Probing
   uint16_t freshId(int u);
   void driveProbe();
+  void refreshTicket(uint64_t now);
   void finishProbe(Slot& s, ProbeResult r, int32_t tlsError = 0, uint32_t latencyMs = 0, uint8_t rcode = 0);
 
   ForwarderConfig cfg_;
   ITransport* transports_[kMaxUpstreams] = {};
   UpstreamHealth health_[kMaxUpstreams];
   uint64_t lastActivityMs_[kMaxUpstreams] = {};
-  uint64_t lastReplyMs_[kMaxUpstreams] = {};  // any reply, matched or late: it's alive
-  uint64_t nextBlameMs_[kMaxUpstreams] = {};  // blameSilence() window
+  uint64_t lastReplyMs_[kMaxUpstreams] = {};       // any reply, matched or late: it's alive
+  uint64_t nextBlameMs_[kMaxUpstreams] = {};       // blameSilence() window
+  uint64_t lastRefreshTryMs_[kMaxUpstreams] = {};  // refreshTicket(): at most one try per margin
+  uint64_t lastSubmitMs_ = 0;                      // last client query (ticketRefreshActiveMs)
+  uint32_t ticketRefreshes_ = 0;
   size_t count_;
   const hal::IClock& clock_;
   hal::IRandom& random_;

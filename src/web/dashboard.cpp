@@ -5,6 +5,9 @@
 #include <WiFi.h>
 #include <mbedtls/base64.h>
 
+#include <lwip/sockets.h>
+
+#include <cmath>
 #include <ctime>
 
 #include "diag/health.h"
@@ -452,8 +455,47 @@ void Dashboard::handleHealth() {
   in.rssi = WiFi.RSSI();
   in.resetCause = ctx_.restart ? ctx_.restart->cause : diag::ResetCause::kUnknown;
 
-  char body[diag::kHealthJsonCap];
-  const size_t len = diag::writeHealthJson(in, diag::evaluateHealth(in), ctx_.version, body, sizeof(body));
+  // v0.8 fields. Everything here is a copy of a counter or an atomic, no allocation.
+  const app::DnsStats d = ctx_.dns->stats();
+  in.queries = d.queries;
+  in.blocked = d.blocked;
+  in.forwarded = d.forwarded;
+  in.cached = d.cacheHits;
+  in.servfail = d.servfail;
+  in.udpDropped = d.dropped;
+  in.rateLimited = d.rateLimited;
+  const app::DnsLatency lat = ctx_.dns->latency();
+  in.answerMsAvg = lat.answer.avgMs;
+  in.answerSamples = lat.answer.samples;
+  in.upstreamMsAvg = lat.upstream.avgMs;
+  in.upstreamSamples = lat.upstream.samples;
+  in.cacheEntries = ctx_.dns->cacheStats().entries;
+  in.heapFree = ESP.getFreeHeap();
+  in.psramFree = ESP.getFreePsram();
+  in.socketsUsed =
+      diag::countOpenSockets(LWIP_SOCKET_OFFSET, [](int fd) { return lwip_fcntl(fd, F_GETFL, 0) >= 0; });
+  const float temp = temperatureRead();
+  in.tempKnown = !isnan(temp);
+  in.tempC = in.tempKnown ? temp : 0;
+  in.nextUpdateInMin = bl.nextRunInMin;
+  in.lastResult = bl.lastResult;
+  if (const HealthSources* h = ctx_.health) {
+    in.fsKnown = h->fsKnown.load();
+    in.fsUsedPct = h->fsUsedPct.load();
+    in.fsFreeBytes = h->fsFreeBytes.load();
+    in.droppedRise = h->droppedRise.load();
+    in.wifiReconnects = h->wifiReconnects.load();
+    in.bootCount = h->bootCount;
+    in.crashCount = h->crashCount;
+    in.otaRolledBack = h->otaRolledBack;
+    in.otaPending = h->otaPending.load();
+    in.livenessOk = !h->liveness || h->liveness->stuckNow() == nullptr;
+  }
+
+  // Static, not on the 8 KB web-task stack (only the web task runs route handlers).
+  static char body[diag::kHealthJsonCap];
+  const size_t len = diag::writeHealthJson(in, diag::evaluateHealth(in), ctx_.version,
+                                           ctx_.health ? ctx_.health->build : "", body, sizeof(body));
   if (len == 0) {
     sendText(500, "health report too long");
     return;

@@ -5,6 +5,7 @@
 
 #include <Arduino.h>
 
+#include <atomic>
 #include <string>
 #include <vector>
 
@@ -48,6 +49,8 @@ struct BlocklistHealth {
   int64_t lastAttempt = 0;
   bool lastOk = false;
   uint32_t lastSuccessDate = 0;
+  const char* lastResult = "never";  // update::updateStatusCode() or "never" (static strings)
+  int32_t nextRunInMin = -1;         // -1 while the clock isn't synced
 };
 
 class BlocklistManager final : public update::IListInstaller {
@@ -112,6 +115,8 @@ class BlocklistManager final : public update::IListInstaller {
   uint8_t hour_ = 2, minute_ = 0;
   int64_t lastAttempt_ = 0;
   bool lastOk_ = false;
+  const char* lastCode_ = "never";         // under stateMutex_; always a static string
+  std::atomic<int32_t> nextRunInMin_{-1};  // refreshed by loop() (maintenance task)
   String lastResult_ = "never";
 };
 

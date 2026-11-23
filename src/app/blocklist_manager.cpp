@@ -64,7 +64,11 @@ void BlocklistManager::begin() {
   if (kv_.getU32(kKeyHour, v) && v < 24) hour_ = static_cast<uint8_t>(v);
   if (kv_.getU32(kKeyMinute, v) && v < 60) minute_ = static_cast<uint8_t>(v);
   scheduler_.setTime(hour_, minute_);
-  if (kv_.getString(kKeyResult, buf, sizeof(buf))) lastResult_ = buf;
+  if (kv_.getString(kKeyResult, buf, sizeof(buf))) {
+    lastResult_ = buf;
+    update::UpdateStatus st;
+    if (update::updateStatusFromResult(buf, st)) lastCode_ = update::updateStatusCode(st);
+  }
   kv_.getI64(kKeyAttempt, lastAttempt_);
   uint32_t ok = 0;
   if (kv_.getU32(kKeyOk, ok)) lastOk_ = ok != 0;
@@ -136,6 +140,7 @@ void BlocklistManager::record(const update::UpdateReport& r) {
   platform::LockGuard g(stateMutex_);
   lastAttempt_ = clock_.wallClockSynced() ? clock_.unixTime() : 0;
   lastOk_ = r.success();
+  lastCode_ = update::updateStatusCode(r.status);
   lastResult_ =
       String(update::updateStatusName(r.status)) + (r.detail[0] ? String(": ") + r.detail : String());
   kv_.setString(kKeyResult, lastResult_.c_str());
@@ -144,7 +149,9 @@ void BlocklistManager::record(const update::UpdateReport& r) {
 }
 
 void BlocklistManager::loop() {
-  if (!scheduler_.due()) return;
+  const bool due = scheduler_.due();
+  nextRunInMin_.store(scheduler_.minutesUntilNext());  // for GET /api/health (web task)
+  if (!due) return;
   String url;
   {
     platform::LockGuard g(stateMutex_);
@@ -311,6 +318,8 @@ BlocklistHealth BlocklistManager::health() {
   h.buildTime = buildTime_;
   h.lastAttempt = lastAttempt_;
   h.lastOk = lastOk_;
+  h.lastResult = lastCode_;
+  h.nextRunInMin = nextRunInMin_.load();
   return h;
 }
 

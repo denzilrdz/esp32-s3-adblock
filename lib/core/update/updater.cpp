@@ -85,6 +85,38 @@ const char* updateStatusName(UpdateStatus s) {
   return "?";
 }
 
+const char* updateStatusCode(UpdateStatus s) {
+  switch (s) {
+    case UpdateStatus::kUpdated: return "ok";
+    case UpdateStatus::kUnchanged: return "unchanged";
+    case UpdateStatus::kNoUrl: return "no_url";
+    case UpdateStatus::kNetworkError: return "network_error";
+    case UpdateStatus::kHttpError: return "http_error";
+    case UpdateStatus::kInvalid: return "invalid_list";
+    case UpdateStatus::kNoSpace: return "no_space";
+    case UpdateStatus::kFsError: return "fs_error";
+    case UpdateStatus::kInstallFailed: return "install_failed";
+  }
+  return "unknown";
+}
+
+bool updateStatusFromResult(const char* result, UpdateStatus& out) {
+  if (!result) return false;
+  const UpdateStatus all[] = {
+      UpdateStatus::kUpdated,      UpdateStatus::kUnchanged, UpdateStatus::kNoUrl,
+      UpdateStatus::kNetworkError, UpdateStatus::kHttpError, UpdateStatus::kInvalid,
+      UpdateStatus::kNoSpace,      UpdateStatus::kFsError,   UpdateStatus::kInstallFailed};
+  for (UpdateStatus s : all) {
+    const char* name = updateStatusName(s);
+    const size_t n = strlen(name);
+    if (strncmp(result, name, n) == 0 && (result[n] == 0 || result[n] == ':')) {
+      out = s;
+      return true;
+    }
+  }
+  return false;
+}
+
 BlocklistUpdater::BlocklistUpdater(const blocklist::Limits& limits, hal::IFileSystem& fs,
                                    hal::IHttpClient& http, hal::IKeyValueStore& kv, IListInstaller& installer,
                                    hal::ILogger& log, Paths paths)

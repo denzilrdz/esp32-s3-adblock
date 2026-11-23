@@ -375,37 +375,87 @@ nothing (other methods get `405`):
 {
   "ok": true,
   "issues": [],
-  "version": "0.7.0",
+  "version": "0.8.0",
   "uptimeS": 12345,
   "blocking": true,
-  "blocklist": { "entries": 812345, "lastOk": true, "successAgeH": 5 },
+  "blocklist": {
+    "entries": 812345,
+    "lastOk": true,
+    "successAgeH": 5,
+    "nextUpdateInH": 17,
+    "lastResult": "ok"
+  },
   "upstream": { "encrypted": true, "plainFallback": false },
   "heapBlock": 51234,
   "heapMin": 40000,
   "rssi": -58,
   "timeSynced": true,
-  "restartCause": "poweron"
+  "restartCause": "poweron",
+  "dns": {
+    "queries": 1000,
+    "blocked": 150,
+    "forwarded": 300,
+    "cached": 540,
+    "servfail": 2,
+    "udpDropped": 0,
+    "rateLimited": 0,
+    "answerMsAvg": 1.4,
+    "upstreamMsAvg": 45.6
+  },
+  "cache": { "hits": 540, "entries": 900 },
+  "heapFree": 140000,
+  "psramFree": 2000000,
+  "sockets": { "used": 9, "max": 16 },
+  "fsUsedPct": 31,
+  "tempC": 47.3,
+  "wifiReconnects": 0,
+  "bootCount": 12,
+  "crashCount": 1,
+  "livenessOk": true,
+  "otaPending": false,
+  "otaRolledBack": false,
+  "build": "a1b2c3d"
 }
 ```
 
+Counters (`dns.*`, `cache.hits`, `wifiReconnects`) are totals since the last boot;
+compute rates on your side. `bootCount` and `crashCount` are kept across restarts.
+`answerMsAvg` is how long the board takes to answer (cache hits, blocked names and
+forwarded queries alike) and `upstreamMsAvg` how long the encrypted upstream takes on
+cache misses, each averaged over the last 5 minutes (at most 256 answers; `0.0` with
+none). `udpDropped` counts queries the board discarded (malformed, non-LAN sender);
+queries lost when the network stack's 6-packet receive buffer overflows can't be
+counted with the prebuilt libraries. `rateLimited` counts queries refused because one
+client had too many in flight, or from a banned client. `fsUsedPct` (measured every 10
+minutes) is `null` right after boot, `tempC` is `null` if the sensor can't be read,
+`successAgeH` is `null` and `nextUpdateInH` is `-1` until the clock is synced. `build`
+is the git commit the firmware was built from.
+
 `ok` is `true` when `issues` is empty. Alert on `ok == false` and show `issues`:
 
-| Issue                     | Meaning                                                                    |
-| ------------------------- | -------------------------------------------------------------------------- |
-| `blocking_off`            | Blocking is paused                                                         |
-| `blocklist_empty`         | No blocklist loaded                                                        |
-| `blocklist_stale`         | Last successful list update more than 48 h ago (only once the clock syncs) |
-| `blocklist_update_failed` | The latest list update failed                                              |
-| `plain_fallback`          | DNS is going out unencrypted (plain fallback)                              |
-| `upstream_down`           | No encrypted upstream is working                                           |
-| `heap_low`                | Largest free RAM block under 32 KB (a new TLS connection may fail)         |
-| `crashed`                 | The last restart was a crash or watchdog reset                             |
-| `clock_unsynced`          | Clock still not synced 10 min after boot                                   |
-| `wifi_weak`               | Wi-Fi signal below -80 dBm                                                 |
+| Issue                     | Meaning                                                                       |
+| ------------------------- | ----------------------------------------------------------------------------- |
+| `blocking_off`            | Blocking is paused                                                            |
+| `blocklist_empty`         | No blocklist loaded                                                           |
+| `blocklist_stale`         | Last successful list update more than 48 h ago (only once the clock syncs)    |
+| `blocklist_update_failed` | The latest list update failed                                                 |
+| `plain_fallback`          | DNS is going out unencrypted (plain fallback)                                 |
+| `upstream_down`           | No encrypted upstream is working                                              |
+| `heap_low`                | Largest free RAM block under 32 KB (a new TLS connection may fail)            |
+| `crashed`                 | The last restart was a crash or watchdog reset                                |
+| `clock_unsynced`          | Clock still not synced 10 min after boot                                      |
+| `wifi_weak`               | Wi-Fi signal below -80 dBm                                                    |
+| `dns_slow`                | Answers took over 200 ms on average (5 min, at least 20 answers)              |
+| `socket_pressure`         | 14 or more of the 16 network sockets in use                                   |
+| `queries_dropped`         | 10 or more queries discarded or refused in the last 10 minutes                |
+| `fs_low`                  | Not enough flash left to download the next blocklist                          |
+| `temp_high`               | Chip above 80 °C                                                              |
+| `task_stalled`            | A watched task stopped making progress (the board restarts itself soon after) |
+| `ota_rolled_back`         | A firmware update was rolled back since the last boot                         |
 
-`successAgeH` is `null` until the clock is synced. It never includes client
-addresses, names, settings or crash details, but anyone on your network can read it
-(firmware version included). Example: `curl http://s3adblock.local/api/health`.
+The response never includes client addresses, names, settings, URLs or crash
+details, but anyone on your network can read it (firmware version and build
+included). Example: `curl http://s3adblock.local/api/health`.
 
 ### Your own blocklist
 

@@ -28,6 +28,9 @@ class DotTransport final : public upstream::ITransport {
   upstream::IoStatus receive(uint8_t* buf, size_t cap, size_t& len, uint32_t timeoutMs) override;
   void close() override;
   int lastError() const override { return tls_.lastError(); }
+  uint32_t ticketLifetimeMs() const override { return tls_.ticketLifetimeMs(); }
+  uint64_t ticketIssuedMs() const override { return tls_.ticketIssuedMs(); }
+  void forgetTicket() override { tls_.forgetSession(); }
 
  private:
   const char* name_;
@@ -54,6 +57,9 @@ class DohTransport final : public upstream::ITransport {
   upstream::IoStatus receive(uint8_t* buf, size_t cap, size_t& len, uint32_t timeoutMs) override;
   void close() override;
   int lastError() const override { return tls_.lastError(); }
+  uint32_t ticketLifetimeMs() const override { return tls_.ticketLifetimeMs(); }
+  uint64_t ticketIssuedMs() const override { return tls_.ticketIssuedMs(); }
+  void forgetTicket() override { tls_.forgetSession(); }
 
  private:
   const char* name_;

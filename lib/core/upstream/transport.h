@@ -42,6 +42,15 @@ class ITransport {
   virtual void close() = 0;
   // Error code of the last failed TLS step (mbedTLS, negative), 0 if none or not TLS.
   virtual int lastError() const { return 0; }
+
+  // TLS session resumption (ForwarderConfig::ticketRefreshMarginMs). The server's
+  // ticket lifetime hint (0 = no ticket, or not TLS) and when the full handshake that
+  // created the current session happened (monotonic ms, 0 = none). Resumed handshakes
+  // keep the session, and Cloudflare counts its lifetime from that full handshake.
+  virtual uint32_t ticketLifetimeMs() const { return 0; }
+  virtual uint64_t ticketIssuedMs() const { return 0; }
+  // Drops the saved session: the next connect() does a full handshake.
+  virtual void forgetTicket() {}
 };
 
 }  // namespace upstream

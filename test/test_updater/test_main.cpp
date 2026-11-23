@@ -3,6 +3,8 @@
 
 #include <unity.h>
 
+#include <cstdio>
+
 #include <string>
 #include <vector>
 
@@ -276,6 +278,36 @@ static void test_a_stored_list_over_the_new_cap_still_loads() {
   TEST_ASSERT_TRUE(*fs->get("/blocklist.bin") == big);
 }
 
+// GET /api/health's blocklist.lastResult: machine codes, also for results stored in
+// NVS by older firmware ("<name>: detail").
+static void test_update_status_codes_and_stored_results() {
+  using update::UpdateStatus;
+  TEST_ASSERT_EQUAL_STRING("ok", update::updateStatusCode(UpdateStatus::kUpdated));
+  TEST_ASSERT_EQUAL_STRING("http_error", update::updateStatusCode(UpdateStatus::kHttpError));
+  TEST_ASSERT_EQUAL_STRING("invalid_list", update::updateStatusCode(UpdateStatus::kInvalid));
+  TEST_ASSERT_EQUAL_STRING("no_space", update::updateStatusCode(UpdateStatus::kNoSpace));
+  const UpdateStatus all[] = {
+      UpdateStatus::kUpdated,      UpdateStatus::kUnchanged, UpdateStatus::kNoUrl,
+      UpdateStatus::kNetworkError, UpdateStatus::kHttpError, UpdateStatus::kInvalid,
+      UpdateStatus::kNoSpace,      UpdateStatus::kFsError,   UpdateStatus::kInstallFailed};
+  for (UpdateStatus st : all) {
+    for (const char* p = update::updateStatusCode(st); *p; p++)
+      TEST_ASSERT_TRUE((*p >= 'a' && *p <= 'z') || *p == '_');
+    char stored[96];
+    snprintf(stored, sizeof(stored), "%s: some detail 404", update::updateStatusName(st));
+    UpdateStatus back = UpdateStatus::kNoUrl;
+    TEST_ASSERT_TRUE(update::updateStatusFromResult(stored, back));
+    TEST_ASSERT_TRUE(back == st);
+    TEST_ASSERT_TRUE(update::updateStatusFromResult(update::updateStatusName(st), back));
+    TEST_ASSERT_TRUE(back == st);
+  }
+  UpdateStatus x;
+  TEST_ASSERT_FALSE(update::updateStatusFromResult("never", x));
+  TEST_ASSERT_FALSE(update::updateStatusFromResult("updatedX", x));
+  TEST_ASSERT_FALSE(update::updateStatusFromResult(nullptr, x));
+  TEST_ASSERT_FALSE(update::updateStatusFromResult("", x));
+}
+
 int main(int, char**) {
   UNITY_BEGIN();
   RUN_TEST(test_successful_update_swaps_file_installs_and_stores_etag);
@@ -293,5 +325,6 @@ int main(int, char**) {
   RUN_TEST(test_manual_upload_install_and_rejection);
   RUN_TEST(test_boot_recovery_paths);
   RUN_TEST(test_a_stored_list_over_the_new_cap_still_loads);
+  RUN_TEST(test_update_status_codes_and_stored_results);
   return UNITY_END();
 }

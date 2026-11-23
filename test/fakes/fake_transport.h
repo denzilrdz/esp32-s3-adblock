@@ -10,6 +10,7 @@
 
 #include "dns/message.h"
 #include "fakes/dns_builder.h"
+#include "hal/clock.h"
 #include "upstream/transport.h"
 
 class FakeTransport final : public upstream::ITransport {
@@ -37,7 +38,24 @@ class FakeTransport final : public upstream::ITransport {
     if (onConnect) onConnect();  // e.g. advance a FakeClock to simulate a slow handshake
     if (mode == Mode::kRefuseConnect) return upstream::IoStatus::kError;
     connected_ = true;
+    // Session tickets, like a server that counts their lifetime from the full
+    // handshake (Cloudflare): resumes while the ticket is valid, else a full handshake.
+    if (ticketLifetime && ticketClock) {
+      const uint64_t now = ticketClock->monotonicMs();
+      if (ticketIssued == 0 || now - ticketIssued >= ticketLifetime) {
+        ticketIssued = now ? now : 1;
+        fullHandshakes++;
+      } else {
+        resumedHandshakes++;
+      }
+    }
     return upstream::IoStatus::kOk;
+  }
+  uint32_t ticketLifetimeMs() const override { return ticketIssued ? ticketLifetime : 0; }
+  uint64_t ticketIssuedMs() const override { return ticketIssued; }
+  void forgetTicket() override {
+    ticketIssued = 0;
+    forgets++;
   }
   upstream::IoStatus send(const uint8_t* msg, size_t len) override {
     if (!connected_ || mode == Mode::kFailSend) return upstream::IoStatus::kError;
@@ -108,6 +126,13 @@ class FakeTransport final : public upstream::ITransport {
   int connects = 0;
   int closes = 0;
   int tlsError = 0;  // reported by lastError(), e.g. -0x7F00 for a failed TLS allocation
+  // Tickets: off unless both are set.
+  uint32_t ticketLifetime = 0;
+  const hal::IClock* ticketClock = nullptr;
+  uint64_t ticketIssued = 0;
+  int fullHandshakes = 0;
+  int resumedHandshakes = 0;
+  int forgets = 0;
 
  private:
   const char* name_;

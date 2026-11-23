@@ -46,6 +46,13 @@ class TlsStream {
   static void setWallClock(const hal::IClock* clock) { wallClock_ = clock; }
   // mbedTLS error of the last failed step (negative), 0 if none since connect().
   int lastError() const { return lastError_; }
+  // Session ticket (upstream::ITransport::ticketLifetimeMs()/ticketIssuedMs()): the
+  // server's lifetime hint, 0 = no ticket; when the full handshake behind the saved
+  // session happened (esp_timer ms), 0 = none. Resumed handshakes keep both.
+  uint32_t ticketLifetimeMs() const { return ticketLifetimeMs_; }
+  uint64_t ticketIssuedMs() const { return ticketIssuedMs_; }
+  // Drops the saved session: the next connect() does a full handshake.
+  void forgetSession();
 
  private:
   static int bioSend(void* ctx, const unsigned char* buf, size_t len);
@@ -64,6 +71,8 @@ class TlsStream {
   bool confReady_ = false;
   bool sslReady_ = false;
   bool haveSession_ = false;
+  uint32_t ticketLifetimeMs_ = 0;
+  uint64_t ticketIssuedMs_ = 0;
   uint32_t lastHandshakeMs_ = 0;
   // While a handshake runs: bioRecv/bioSend fail once this passes (0 = no limit).
   uint64_t handshakeDeadlineMs_ = 0;

@@ -23,6 +23,7 @@
 
 #include "cache/response_cache.h"
 #include "clients/inflight_limiter.h"
+#include "diag/latency_ring.h"
 #include "diag/liveness.h"
 #include "dns/local_zones.h"
 #include "dns/message.h"
@@ -72,9 +73,16 @@ struct DnsStats {
   uint32_t cacheHits = 0;
   uint32_t forwarded = 0;
   uint32_t servfail = 0;
-  uint32_t errors = 0;     // FORMERR/NOTIMP/REFUSED replies
-  uint32_t dropped = 0;    // non-private source, responses, malformed TCP framing
-  uint32_t rewritten = 0;  // answered by a DNS rewrite (also counted as local/cache/forwarded)
+  uint32_t errors = 0;       // FORMERR/NOTIMP/REFUSED replies
+  uint32_t dropped = 0;      // non-private source, responses, malformed TCP framing
+  uint32_t rewritten = 0;    // answered by a DNS rewrite (also counted as local/cache/forwarded)
+  uint32_t rateLimited = 0;  // refused for the per-client in-flight share, or a banned client
+};
+
+// Rolling latency averages for GET /api/health (diag::LatencyRing, last 5 min / 256).
+struct DnsLatency {
+  diag::LatencyAverage answer;    // query in -> reply out, every answer the board sends
+  diag::LatencyAverage upstream;  // handed to dns_up -> encrypted upstream answer (misses)
 };
 
 struct UpstreamSnapshot {
@@ -98,6 +106,7 @@ class DnsService : private upstream::IForwarderSink {
   DnsStats stats() const;
   UpstreamSnapshot upstreams() const;
   cache::CacheStats cacheStats();
+  DnsLatency latency() const;  // any task
   void flushCache();
   // Asks dns_up to test every upstream once (results in upstreams().status[i].probe).
   // False if a test is already running. Any task.
@@ -109,8 +118,9 @@ class DnsService : private upstream::IForwarderSink {
   struct ClientRef {
     Origin origin = Origin::kUdp;
     struct sockaddr_in addr;
-    uint8_t conn = 0;      // TCP connection index
-    uint32_t connGen = 0;  // detects a reply for a connection that was since reused
+    uint8_t conn = 0;        // TCP connection index
+    uint32_t connGen = 0;    // detects a reply for a connection that was since reused
+    uint32_t arrivalUs = 0;  // esp_timer, low 32 bits: when the query arrived (latency)
   };
 
   struct Pending {
@@ -120,7 +130,8 @@ class DnsService : private upstream::IForwarderSink {
     dns::Query clientQ;
     dns::RewriteAnswer rewrite;
     uint16_t replyLen;
-    uint8_t* reply;  // cfg_.replyCap bytes
+    uint8_t* reply;          // cfg_.replyCap bytes
+    uint32_t forwardUs = 0;  // when it was handed to dns_up (upstream latency)
   };
 
   struct TcpConn {
@@ -213,8 +224,13 @@ class DnsService : private upstream::IForwarderSink {
 
   struct AtomicStats {
     std::atomic<uint32_t> queries{0}, tcpQueries{0}, blocked{0}, local{0}, cacheHits{0}, forwarded{0},
-        servfail{0}, errors{0}, dropped{0}, rewritten{0};
+        servfail{0}, errors{0}, dropped{0}, rewritten{0}, rateLimited{0};
   } stats_;
+
+  // Written lock-free from dns_io/dns_tcp (answers) and dns_up (upstream).
+  void recordAnswer(uint32_t arrivalUs);
+  diag::LatencyRing answerRing_;
+  diag::LatencyRing upstreamRing_;
 
   mutable platform::Mutex snapshotMutex_;
   UpstreamSnapshot snapshot_;

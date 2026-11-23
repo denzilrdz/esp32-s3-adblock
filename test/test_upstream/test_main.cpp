@@ -1145,6 +1145,166 @@ static void test_probe_result_names() {
   TEST_ASSERT_EQUAL_STRING("timeout", upstream::probeResultName(ProbeResult::kTimeout));
 }
 
+// --- TLS ticket renewal (ForwarderConfig::ticketRefreshMarginMs) -----------------
+// Found on the board (2026-11-23): Cloudflare's tickets live 300 s from the full
+// handshake (resuming doesn't extend them). A cache-heavy board reconnected only when
+// google.com expired (TTL 300) and then paid a full ~1.5 s handshake in the query.
+
+static void withTickets(FakeTransport& t) {
+  t.ticketLifetime = 300000;
+  t.ticketClock = &fakeClock;
+}
+
+// One answered query, then idle until the connection has closed again.
+static void answerOnce(uint32_t token, const char* name) {
+  fwd->submit(token, query(name));
+  fwd->poll(0);
+  fakeClock.advanceMs(10000);  // past idleCloseMs
+  fwd->poll(0);
+  TEST_ASSERT_FALSE(dot1->connected());
+}
+
+static void test_without_renewal_a_reconnect_after_300s_is_a_full_handshake() {
+  // The bug, reproduced: no renewal, the miss 5 min later pays a full handshake.
+  upstream::ForwarderConfig cfg;
+  cfg.ticketRefreshMarginMs = 0;
+  build(cfg);
+  withTickets(*dot1);
+  answerOnce(1, "google.com");
+  fakeClock.advanceMs(290000);
+  answerOnce(2, "google.com");
+  TEST_ASSERT_EQUAL(2, dot1->fullHandshakes);
+  TEST_ASSERT_EQUAL(0, dot1->resumedHandshakes);
+}
+
+static void test_ticket_renewed_with_a_full_handshake_before_it_expires() {
+  withTickets(*dot1);
+  answerOnce(1, "a.example");  // full handshake at t0 (fakeClock starts at 1000 ms)
+  TEST_ASSERT_EQUAL(1, dot1->fullHandshakes);
+  fakeClock.advanceMs(240000 - 10000 - 1);  // 1 ms before 60 s are left
+  fwd->poll(0);
+  TEST_ASSERT_EQUAL(1, dot1->connects);
+  fakeClock.advanceMs(1);
+  fwd->poll(0);
+  TEST_ASSERT_EQUAL(2, dot1->connects);
+  TEST_ASSERT_EQUAL(1, dot1->forgets);  // dropped the old ticket first
+  TEST_ASSERT_EQUAL(2, dot1->fullHandshakes);
+  TEST_ASSERT_EQUAL_UINT32(1, fwd->ticketRefreshes());
+  TEST_ASSERT_EQUAL(0, dot2->connects);     // only the preferred upstream
+  TEST_ASSERT_EQUAL(1, dot1->sent.size());  // the renewal sends no query
+  fakeClock.advanceMs(9000);
+  fwd->poll(0);
+  TEST_ASSERT_FALSE(dot1->connected());  // idle-closes like any connection
+  // A client's miss 4 min later resumes (fast) instead of a full handshake.
+  fakeClock.advanceMs(200000);
+  fwd->submit(2, query("google.com"));
+  fwd->poll(0);
+  TEST_ASSERT_EQUAL(2, dot1->fullHandshakes);
+  TEST_ASSERT_EQUAL(1, dot1->resumedHandshakes);
+  TEST_ASSERT_EQUAL(2, sink.results.size());
+}
+
+static void test_ticket_not_renewed_for_an_idle_lan() {
+  withTickets(*dot1);
+  answerOnce(1, "a.example");
+  for (int i = 0; i < 30; i++) {  // the first 30 min after the last query: renewals
+    fakeClock.advanceMs(60000);
+    fwd->poll(0);
+  }
+  const int renewals = static_cast<int>(fwd->ticketRefreshes());
+  TEST_ASSERT_TRUE(renewals >= 6 && renewals <= 8);  // one per 240 s
+  for (int i = 0; i < 60; i++) {                     // then none
+    fakeClock.advanceMs(60000);
+    fwd->poll(0);
+  }
+  TEST_ASSERT_EQUAL(renewals, static_cast<int>(fwd->ticketRefreshes()));
+}
+
+static void test_ticket_renewal_never_runs_with_queries_in_flight_or_when_off() {
+  withTickets(*dot1);
+  answerOnce(1, "a.example");
+  dot1->mode = FakeTransport::Mode::kSilent;
+  fakeClock.advanceMs(250000);
+  fwd->submit(2, query("b.example"));  // connects for the query itself (resumed)
+  const int afterQuery = dot1->connects;
+  fwd->poll(0);
+  TEST_ASSERT_EQUAL(afterQuery, dot1->connects);
+  TEST_ASSERT_EQUAL_UINT32(0, fwd->ticketRefreshes());
+  TEST_ASSERT_EQUAL(0, dot1->forgets);
+
+  dot1->close();
+  upstream::ForwarderConfig cfg;
+  cfg.ticketRefreshMarginMs = 0;
+  build(cfg);
+  dot1->mode = FakeTransport::Mode::kAnswer;
+  dot1->connects = 0;
+  answerOnce(3, "c.example");
+  fakeClock.advanceMs(600000);
+  fwd->poll(0);
+  TEST_ASSERT_EQUAL(1, dot1->connects);
+}
+
+static void test_no_renewal_without_a_ticket() {
+  // Transports that report no ticket (plain UDP, or a server that sends none).
+  answerOnce(1, "a.example");
+  fakeClock.advanceMs(600000);
+  fwd->poll(0);
+  TEST_ASSERT_EQUAL(1, dot1->connects);
+  TEST_ASSERT_EQUAL(0, dot1->forgets);
+}
+
+static void test_failed_ticket_renewal_blames_nobody_and_waits() {
+  withTickets(*dot1);
+  answerOnce(1, "a.example");
+  dot1->mode = FakeTransport::Mode::kRefuseConnect;
+  fakeClock.advanceMs(230000);
+  fwd->poll(0);
+  TEST_ASSERT_EQUAL(2, dot1->connects);
+  TEST_ASSERT_EQUAL_UINT32(0, fwd->ticketRefreshes());
+  // Still Up from its last answer: a failed renewal counts against nothing.
+  TEST_ASSERT_EQUAL(static_cast<int>(HealthState::kUp), static_cast<int>(fwd->upstreamStatus(0).state));
+  TEST_ASSERT_EQUAL_UINT32(0, fwd->upstreamStatus(0).stats.failed);
+  fakeClock.advanceMs(1000);
+  fwd->poll(0);  // no retry on every poll
+  TEST_ASSERT_EQUAL(2, dot1->connects);
+}
+
+static void test_ticket_renewal_never_evicts_an_open_connection() {
+  upstream::ForwarderConfig cfg;
+  cfg.maxTlsConnections = 1;
+  cfg.idleCloseMs = 3600000;  // keep dot2's connection open for the whole test
+  build(cfg);
+  withTickets(*dot1);
+  fwd->submit(1, query("a.example"));
+  fwd->poll(0);
+  dot1->close();
+  TEST_ASSERT_TRUE(dot2->connect(1000) == IoStatus::kOk);  // the one TLS slot is taken
+  fakeClock.advanceMs(250000);
+  fwd->poll(0);
+  TEST_ASSERT_TRUE(dot2->connected());
+  TEST_ASSERT_FALSE(dot1->connected());
+  TEST_ASSERT_EQUAL(1, dot1->connects);
+  TEST_ASSERT_EQUAL_UINT32(0, fwd->ticketRefreshes());
+}
+
+static void test_ticket_renewal_waits_while_a_query_is_in_flight_elsewhere() {
+  // The preferred upstream is idle and due for renewal, but a client's query is in
+  // flight on another one: a blocking full handshake now would delay its answer.
+  withTickets(*dot1);
+  answerOnce(1, "a.example");
+  fakeClock.advanceMs(250000);
+  dot1->mode = FakeTransport::Mode::kRefuseConnect;  // this query fails over to dot2...
+  dot2->mode = FakeTransport::Mode::kSilent;         // ...and stays in flight there
+  fwd->submit(2, query("b.example"));
+  TEST_ASSERT_TRUE(dot2->connected());
+  TEST_ASSERT_FALSE(dot1->connected());
+  dot1->mode = FakeTransport::Mode::kAnswer;
+  const int before = dot1->connects;
+  fwd->poll(0);
+  TEST_ASSERT_EQUAL(before, dot1->connects);
+  TEST_ASSERT_EQUAL_UINT32(0, fwd->ticketRefreshes());
+}
+
 int main(int, char**) {
   UNITY_BEGIN();
   RUN_TEST(test_health_goes_down_after_three_failures_and_backs_off);
@@ -1200,5 +1360,13 @@ int main(int, char**) {
   RUN_TEST(test_probe_runs_alongside_client_queries_and_never_takes_their_slot);
   RUN_TEST(test_probe_respects_the_tls_connection_limit);
   RUN_TEST(test_probe_result_names);
+  RUN_TEST(test_without_renewal_a_reconnect_after_300s_is_a_full_handshake);
+  RUN_TEST(test_ticket_renewed_with_a_full_handshake_before_it_expires);
+  RUN_TEST(test_ticket_not_renewed_for_an_idle_lan);
+  RUN_TEST(test_ticket_renewal_never_runs_with_queries_in_flight_or_when_off);
+  RUN_TEST(test_no_renewal_without_a_ticket);
+  RUN_TEST(test_failed_ticket_renewal_blames_nobody_and_waits);
+  RUN_TEST(test_ticket_renewal_never_evicts_an_open_connection);
+  RUN_TEST(test_ticket_renewal_waits_while_a_query_is_in_flight_elsewhere);
   return UNITY_END();
 }

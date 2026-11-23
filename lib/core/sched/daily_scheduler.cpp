@@ -42,6 +42,25 @@ bool DailyScheduler::due() {
   return static_cast<uint32_t>(t.hour * 60 + t.minute) >= targetMinuteOfDay();
 }
 
+int32_t DailyScheduler::minutesUntilNext() const {
+  if (manual_) return 0;
+  if (!timeValid()) return -1;
+  const util::CivilTime t = clock_.localTime();
+  const int32_t nowMin = t.hour * 60 + t.minute;
+  const bool newDay = t.dateKey() != stateDate_;  // due() hasn't rolled the day yet
+  const int32_t baseTarget = static_cast<int32_t>(cfg_.hour * 60u + cfg_.minute);
+  const int32_t tomorrow = 1440 - nowMin + baseTarget;
+  if (lastSuccess_ == t.dateKey()) return tomorrow;
+  if (newDay) return nowMin >= baseTarget ? 0 : baseTarget - nowMin;
+  if (gaveUp_) return tomorrow;
+  if (retryPending_) {
+    const uint64_t now = clock_.monotonicMs();
+    return now >= retryAtMs_ ? 0 : static_cast<int32_t>((retryAtMs_ - now + 59999) / 60000);
+  }
+  const int32_t target = static_cast<int32_t>(targetMinuteOfDay());
+  return nowMin >= target ? 0 : target - nowMin;
+}
+
 void DailyScheduler::markSuccess() {
   manual_ = false;
   retries_ = 0;

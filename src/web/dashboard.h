@@ -12,6 +12,7 @@
 
 #include <WebServer.h>
 
+#include <atomic>
 #include <functional>
 
 #include "app/blocklist_manager.h"
@@ -20,6 +21,7 @@
 #include "auth/auth.h"
 #include "config/backup.h"
 #include "config/config.h"
+#include "diag/liveness.h"
 #include "diag/restart.h"
 #include "hal/clock.h"
 #include "hal/kv_store.h"
@@ -28,6 +30,25 @@
 #include "tasks/dns_service.h"
 
 namespace web {
+
+// What GET /api/health reads besides the DNS service and blocklist: values measured
+// elsewhere (the maintenance task, once a minute) or once at boot. Atomics: written by
+// one task, read by the web task.
+struct HealthSources {
+  std::atomic<bool> fsKnown{false};
+  std::atomic<uint32_t> fsUsedPct{0};
+  std::atomic<uint32_t> fsFreeBytes{0};  // LittleFS (6 MB partition: fits 32 bits)
+  std::atomic<uint32_t> droppedRise{0};  // udpDropped + rateLimited over the last 10 min
+  std::atomic<uint32_t> wifiReconnects{0};
+  uint32_t bootCount = 0;      // set once in setup()
+  uint32_t crashCount = 0;     // set once in setup()
+  bool otaRolledBack = false;  // set once in setup()
+  // A new image still being verified: read from flash once at boot, cleared when it is
+  // marked valid (reading otadata per request would stall the DNS core's flash cache).
+  std::atomic<bool> otaPending{false};
+  const diag::LivenessMonitor* liveness = nullptr;
+  const char* build = "";
+};
 
 struct DashboardContext {
   WebServer* server = nullptr;
@@ -45,6 +66,7 @@ struct DashboardContext {
   const hal::IClock* clock = nullptr;
   const char* hostname = "";
   const char* version = "";
+  HealthSources* health = nullptr;                          // GET /api/health extras (null: left at defaults)
   std::function<void(const config::AppConfig&)> applyLive;  // timezone, log level
   std::function<void()> alive;  // web task progress during long uploads (software watchdog)
   std::function<bool(util::CivilTime&)> nextReboot;  // scheduled reboot, local time
