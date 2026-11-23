@@ -819,6 +819,9 @@ in RTC memory like every deliberate restart.
   holds the single web task: the dashboard is unavailable meanwhile (DNS is not
   affected), and after 10 min the software watchdog restarts the board. Every
   accidental slow-client case is bounded by seconds (§4.3).
+- `GET /api/health` tells any LAN host the firmware version and coarse health
+  (e.g. that DNS is on plain fallback or the list is stale). The version helps an
+  attacker match known bugs; that is the price of a monitor without the password.
 - The software watchdog runs in the `esp_timer` task. If that task died while the
   blocklist download was stuck in its unwatched phase, nothing would restart the board
   (two independent failures; a dead `esp_timer` also stops Wi-Fi and lwIP timers).
@@ -886,6 +889,19 @@ in RTC memory like every deliberate restart.
   - The `Host` header must be the device IP or `*.local`.
 - **Read endpoints** (`/api/stats`, `/api/config`) need a login too (upstream leaves
   them open), so client IPs and MACs are no longer visible to the whole LAN.
+- **Health endpoint** (`GET /api/health`) is the one data route without a login, for
+  uptime monitors that shouldn't hold the admin password. It returns a fixed set of
+  fields (`diag::writeHealthJson()`; a native test fails on any other key): an
+  overall `ok`, issue codes (`diag::evaluateHealth()`), firmware version, uptime,
+  blocking on/off, blocklist size / last result / age in hours, whether DNS is
+  encrypted or on plain fallback, `heapBlock`/`heapMin`, RSSI, clock sync and a
+  reset-cause code. Never client IPs or MACs, host or query names, settings, URLs,
+  the restart summary or crash details. It changes nothing (any method but GET gets
+  405), keeps the Host check (DNS rebinding), sends no CORS header (other sites'
+  scripts can't read it) and `Cache-Control: no-store`, and is built in a 512-byte
+  stack buffer with no `String`, so polling it costs no heap. It also answers during
+  first-boot setup; that leaks nothing more: the setup state itself isn't in it, and
+  the setup code only ever goes to the serial console.
 - **Firmware OTA:**
   - Browser upload and ArduinoOTA require the dashboard password and OTA password
     respectively.

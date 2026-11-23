@@ -38,6 +38,18 @@ struct BlocklistStatus {
   size_t customAllow = 0;
 };
 
+// The part of BlocklistStatus that GET /api/health needs, without its Strings: the
+// public endpoint must not allocate per request.
+struct BlocklistHealth {
+  uint32_t entries = 0;
+  bool inMemory = false;
+  bool timeSynced = false;
+  int64_t buildTime = 0;
+  int64_t lastAttempt = 0;
+  bool lastOk = false;
+  uint32_t lastSuccessDate = 0;
+};
+
 class BlocklistManager final : public update::IListInstaller {
  public:
   static constexpr size_t kMaxRules = 1000;
@@ -70,6 +82,7 @@ class BlocklistManager final : public update::IListInstaller {
   bool replaceRules(bool allow, const std::string& lines);
 
   BlocklistStatus status();
+  BlocklistHealth health();
 
  private:
   void loadRules();

@@ -365,6 +365,48 @@ duration from 15 minutes to 24 hours:
 - Scripts: `curl -u admin:<password> -H 'X-Requested-With: adblock' -d d=nas.home -d t=192.168.1.20 -d m=60 http://s3adblock.local/api/rewrites/add`
   (`m` = minutes, 1 to 1440; `/api/rewrites/remove` takes `d` and `t`).
 
+### Health check for monitoring
+
+`GET /api/health` needs no password, so an uptime monitor can poll it every few
+minutes without holding the admin login. It returns a small JSON object and changes
+nothing (other methods get `405`):
+
+```json
+{
+  "ok": true,
+  "issues": [],
+  "version": "0.6.1",
+  "uptimeS": 12345,
+  "blocking": true,
+  "blocklist": { "entries": 812345, "lastOk": true, "successAgeH": 5 },
+  "upstream": { "encrypted": true, "plainFallback": false },
+  "heapBlock": 51234,
+  "heapMin": 40000,
+  "rssi": -58,
+  "timeSynced": true,
+  "restartCause": "poweron"
+}
+```
+
+`ok` is `true` when `issues` is empty. Alert on `ok == false` and show `issues`:
+
+| Issue                     | Meaning                                                                    |
+| ------------------------- | -------------------------------------------------------------------------- |
+| `blocking_off`            | Blocking is paused                                                         |
+| `blocklist_empty`         | No blocklist loaded                                                        |
+| `blocklist_stale`         | Last successful list update more than 48 h ago (only once the clock syncs) |
+| `blocklist_update_failed` | The latest list update failed                                              |
+| `plain_fallback`          | DNS is going out unencrypted (plain fallback)                              |
+| `upstream_down`           | No encrypted upstream is working                                           |
+| `heap_low`                | Largest free RAM block under 32 KB (a new TLS connection may fail)         |
+| `crashed`                 | The last restart was a crash or watchdog reset                             |
+| `clock_unsynced`          | Clock still not synced 10 min after boot                                   |
+| `wifi_weak`               | Wi-Fi signal below -80 dBm                                                 |
+
+`successAgeH` is `null` until the clock is synced. It never includes client
+addresses, names, settings or crash details, but anyone on your network can read it
+(firmware version included). Example: `curl http://s3adblock.local/api/health`.
+
 ### Your own blocklist
 
 ```bash

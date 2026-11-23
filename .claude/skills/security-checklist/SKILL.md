@@ -54,7 +54,10 @@ network as hostile.
       leaks passwords, the password hash, the setup code, `OTA_PASS` or Wi-Fi
       credentials. The setup code is only ever printed to the serial console.
 - [ ] Responses to unauthenticated users reveal nothing beyond the static page
-      shell (no stats, config, clients or version).
+      shell (no stats, config, clients or version). The one exception is
+      `GET /api/health`: exactly the fields of `diag::writeHealthJson()` (version
+      and coarse status, no clients, names, settings or URLs; `test_health` fails on
+      any other key). Never widen it without updating that test and ARCHITECTURE.md §9.
 
 ## 3. OTA
 

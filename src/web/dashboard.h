@@ -88,6 +88,7 @@ class Dashboard {
   void sendBody(const char* data, size_t len, const char* type, bool progmem);
 
   void handleStats();
+  void handleHealth();
   void handleGetConfig();
   void handleSetConfig();
   void handleLogin();

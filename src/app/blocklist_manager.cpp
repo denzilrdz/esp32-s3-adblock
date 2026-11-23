@@ -301,6 +301,19 @@ std::vector<String> BlocklistManager::rules(bool allow) {
   return allow ? allow_ : block_;
 }
 
+BlocklistHealth BlocklistManager::health() {
+  BlocklistHealth h;
+  h.entries = holder_.count();
+  h.inMemory = inMemory_;
+  h.timeSynced = scheduler_.timeValid();
+  h.lastSuccessDate = scheduler_.lastSuccessDate();
+  platform::LockGuard g(stateMutex_);
+  h.buildTime = buildTime_;
+  h.lastAttempt = lastAttempt_;
+  h.lastOk = lastOk_;
+  return h;
+}
+
 BlocklistStatus BlocklistManager::status() {
   BlocklistStatus s;
   s.entries = holder_.count();

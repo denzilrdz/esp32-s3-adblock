@@ -7,6 +7,7 @@
 
 #include <ctime>
 
+#include "diag/health.h"
 #include "platform/restart_info.h"
 #include "platform/watchdog.h"
 #include "util/civil_time.h"
@@ -236,6 +237,7 @@ void Dashboard::begin() {
     sendBody(kPage, sizeof(kPage) - 1, "text/html", true);
   });
   route("/api/stats", HTTP_GET, [this]() { handleStats(); });
+  route("/api/health", HTTP_ANY, [this]() { handleHealth(); });  // public, GET only
   route("/api/config", HTTP_GET, [this]() { handleGetConfig(); });
   route("/api/config", HTTP_POST, [this]() { handleSetConfig(); });
   route("/api/login", HTTP_POST, [this]() { handleLogin(); });
@@ -412,6 +414,52 @@ void Dashboard::handleStats() {
   }
   j += "]}";
   ctx_.server->send(200, "application/json", j);
+}
+
+// Password-free status for uptime monitors (ARCHITECTURE.md §9): only the fixed,
+// harmless fields of diag::writeHealthJson(), never anything about clients, names or
+// settings. Built in a stack buffer (no String) so a host polling it can't fragment
+// the heap; answers during first-boot setup too.
+void Dashboard::handleHealth() {
+  WebServer& s = *ctx_.server;
+  if (!guard(Access::kPublic)) return;  // Host check (DNS rebinding)
+  if (s.method() != HTTP_GET) {
+    s.sendHeader("Allow", "GET");
+    sendText(405, "use GET");
+    return;
+  }
+  const app::BlocklistHealth bl = ctx_.blocklist->health();
+  const app::UpstreamSnapshot us = ctx_.dns->upstreams();
+  const hal::IClock& clock = *ctx_.clock;
+  const int64_t now = clock.unixTime();
+  const int32_t utcOffset = static_cast<int32_t>(util::unixFromCivil(clock.localTime(), 0) - now);
+
+  diag::HealthInput in;
+  in.uptimeS = static_cast<uint32_t>(clock.monotonicMs() / 1000);
+  in.blockingOn = ctx_.clients->blockingOn();
+  in.entries = bl.entries;
+  in.inMemory = bl.inMemory;
+  in.updateAttempted = bl.lastAttempt > 0;
+  in.lastUpdateOk = bl.lastOk;
+  in.lastSuccessUnix =
+      diag::blocklistSuccessUnix(bl.lastOk, bl.lastAttempt, bl.lastSuccessDate, bl.buildTime, utcOffset);
+  in.timeSynced = bl.timeSynced;
+  in.nowUnix = now;
+  in.plainFallback = us.plainFallback;
+  in.encryptedHealthy = diag::anyEncryptedHealthy(us.status, us.count);
+  in.heapBlock = ESP.getMaxAllocHeap();
+  in.heapMin = ESP.getMinFreeHeap();
+  in.rssi = WiFi.RSSI();
+  in.resetCause = ctx_.restart ? ctx_.restart->cause : diag::ResetCause::kUnknown;
+
+  char body[diag::kHealthJsonCap];
+  const size_t len = diag::writeHealthJson(in, diag::evaluateHealth(in), ctx_.version, body, sizeof(body));
+  if (len == 0) {
+    sendText(500, "health report too long");
+    return;
+  }
+  s.sendHeader("Cache-Control", "no-store");
+  s.send_P(200, "application/json", body, len);
 }
 
 void Dashboard::handleGetConfig() {

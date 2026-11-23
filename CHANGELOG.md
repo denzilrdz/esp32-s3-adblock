@@ -6,6 +6,14 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `GET /api/health`: a password-free health check for uptime monitors. It returns
+  an overall `ok`, short issue codes (`blocklist_stale`, `plain_fallback`,
+  `upstream_down`, `crashed`, …) and a few harmless status values (version, uptime,
+  blocklist size and age, heap, Wi-Fi signal), never clients, names or settings. See
+  _Health check for monitoring_ in the README.
+
 ## [0.6.1] - 2026-11-13
 
 Security fix: the board stops trusting a certificate authority whose keys were
